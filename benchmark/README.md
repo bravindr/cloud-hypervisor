@@ -379,3 +379,28 @@ Generate the raw-relative KPI report independently with:
 Use at least five measured iterations. Compare codecs first with identical
 chunk sizes and worker counts, then run a second matrix using each codec's
 best-performing settings.
+
+## Next steps: unified accelerator support
+
+IAA is the currently implemented hardware backend. DSA and QAT can be added
+without changing the Cloud Hypervisor migration protocol by keeping all
+accelerator-specific code behind one user-space interface in
+`offload_daemon`:
+
+```text
+Cloud Hypervisor migration stream
+   -> offload_daemon accelerator interface
+     -> DSA: zero detection and accelerated memory copies
+     -> compression: CPU LZ4/Zstd | IAA QPL | QAT QATlib
+     -> IAA and QAT load sharing for additional compression capacity
+   -> common snapshot format, metrics, and restore path
+```
+
+The unified interface should provide device discovery, capability reporting,
+queue creation, buffer registration, submit, poll or wait, error reporting,
+and cleanup. Each backend should expose the same asynchronous job-pool model so
+queue depth, timeout, retry, and fallback behavior are configured consistently.
+
+The goal is one benchmark workflow and one snapshot format across CPU, IAA,
+DSA, and QAT. Accelerator selection should remain a configuration choice rather
+than requiring separate benchmark scripts or changes to Cloud Hypervisor.

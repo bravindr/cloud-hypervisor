@@ -17,10 +17,10 @@ Runs the complete compression benchmark:
 Configuration is read from benchmark/benchmark.env and environment variables.
 
 Options:
-  -p, --pattern PATTERN  Guest memory pattern: zero, repeat, random, silesia, redis
-    -n, --vms COUNT        Number of VMs to benchmark concurrently
-            --dry-run          Print the resolved configuration without running
-  -h, --help             Show this help
+-p, --pattern PATTERN  Guest memory pattern: zero, repeat, random, silesia, redis
+-n, --vms COUNT        Number of VMs to benchmark concurrently
+    --dry-run          Print the resolved configuration without running
+-h, --help             Show this help
 EOF
 }
 
