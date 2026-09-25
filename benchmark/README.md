@@ -18,6 +18,22 @@ cp benchmark/benchmark.env.example benchmark/benchmark.env
 ./benchmark/benchmark.sh
 ```
 
+Run multiple VMs concurrently with unique CPUs, TAP devices, guest addresses,
+sockets, disks, and result directories:
+
+```bash
+./benchmark/benchmark.sh --vms 2
+```
+
+Each VM receives `VCPUS` logical CPUs plus one separate offload-daemon CPU from
+`CPU_AFFINITY_SOCKET`. All NUMA nodes belonging to that socket are discovered
+automatically. With `PREFER_PHYSICAL_CORES=1`, the allocator uses one hardware
+thread from every physical core before assigning SMT siblings. All VMs
+rendezvous before every measured matrix case. The
+per-VM reports are written under `benchmark/results/multi-vm/vm-*`; the
+aggregate report uses the slowest VM's elapsed time for each synchronized run
+and sums CPU utilization and stored bytes across VMs.
+
 At startup, `benchmark.sh` checks host packages, Rust 1.89 or newer, and static
 QPL. If anything is missing, it runs `benchmark/setup.sh`; package and QPL
 installation may request `sudo`. Set `AUTO_SETUP=0` to fail instead, or run the
@@ -39,9 +55,9 @@ Configure
 additional chunk sizes, workers, depths, and iterations in
 `benchmark/benchmark.env`.
 
-Guest preparation defaults to a 1536 MiB random working set in a 4 GiB VM.
-This reduces the zero-heavy bias of untouched guest RAM while leaving space
-for the operating system and staying below the usual `/dev/shm` capacity.
+Guest preparation defaults to a 1536 MiB Silesia working set in a 4 GiB VM.
+This provides a reproducible mix of real-world data while leaving space for
+the operating system and staying below the usual `/dev/shm` capacity.
 
 Before setup and build, the benchmark stops existing processes whose executable
 is named `cloud-hypervisor` and removes stale benchmark sockets. Set
@@ -62,6 +78,10 @@ The final report is written to `benchmark/results/kpi-report.csv`. It includes:
 
 QPL hardware requires an enabled IAA work queue. Set `WITH_QPL=0` and remove
 QPL codecs from `CODECS` for an LZ4/Zstd-only run.
+The offload daemon configures QPL jobs with `QPL_DEVICE_NUMA_ID_ANY`, allowing
+QPL to select any enabled IAA user work queue in the system. QPL's default
+policy is socket-local and can return `QPL_STS_INIT_WORK_QUEUES_NOT_AVAILABLE`
+when the calling thread runs on a socket without an enabled queue.
 
 ## Build
 
@@ -271,10 +291,15 @@ host workers. `QPL_ASYNC_SNAPSHOT_DEPTHS` and
 `QPL_ASYNC_RESTORE_DEPTHS` independently control maximum in-flight IAA jobs.
 The daemon refills each completed slot immediately, bounds submission and
 completion waits, reuses buffers, and divides the configured budget across
-independent VM memory slots. `NUMA_NODE` binds the VM, receiver, and daemon to
-the IAA-local node. `OFFLOAD_CPU` additionally pins the offload daemon to one
-CPU for a per-core comparison. Async depths still control concurrent IAA jobs;
-the hardware engines do not execute on that CPU.
+independent VM memory slots. By default, `AUTO_CPU_AFFINITY=1` pins the VM and
+receiver to `VCPUS` logical CPUs discovered across every NUMA node on
+`CPU_AFFINITY_SOCKET=0`, then reserves the next logical CPU for the offload
+daemon. The default
+`PREFER_PHYSICAL_CORES=1` orders one hardware thread from every physical core
+before any SMT siblings. Override `VM_CPU_LIST` or `OFFLOAD_CPU` for a specific
+layout, or set `AUTO_CPU_AFFINITY=0` to leave them unbound. Async depths still
+control concurrent IAA jobs; the hardware engines do not execute on the
+offload CPU.
 
 Each measured row includes `cpu_util_pct` from the offload daemon. The KPI
 report shows its median as `median_cpu_util_pct`. This excludes Cloud Hypervisor

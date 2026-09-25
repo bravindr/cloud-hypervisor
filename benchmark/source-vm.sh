@@ -74,7 +74,7 @@ start_vm() {
     rm -f -- "$SOURCE_API_SOCKET" "$SOURCE_PID_FILE"
     : >"$SOURCE_VMM_LOG"
     : >"$SOURCE_SERIAL_LOG"
-    "${NUMA_PREFIX[@]}" "$CH_BIN" \
+    "${VM_PREFIX[@]}" "$CH_BIN" \
         --api-socket "$SOURCE_API_SOCKET" \
         --cpus "boot=${VCPUS:-2}" \
         --memory "size=${MEMORY_SIZE:-1G},shared=on" \

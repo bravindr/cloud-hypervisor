@@ -48,7 +48,7 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
-RUST_LOG=${RUST_LOG:-info} "${NUMA_PREFIX[@]}" "$CH_BIN" --api-socket "$RESTORE_API_SOCKET" \
+RUST_LOG=${RUST_LOG:-info} "${VM_PREFIX[@]}" "$CH_BIN" --api-socket "$RESTORE_API_SOCKET" \
     >"$vmm_log" 2>&1 &
 vmm_pid=$!
 wait_for_socket "$RESTORE_API_SOCKET"
@@ -72,7 +72,7 @@ fi
 
 start_ns=$(date +%s%N)
 "$TIME_BIN" --format='%P' --output="$cpu_time_file" \
-    env RUST_LOG=${RUST_LOG:-info} "${NUMA_PREFIX[@]}" "${OFFLOAD_PREFIX[@]}" \
+    env RUST_LOG=${RUST_LOG:-info} "${OFFLOAD_PREFIX[@]}" \
     "$OFFLOAD_BIN" "${restore_args[@]}" \
     >"$daemon_log" 2>&1
 wait "$receiver_pid"

@@ -62,6 +62,7 @@ run_snapshot_case() {
     local record=$5
     local output_dir=$SNAPSHOT_ROOT/${codec}-c${chunk_size}-w${workers}-i${iteration}
 
+    wait_for_multi_vm_peers "snapshot-${codec}-c${chunk_size}-w${workers}-i${iteration}"
     RECORD_RESULT=$record "$BENCHMARK_DIR/snapshot.sh" \
         "$codec" "$chunk_size" "$workers" "$iteration" "$output_dir"
     if [[ "$record" == 0 || \
@@ -80,6 +81,7 @@ run_restore_case() {
     snapshot_workers=$(snapshot_workers_for_codec "$codec")
     local input_dir=$SNAPSHOT_ROOT/${codec}-c${chunk_size}-w${snapshot_workers}-i${snapshot_iteration}
 
+    wait_for_multi_vm_peers "restore-${codec}-c${chunk_size}-w${workers}-i${iteration}"
     RECORD_RESULT=$record "$BENCHMARK_DIR/restore.sh" \
         "$input_dir" "$codec" "$chunk_size" "$workers" "$iteration"
 }

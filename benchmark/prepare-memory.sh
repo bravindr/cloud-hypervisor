@@ -14,7 +14,7 @@ fi
 
 working_set_mib=${WORKING_SET_MIB:-1536}
 shm_size_mib=${SHM_SIZE_MIB:-}
-pattern=${MEMORY_PATTERN:-random}
+pattern=${MEMORY_PATTERN:-silesia}
 guest_timeout=${GUEST_TIMEOUT:-120}
 guest_silesia_path=/tmp/ch-silesia.tar
 guest_redis_dir=/tmp/ch-redis-bin
