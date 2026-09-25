@@ -38,6 +38,7 @@ int qpl_shim_create(uint32_t execution_path, struct qpl_shim **result) {
         free(context);
         return (int)status;
     }
+    context->job->numa_id = QPL_DEVICE_NUMA_ID_ANY;
     *result = context;
     return QPL_STS_OK;
 }
