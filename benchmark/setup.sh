@@ -2,13 +2,22 @@
 
 set -euo pipefail
 
+BENCHMARK_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 MINIMUM_RUST_VERSION=${MINIMUM_RUST_VERSION:-1.89.0}
 QPL_VERSION=${QPL_VERSION:-1.9.0}
 QPL_INCLUDE_DIR=${QPL_INCLUDE_DIR:-/usr/local/include}
 QPL_LIB_DIR=${QPL_LIB_DIR:-/usr/local/lib64}
 WITH_QPL=${WITH_QPL:-1}
+IAX_USER_WQ_COUNT=${IAX_USER_WQ_COUNT:-4}
 
 required_commands=(curl gcc g++ make cmake ninja pkg-config ssh scp sshpass ip qemu-img python3 mkdosfs mcopy unzip taskset /usr/bin/time)
+qpl_required_commands=(accel-config lspci lscpu)
+
+iax_user_wqs_ready() (
+    shopt -s nullglob
+    local queues=(/dev/iax/wq*)
+    ((${#queues[@]} >= IAX_USER_WQ_COUNT))
+)
 
 find_cargo() {
     if [[ -n ${CARGO_BIN:-} && -x ${CARGO_BIN:-} ]]; then
@@ -33,6 +42,13 @@ host_commands_missing() {
             return 0
         fi
     done
+    if [[ "$WITH_QPL" == 1 ]]; then
+        for command_name in "${qpl_required_commands[@]}"; do
+            if ! command -v "$command_name" >/dev/null 2>&1; then
+                return 0
+            fi
+        done
+    fi
     return 1
 }
 
@@ -57,12 +73,22 @@ check_dependencies() {
     fi
 
     if [[ "$WITH_QPL" == 1 ]]; then
+        for command_name in "${qpl_required_commands[@]}"; do
+            if ! command -v "$command_name" >/dev/null 2>&1; then
+                echo "Missing command: $command_name" >&2
+                missing=1
+            fi
+        done
         if [[ ! -f "$QPL_INCLUDE_DIR/qpl/qpl.h" ]]; then
             echo "Missing QPL header: $QPL_INCLUDE_DIR/qpl/qpl.h" >&2
             missing=1
         fi
         if [[ ! -f "$QPL_LIB_DIR/libqpl.a" ]]; then
             echo "Missing static QPL library: $QPL_LIB_DIR/libqpl.a" >&2
+            missing=1
+        fi
+        if ! iax_user_wqs_ready; then
+            echo "Fewer than $IAX_USER_WQ_COUNT IAX user work queues are available under /dev/iax" >&2
             missing=1
         fi
     fi
@@ -85,18 +111,20 @@ install_packages() {
         run_privileged dnf install -y \
             git gcc gcc-c++ make cmake ninja-build pkgconf-pkg-config \
             m4 bison flex libuuid-devel qemu-img openssh-clients sshpass \
-            iproute curl python3 tar gzip unzip dosfstools mtools util-linux time
+            iproute curl python3 tar gzip unzip dosfstools mtools util-linux time \
+            accel-config pciutils
     elif command -v yum >/dev/null 2>&1; then
         run_privileged yum install -y \
             git gcc gcc-c++ make cmake ninja-build pkgconfig \
             m4 bison flex libuuid-devel qemu-img openssh-clients sshpass \
-            iproute curl python3 tar gzip unzip dosfstools mtools util-linux time
+            iproute curl python3 tar gzip unzip dosfstools mtools util-linux time \
+            accel-config pciutils
     elif command -v apt-get >/dev/null 2>&1; then
         run_privileged apt-get update
         run_privileged apt-get install -y \
             git build-essential cmake ninja-build pkg-config m4 bison flex \
             uuid-dev qemu-utils openssh-client sshpass iproute2 curl python3 \
-            tar gzip unzip dosfstools mtools util-linux time
+            tar gzip unzip dosfstools mtools util-linux time accel-config pciutils
     else
         echo "Unsupported package manager. Install the commands listed by --check." >&2
         exit 1
@@ -163,6 +191,10 @@ fi
 install_rust
 if [[ "$WITH_QPL" == 1 ]]; then
     install_qpl
+    if ! iax_user_wqs_ready; then
+        echo "Configuring four IAX user work queues"
+        run_privileged "$BENCHMARK_DIR/enable_iax_user_4"
+    fi
 fi
 
 if ! check_dependencies; then

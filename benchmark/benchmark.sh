@@ -143,6 +143,11 @@ cleanup() {
     if [[ "$tap_created" == 1 && "$CLEANUP_TAP" == 1 ]]; then
         run_privileged ip link delete "$TAP_NAME" 2>/dev/null || true
     fi
+    if ((exit_code != 0)) && [[ -f "$RESULTS_CSV" ]] &&
+        tail -n +2 "$RESULTS_CSV" | grep -q .; then
+        echo "==> Benchmark failed; generating partial KPI report" >&2
+        "$BENCHMARK_DIR/report.py" "$RESULTS_CSV" "$REPORT_CSV" || true
+    fi
     exit "$exit_code"
 }
 trap cleanup EXIT INT TERM

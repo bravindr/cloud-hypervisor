@@ -37,9 +37,14 @@ rm -f -- "$RESTORE_API_SOCKET" "$RESTORE_SOCKET"
 vmm_pid=
 receiver_pid=
 cleanup() {
+    local exit_code=$?
     terminate_process "$receiver_pid"
     terminate_process "$vmm_pid"
     rm -f -- "$RESTORE_API_SOCKET" "$RESTORE_SOCKET"
+    if ((exit_code != 0)) && [[ -s "$daemon_log" ]]; then
+        echo "Restore failed; daemon log tail ($daemon_log):" >&2
+        tail -n 80 "$daemon_log" >&2
+    fi
 }
 trap cleanup EXIT INT TERM
 

@@ -57,8 +57,13 @@ fi
 
 daemon_pid=
 cleanup() {
+    local exit_code=$?
     terminate_process "$daemon_pid"
     rm -f -- "$OFFLOAD_SOCKET"
+    if ((exit_code != 0)) && [[ -s "$daemon_log" ]]; then
+        echo "Snapshot failed; daemon log tail ($daemon_log):" >&2
+        tail -n 80 "$daemon_log" >&2
+    fi
 }
 trap cleanup EXIT INT TERM
 
