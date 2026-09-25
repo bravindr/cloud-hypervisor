@@ -9,7 +9,7 @@ Accelerator (IAA) compression through Intel QPL.
 Run these commands from the Cloud Hypervisor repository root:
 
 ```bash
-cp benchmark/benchmark.env.example benchmark/benchmark.env
+# Review benchmark/benchmark.env and adjust it for the host.
 ./benchmark/benchmark.sh --dry-run
 ./benchmark/benchmark.sh
 ```
@@ -156,11 +156,8 @@ Set `WITH_QPL=0` for an LZ4/Zstd-only build.
 
 ## Configure
 
-```bash
-cp benchmark/benchmark.env.example benchmark/benchmark.env
-```
-
-Every script also accepts the variables directly in its environment. Set
+Edit `benchmark/benchmark.env` to configure the benchmark. Every script also
+accepts the variables directly in its environment. Set
 `BENCHMARK_CONFIG=/path/to/file` to use a configuration outside this directory.
 
 ## Start the source VM
