@@ -101,14 +101,14 @@ def main() -> int:
                 "chunk_size": chunk_size,
                 "workers": workers,
                 "runs": len(values),
-                "mean_ms": f"{statistics.fmean(elapsed_values):.3f}",
-                "median_ms": f"{median_ms:.3f}",
-                "p95_ms": f"{percentile(elapsed_values, 0.95):.3f}",
-                "median_cpu_util_pct": f"{statistics.median(cpu_values):.1f}",
-                "stored_mib": f"{stored_bytes / (1024 * 1024):.3f}",
-                "compression_ratio": f"{compression_ratio:.3f}",
+                "mean_ms": f"{statistics.fmean(elapsed_values):.2f}",
+                "median_ms": f"{median_ms:.2f}",
+                "p95_ms": f"{percentile(elapsed_values, 0.95):.2f}",
+                "median_cpu_util_pct": f"{statistics.median(cpu_values):.2f}",
+                "stored_mib": f"{stored_bytes / (1024 * 1024):.2f}",
+                "compression_ratio": f"{compression_ratio:.2f}",
                 "space_saving_pct": f"{space_saving_pct:.2f}",
-                "speedup_vs_raw": f"{speedup:.3f}",
+                "speedup_vs_raw": f"{speedup:.2f}",
             }
         )
 

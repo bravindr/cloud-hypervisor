@@ -78,8 +78,8 @@ def main() -> int:
             f"{dataset:<{dataset_width}} {phase:<8} {codec:<{codec_width}} "
             f"{chunk:>10} {workers:>7} "
             f"{len(values):>5} "
-            + " ".join(f"{metric:12.3f}" for metric in metrics)
-            + f" {statistics.median(cpu_values):10.1f}"
+            + " ".join(f"{metric:12.2f}" for metric in metrics)
+            + f" {statistics.median(cpu_values):10.2f}"
         )
     return 0
 
