@@ -156,6 +156,17 @@ require_executable() {
     fi
 }
 
+benchmark_event() {
+    local message="==> $*"
+    if [[ -n ${INSTANCE_ID:-} ]]; then
+        message="==> [VM $INSTANCE_ID] $*"
+    fi
+    printf '%s\n' "$message"
+    if [[ -n ${MULTI_VM_EVENT_FD:-} ]]; then
+        printf '%s\n' "$message" >&"$MULTI_VM_EVENT_FD"
+    fi
+}
+
 wait_for_socket() {
     local socket_path=$1
     local waited=0

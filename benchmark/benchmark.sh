@@ -19,7 +19,7 @@ Configuration is read from benchmark/benchmark.env and environment variables.
 Options:
   -p, --pattern PATTERN  Guest memory pattern: zero, repeat, random, silesia, redis
     -n, --vms COUNT        Number of VMs to benchmark concurrently
-      --dry-run          Print the resolved configuration without running
+            --dry-run          Print the resolved configuration without running
   -h, --help             Show this help
 EOF
 }
@@ -168,6 +168,7 @@ source_vm_started=0
 tap_created=0
 multi_vm_pids=()
 multi_vm_config_dir=
+multi_vm_event_fd=
 
 run_privileged() {
     if ((EUID == 0)); then
@@ -202,6 +203,9 @@ cleanup() {
     if [[ -n "$multi_vm_config_dir" ]]; then
         rm -rf -- "$multi_vm_config_dir"
     fi
+    if [[ -n "$multi_vm_event_fd" ]]; then
+        exec {multi_vm_event_fd}>&-
+    fi
     exit "$exit_code"
 }
 trap cleanup EXIT INT TERM
@@ -224,6 +228,7 @@ run_multi_vm_benchmark() {
     rm -rf -- "$barrier_dir"
     mkdir -p "$barrier_dir"
     multi_vm_config_dir=$(mktemp -d)
+    exec {multi_vm_event_fd}>&1
 
     for ((instance = 0; instance < vm_count; instance += 1)); do
         instance_offset=$((instance * cpus_per_vm))
@@ -293,6 +298,7 @@ run_multi_vm_benchmark() {
             write_config_value INSTANCE_ID "$instance"
             write_config_value MULTI_VM_COUNT "$vm_count"
             write_config_value MULTI_VM_BARRIER_DIR "$barrier_dir"
+            write_config_value MULTI_VM_EVENT_FD "$multi_vm_event_fd"
         } >"$config_file"
 
         BENCHMARK_CONFIG=$config_file "$BENCHMARK_DIR/benchmark.sh" --vms 1 \
@@ -307,6 +313,8 @@ run_multi_vm_benchmark() {
         fi
     done
     multi_vm_pids=()
+    exec {multi_vm_event_fd}>&-
+    multi_vm_event_fd=
     ((failed == 0)) || {
         echo "One or more VM benchmarks failed; see $multi_results_dir/vm-*/benchmark.log" >&2
         return 1
@@ -415,15 +423,17 @@ BENCHMARK_DATASET=$MEMORY_PATTERN
 export BENCHMARK_DATASET CODECS CHUNK_SIZES SOFTWARE_WORKER_COUNTS
 export QPL_ASYNC_SNAPSHOT_DEPTHS QPL_ASYNC_RESTORE_DEPTHS ITERATIONS WARMUPS WITH_QPL
 
-echo "==> Running snapshot matrix"
+benchmark_event "snapshot matrix starting"
 RESET_RESULTS=1 "$BENCHMARK_DIR/run-matrix.sh" snapshot
+benchmark_event "snapshot matrix complete"
 
-echo "==> Stopping source VM before restore"
+benchmark_event "stopping source VM before restore"
 "$BENCHMARK_DIR/source-vm.sh" stop
 source_vm_started=0
 
-echo "==> Running restore matrix"
+benchmark_event "restore matrix starting"
 RESET_RESULTS=0 "$BENCHMARK_DIR/run-matrix.sh" restore
+benchmark_event "restore matrix complete"
 
 echo "==> Key performance indicators"
 "$BENCHMARK_DIR/report.py" "$RESULTS_CSV" "$REPORT_CSV"

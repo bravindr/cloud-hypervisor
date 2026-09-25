@@ -1,16 +1,12 @@
-# Snapshot compression benchmarks
+# Snapshot compression benchmark
 
-This directory measures end-to-end offloaded snapshot and eager restore time
-for raw memory, LZ4, Zstd, and Intel QPL. Results are written to
-`benchmark/results/results.csv`; detailed logs are stored under
-`benchmark/results/logs/`.
+This benchmark measures end-to-end Cloud Hypervisor snapshot and eager-restore
+performance with raw memory, LZ4, Zstd, and Intel In-Memory Analytics
+Accelerator (IAA) compression through Intel QPL.
 
-## Complete benchmark
+## Quick start
 
-The top-level benchmark entry point performs the complete workflow: build the
-binaries, download canonical test assets when missing, create the TAP device,
-start and prepare the source VM, run snapshot and restore matrices, clean up,
-and generate the KPI report.
+Run these commands from the Cloud Hypervisor repository root:
 
 ```bash
 cp benchmark/benchmark.env.example benchmark/benchmark.env
@@ -18,70 +14,117 @@ cp benchmark/benchmark.env.example benchmark/benchmark.env
 ./benchmark/benchmark.sh
 ```
 
-Run multiple VMs concurrently with unique CPUs, TAP devices, guest addresses,
-sockets, disks, and result directories:
+The default run uses a 4 GiB VM containing a reproducible 1536 MiB Silesia
+working set. It compares raw, LZ4, Zstd, QPL static Huffman, and QPL dynamic
+Huffman snapshots, then restores each retained snapshot and writes:
+
+- Raw measurements to `benchmark/results/results.csv`.
+- KPI summaries to `benchmark/results/kpi-report.csv`.
+- VM, daemon, and serial logs under `benchmark/results/logs/`.
+
+`benchmark.sh` checks dependencies, builds the binaries, downloads the kernel,
+guest image, and Silesia corpus when needed, configures IAA user work queues,
+creates guest networking, runs the matrices, and cleans up. Package, QPL, and
+TAP setup may request `sudo`.
+
+Run multiple VMs concurrently with:
 
 ```bash
 ./benchmark/benchmark.sh --vms 2
 ```
 
-Each VM receives `VCPUS` logical CPUs plus one separate offload-daemon CPU from
-`CPU_AFFINITY_SOCKET`. All NUMA nodes belonging to that socket are discovered
-automatically. With `PREFER_PHYSICAL_CORES=1`, the allocator uses one hardware
-thread from every physical core before assigning SMT siblings. All VMs
-rendezvous before every measured matrix case. The
-per-VM reports are written under `benchmark/results/multi-vm/vm-*`; the
-aggregate report uses the slowest VM's elapsed time for each synchronized run
-and sums CPU utilization and stored bytes across VMs.
+Set `WITH_QPL=0` and remove QPL codecs from `CODECS` for a CPU-only run. Set
+`AUTO_SETUP=0` to report missing dependencies instead of installing them.
 
-At startup, `benchmark.sh` checks host packages, Rust 1.89 or newer, and static
-QPL. If anything is missing, it runs `benchmark/setup.sh`; package and QPL
-installation may request `sudo`. Set `AUTO_SETUP=0` to fail instead, or run the
-setup explicitly:
+## Architecture
 
-```bash
-./benchmark/setup.sh --check
-./benchmark/setup.sh
+Cloud Hypervisor uses its existing migration protocol to transfer VM memory and
+state to a separate `offload_daemon`. Compression is outside the VMM process,
+so raw, software, and IAA paths share the same migration interface.
+
+```mermaid
+flowchart LR
+  Guest[Guest VM memory] --> CH[Cloud Hypervisor]
+  CH -->|send-migration: memfds, config, state| OD[offload_daemon]
+  OD --> Codec{Compression codec}
+  Codec --> Raw[Raw copy]
+  Codec --> CPU[LZ4 or Zstd on CPU]
+  Codec --> QPL[Intel QPL]
+  QPL --> IAA[IAA user work queue]
+  Raw --> Files[Snapshot directory]
+  CPU --> Files
+  IAA --> Files
+  Files --> Restore[offload_daemon restore]
+  Restore -->|decompressed memfds, config, state| CH2[Cloud Hypervisor receiver]
+  CH2 --> Guest2[Restored VM]
 ```
 
-Creating the TAP interface may invoke `sudo`. A source VM is stopped before
-restore measurements to release its disk lock, and cleanup also runs when a
-stage fails. The default matrix compares raw, LZ4, Zstd, and asynchronous QPL
-hardware in static and dynamic Huffman modes with 1 MiB chunks. The defaults
-use one software worker, an async snapshot depth of eight, and an async restore
-depth of 32. This compares single-worker CPU paths with one host thread driving
-multiple IAA requests.
-Configure
-additional chunk sizes, workers, depths, and iterations in
-`benchmark/benchmark.env`.
+### IAA integration
 
-Guest preparation defaults to a 1536 MiB Silesia working set in a 4 GiB VM.
-This provides a reproducible mix of real-world data while leaving space for
-the operating system and staying below the usual `/dev/shm` capacity.
+The `offload_daemon` links Intel QPL statically and accesses it through the C
+shim in `offload_daemon/src/qpl_shim.c`. Each QPL job submits Deflate work to an
+enabled IAA user work queue. The benchmark setup installs QPL v1.9.0 under
+`/usr/local` when its headers or static library are absent, then configures four
+shared IAA user queues when fewer than `IAX_USER_WQ_COUNT` device nodes exist.
+
+The asynchronous QPL codecs maintain reusable job pools instead of creating a
+job for every chunk. `QPL_ASYNC_SNAPSHOT_DEPTHS` and
+`QPL_ASYNC_RESTORE_DEPTHS` control the maximum in-flight IAA operations. Static
+and dynamic codec names select fixed or dynamic Deflate Huffman tables.
+`QPL_DEVICE_NUMA_ID_ANY` permits job submission to any enabled IAA device found
+by QPL rather than restricting execution to the calling thread's socket.
+
+IAA engines perform compression and decompression. The pinned offload CPU runs
+the daemon's submission, completion, data movement, and persistence work; IAA
+engine time is not host CPU utilization.
+
+### Multi-VM execution
+
+For `--vms N`, the parent starts `N` isolated benchmark workers. Each receives
+unique API and migration sockets, TAP networking, guest disk, snapshot tree,
+logs, and results. Workers rendezvous before every codec and iteration, so the
+same snapshot or restore case starts concurrently in every VM.
+
+CPU placement is deterministic by default. The allocator discovers all online
+CPUs on `CPU_AFFINITY_SOCKET`, uses one hardware thread from each physical core
+before SMT siblings, assigns `VCPUS` CPUs to each VM, and reserves a separate
+CPU for each offload daemon. Per-VM results are stored under
+`benchmark/results/multi-vm/vm-*`. Aggregate latency is the slowest VM for each
+synchronized run; CPU utilization and stored bytes are summed across VMs.
+Snapshot and restore events are printed live with `[VM N]` labels and retained
+in each `vm-N/benchmark.log`.
+
+## Benchmark workflow and features
+
+The complete workflow is:
+
+1. Check or install host dependencies and QPL.
+2. Build Cloud Hypervisor, `ch-remote`, and `offload_daemon`.
+3. Download canonical kernel, disk, and workload assets when absent.
+4. Create the TAP interface and start a shared-memory source VM.
+5. Populate guest memory and pause the VM.
+6. Run synchronized snapshot matrices.
+7. Stop the source VM to release its disk lock.
+8. Run synchronized eager-restore matrices.
+9. Generate raw-relative KPI reports and clean up.
+
+The default matrix uses 1 MiB chunks, one software worker, QPL async snapshot
+depth 8, QPL async restore depth 32, one warm-up, and three measured
+iterations. Configure additional codecs, chunk sizes, workers, queue depths,
+and iterations in `benchmark/benchmark.env`.
 
 Before setup and build, the benchmark stops existing processes whose executable
 is named `cloud-hypervisor` and removes stale benchmark sockets. Set
-`CLEANUP_EXISTING_VMS=0` when other Cloud Hypervisor VMs must remain running.
-The cleanup can also be run directly:
+`CLEANUP_EXISTING_VMS=0` when unrelated Cloud Hypervisor VMs must remain
+running. Cleanup also runs when a benchmark stage fails.
 
-```bash
-./benchmark/cleanup-vms.sh
-```
+The KPI report includes:
 
-The final report is written to `benchmark/results/kpi-report.csv`. It includes:
-
-- The guest dataset used for each result, such as `random` or `silesia`.
-- Snapshot and restore median and p95 latency.
-- Mean stored snapshot size in MiB.
-- Compression ratio and storage savings relative to raw.
+- Dataset, phase, codec, chunk size, worker count, and run count.
+- Snapshot and restore mean, median, and p95 latency.
+- Median offload-daemon CPU utilization.
+- Mean stored snapshot size, compression ratio, and space savings.
 - Snapshot and restore speedup relative to the raw median.
-
-QPL hardware requires an enabled IAA work queue. Set `WITH_QPL=0` and remove
-QPL codecs from `CODECS` for an LZ4/Zstd-only run.
-The offload daemon configures QPL jobs with `QPL_DEVICE_NUMA_ID_ANY`, allowing
-QPL to select any enabled IAA user work queue in the system. QPL's default
-policy is socket-local and can return `QPL_STS_INIT_WORK_QUEUES_NOT_AVAILABLE`
-when the calling thread runs on a socket without an enabled queue.
 
 ## Build
 
@@ -174,7 +217,7 @@ Redis server resident. The canonical test image uses the development credentials
 ```bash
 GUEST_SSH_TARGET=cloud@192.168.2.2 \
 SSH_PASSWORD=cloud123 \
-WORKING_SET_MIB=1536 MEMORY_PATTERN=random \
+WORKING_SET_MIB=1536 MEMORY_PATTERN=silesia \
   ./benchmark/prepare-memory.sh
 ```
 
@@ -195,12 +238,12 @@ MEMORY_PATTERN=silesia ./benchmark/prepare-memory.sh
 
 # Populate a live Redis instance with deterministic 4 KiB values
 MEMORY_PATTERN=redis ./benchmark/prepare-memory.sh
+```
 
 The complete benchmark also accepts the pattern as an argument:
 
 ```bash
 ./benchmark/benchmark.sh --pattern silesia
-```
 ```
 
 The Silesia mode downloads the canonical corpus on the host, verifies its
@@ -291,15 +334,8 @@ host workers. `QPL_ASYNC_SNAPSHOT_DEPTHS` and
 `QPL_ASYNC_RESTORE_DEPTHS` independently control maximum in-flight IAA jobs.
 The daemon refills each completed slot immediately, bounds submission and
 completion waits, reuses buffers, and divides the configured budget across
-independent VM memory slots. By default, `AUTO_CPU_AFFINITY=1` pins the VM and
-receiver to `VCPUS` logical CPUs discovered across every NUMA node on
-`CPU_AFFINITY_SOCKET=0`, then reserves the next logical CPU for the offload
-daemon. The default
-`PREFER_PHYSICAL_CORES=1` orders one hardware thread from every physical core
-before any SMT siblings. Override `VM_CPU_LIST` or `OFFLOAD_CPU` for a specific
-layout, or set `AUTO_CPU_AFFINITY=0` to leave them unbound. Async depths still
-control concurrent IAA jobs; the hardware engines do not execute on the
-offload CPU.
+independent VM memory slots. See [IAA integration](#iaa-integration) for the
+hardware path and [Multi-VM execution](#multi-vm-execution) for CPU placement.
 
 Each measured row includes `cpu_util_pct` from the offload daemon. The KPI
 report shows its median as `median_cpu_util_pct`. This excludes Cloud Hypervisor

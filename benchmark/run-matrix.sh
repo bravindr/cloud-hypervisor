@@ -62,9 +62,12 @@ run_snapshot_case() {
     local record=$5
     local output_dir=$SNAPSHOT_ROOT/${codec}-c${chunk_size}-w${workers}-i${iteration}
 
+    benchmark_event "snapshot ready: codec=$codec chunk=$chunk_size workers=$workers iteration=$iteration"
     wait_for_multi_vm_peers "snapshot-${codec}-c${chunk_size}-w${workers}-i${iteration}"
+    benchmark_event "snapshot starting: codec=$codec chunk=$chunk_size workers=$workers iteration=$iteration"
     RECORD_RESULT=$record "$BENCHMARK_DIR/snapshot.sh" \
         "$codec" "$chunk_size" "$workers" "$iteration" "$output_dir"
+    benchmark_event "snapshot complete: codec=$codec chunk=$chunk_size workers=$workers iteration=$iteration"
     if [[ "$record" == 0 || \
         ("$keep_all_snapshots" != 1 && "$iteration" != "$snapshot_iteration") ]]; then
         rm -rf -- "$output_dir"
@@ -81,9 +84,12 @@ run_restore_case() {
     snapshot_workers=$(snapshot_workers_for_codec "$codec")
     local input_dir=$SNAPSHOT_ROOT/${codec}-c${chunk_size}-w${snapshot_workers}-i${snapshot_iteration}
 
+    benchmark_event "restore ready: codec=$codec chunk=$chunk_size workers=$workers iteration=$iteration"
     wait_for_multi_vm_peers "restore-${codec}-c${chunk_size}-w${workers}-i${iteration}"
+    benchmark_event "restore starting: codec=$codec chunk=$chunk_size workers=$workers iteration=$iteration"
     RECORD_RESULT=$record "$BENCHMARK_DIR/restore.sh" \
         "$input_dir" "$codec" "$chunk_size" "$workers" "$iteration"
+    benchmark_event "restore complete: codec=$codec chunk=$chunk_size workers=$workers iteration=$iteration"
 }
 
 for codec in "${codecs[@]}"; do
