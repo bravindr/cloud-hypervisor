@@ -115,7 +115,7 @@ guest_silesia_path=$3
 guest_redis_dir=$4
 redis_value_size=$5
 redis_auto_install=$6
-shm_size_mib=$7
+shm_size_mib=${7:-}
 output=/dev/shm/ch-snapshot-benchmark.bin
 bytes=$((working_set_mib * 1024 * 1024))
 
