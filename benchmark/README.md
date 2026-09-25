@@ -42,21 +42,29 @@ Cloud Hypervisor uses its existing migration protocol to transfer VM memory and
 state to a separate `offload_daemon`. Compression is outside the VMM process,
 so raw, software, and IAA paths share the same migration interface.
 
-```mermaid
-flowchart LR
-  Guest[Guest VM memory] --> CH[Cloud Hypervisor]
-  CH -->|send-migration: memfds, config, state| OD[offload_daemon]
-  OD --> Codec{Compression codec}
-  Codec --> Raw[Raw copy]
-  Codec --> CPU[LZ4 or Zstd on CPU]
-  Codec --> QPL[Intel QPL]
-  QPL --> IAA[IAA user work queue]
-  Raw --> Files[Snapshot directory]
-  CPU --> Files
-  IAA --> Files
-  Files --> Restore[offload_daemon restore]
-  Restore -->|decompressed memfds, config, state| CH2[Cloud Hypervisor receiver]
-  CH2 --> Guest2[Restored VM]
+The benchmark integration is implemented entirely in user space. Cloud
+Hypervisor, `ch-remote`, `offload_daemon`, Intel QPL, workload preparation,
+snapshot persistence, restore replay, and result collection all run as user
+processes. No custom guest kernel, in-kernel compression path, or guest agent is
+required. The host kernel only provides the standard virtualization, memfd,
+networking, and IAA/IDXD device interfaces used by those processes.
+
+```text
+Snapshot:
+
+Guest VM memory
+    -> Cloud Hypervisor migration
+    -> offload_daemon
+    -> raw copy | LZ4/Zstd on CPU | Intel QPL on IAA
+    -> snapshot directory
+
+Restore:
+
+Snapshot directory
+    -> offload_daemon
+    -> decompression or raw copy
+    -> Cloud Hypervisor migration receiver
+    -> restored VM
 ```
 
 ### IAA integration
@@ -66,6 +74,9 @@ shim in `offload_daemon/src/qpl_shim.c`. Each QPL job submits Deflate work to an
 enabled IAA user work queue. The benchmark setup installs QPL v1.9.0 under
 `/usr/local` when its headers or static library are absent, then configures four
 shared IAA user queues when fewer than `IAX_USER_WQ_COUNT` device nodes exist.
+Queue discovery, job construction, submission, completion handling, and
+fallback codec selection remain in user space; the IAA device executes the
+submitted compression or decompression operation in hardware.
 
 The asynchronous QPL codecs maintain reusable job pools instead of creating a
 job for every chunk. `QPL_ASYNC_SNAPSHOT_DEPTHS` and
