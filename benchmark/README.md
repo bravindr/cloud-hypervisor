@@ -33,6 +33,13 @@ Run multiple VMs concurrently with:
 ./benchmark/benchmark.sh --vms 2
 ```
 
+Measure SLA-qualified VM density across increasing scale points with:
+
+```bash
+./benchmark/scale-benchmark.sh --dry-run
+./benchmark/scale-benchmark.sh
+```
+
 Set `WITH_QPL=0` and remove QPL codecs from `CODECS` for a CPU-only run. Set
 `AUTO_SETUP=0` to report missing dependencies instead of installing them.
 
@@ -104,6 +111,41 @@ CPU per configured software worker for each offload daemon. Per-VM results are s
 synchronized run; CPU utilization and stored bytes are summed across VMs.
 Snapshot and restore events are printed live with `[VM N]` labels and retained
 in each `vm-N/benchmark.log`.
+
+### SLA-qualified VM density
+
+`scale-benchmark.sh` runs the complete synchronized benchmark at every count in
+`SCALE_VM_COUNTS`. The default `auto` setting counts the physical cores on
+`CPU_AFFINITY_SOCKET`, divides them into `VCPUS` plus one offload CPU per
+software worker, and tests powers of two followed by the maximum whole-VM
+allocation. It does not use SMT siblings. At each scale point, raw snapshot and
+restore p95 latency define the corresponding SLA. A codec qualifies only when
+both its snapshot and restore p95 are no greater than raw p95 multiplied by
+`SLA_MULTIPLIER`, which defaults to `1.0`.
+
+Results for each scale point are isolated under
+`benchmark/results/scale/vms-N`. The final `sla-density.csv` records each
+snapshot and restore pass or failure, latency, CPU utilization, compression
+ratio, absolute raw and stored size, GiB saved, end-to-end throughput, and
+average daemon cores. Throughput uses raw snapshot size as the data-volume
+baseline and includes migration, compression or copying, persistence, and the
+completion handshake; it is not pure accelerator throughput.
+`sla-density-summary.csv` reports the maximum qualified VM count, GiB saved,
+snapshot and restore throughput, and daemon cores used at that density for each
+codec, together with all passing and failing scale points.
+
+Override the configured scale points or SLA from the command line:
+
+```bash
+./benchmark/scale-benchmark.sh \
+  --vm-counts "1 2 4 8 12 16" \
+  --sla-multiplier 1.0
+```
+
+Use at least 20 measured iterations for an initial p95 density study and more
+iterations for publication-quality tail-latency claims. Each scale point
+creates TAP devices, guest disks, and concurrent VMs, so validate CPU capacity
+and configuration with `--dry-run` first.
 
 ## Benchmark workflow and features
 
