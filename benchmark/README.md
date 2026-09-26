@@ -85,9 +85,9 @@ and dynamic codec names select fixed or dynamic Deflate Huffman tables.
 `QPL_DEVICE_NUMA_ID_ANY` permits job submission to any enabled IAA device found
 by QPL rather than restricting execution to the calling thread's socket.
 
-IAA engines perform compression and decompression. The pinned offload CPU runs
-the daemon's submission, completion, data movement, and persistence work; IAA
-engine time is not host CPU utilization.
+IAA engines perform compression and decompression. The pinned offload CPU set
+runs the daemon's submission, completion, data movement, and persistence work;
+IAA engine time is not host CPU utilization.
 
 ### Multi-VM execution
 
@@ -99,7 +99,7 @@ same snapshot or restore case starts concurrently in every VM.
 CPU placement is deterministic by default. The allocator discovers all online
 CPUs on `CPU_AFFINITY_SOCKET`, uses one hardware thread from each physical core
 before SMT siblings, assigns `VCPUS` CPUs to each VM, and reserves a separate
-CPU for each offload daemon. Per-VM results are stored under
+CPU per configured software worker for each offload daemon. Per-VM results are stored under
 `benchmark/results/multi-vm/vm-*`. Aggregate latency is the slowest VM for each
 synchronized run; CPU utilization and stored bytes are summed across VMs.
 Snapshot and restore events are printed live with `[VM N]` labels and retained
@@ -348,9 +348,9 @@ hardware path and [Multi-VM execution](#multi-vm-execution) for CPU placement.
 Each measured row includes `cpu_util_pct` from the offload daemon. The KPI
 report shows its median as `median_cpu_util_pct`. This excludes Cloud Hypervisor
 and `ch-remote`; it measures the host CPU cost of raw copying, compression, or
-decompression. With `OFFLOAD_CPU` set, 100% represents one fully occupied host
-CPU even when several daemon threads share that CPU. IAA engine execution is
-not counted as host CPU utilization.
+decompression. `OFFLOAD_CPU` accepts a taskset CPU list such as `4-7`; CPU
+utilization can reach 100% per fully occupied CPU in that set. IAA engine
+execution is not counted as host CPU utilization.
 
 Raw snapshots ignore chunk size and worker count:
 
