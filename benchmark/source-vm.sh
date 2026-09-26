@@ -99,12 +99,27 @@ start_vm() {
 
 control_vm() {
     local action=$1
+    local expected_state command_output info_output compact_info
     require_executable "$REMOTE_BIN"
     [[ -S "$SOURCE_API_SOCKET" ]] || {
         echo "Source API socket is not available: $SOURCE_API_SOCKET" >&2
         exit 1
     }
-    "$REMOTE_BIN" --api-socket "$SOURCE_API_SOCKET" "$action"
+    case "$action" in
+        pause) expected_state=Paused ;;
+        resume) expected_state=Running ;;
+    esac
+    if ! command_output=$("$REMOTE_BIN" --api-socket "$SOURCE_API_SOCKET" "$action" 2>&1); then
+        info_output=$("$REMOTE_BIN" --api-socket "$SOURCE_API_SOCKET" info 2>/dev/null || true)
+        compact_info=${info_output//[[:space:]]/}
+        if [[ "$compact_info" != *"\"state\":\"$expected_state\""* ]]; then
+            printf '%s\n' "$command_output" >&2
+            return 1
+        fi
+        echo "Source VM is already $expected_state; continuing"
+    elif [[ -n "$command_output" ]]; then
+        printf '%s\n' "$command_output"
+    fi
     echo "Source VM: $action"
 }
 

@@ -94,6 +94,17 @@ discover_socket_cpus() {
     done
 }
 
+OFFLOAD_CPU_COUNT=1
+for worker_count in ${SOFTWARE_WORKER_COUNTS:-${WORKER_COUNTS:-1}}; do
+    [[ "$worker_count" =~ ^[1-9][0-9]*$ ]] || {
+        echo "Invalid software worker count '$worker_count': expected a positive integer" >&2
+        exit 2
+    }
+    if ((worker_count > OFFLOAD_CPU_COUNT)); then
+        OFFLOAD_CPU_COUNT=$worker_count
+    fi
+done
+
 if [[ ${AUTO_CPU_AFFINITY:-1} == 1 ]]; then
     CPU_AFFINITY_SOCKET=${CPU_AFFINITY_SOCKET:-0}
     mapfile -t affinity_cpus < <(discover_socket_cpus "$CPU_AFFINITY_SOCKET")
@@ -104,8 +115,8 @@ if [[ ${AUTO_CPU_AFFINITY:-1} == 1 ]]; then
     if [[ ${PREFER_PHYSICAL_CORES:-1} == 1 ]]; then
         mapfile -t affinity_cpus < <(order_cpus_by_physical_core "${affinity_cpus[@]}")
     fi
-    ((${#affinity_cpus[@]} > VCPUS)) || {
-        echo "Socket $CPU_AFFINITY_SOCKET needs at least $((VCPUS + 1)) logical CPUs" >&2
+    ((${#affinity_cpus[@]} >= VCPUS + OFFLOAD_CPU_COUNT)) || {
+        echo "Socket $CPU_AFFINITY_SOCKET needs at least $((VCPUS + OFFLOAD_CPU_COUNT)) logical CPUs" >&2
         exit 1
     }
     if [[ -z ${VM_CPU_LIST:-} ]]; then
@@ -114,19 +125,22 @@ if [[ ${AUTO_CPU_AFFINITY:-1} == 1 ]]; then
     fi
     if [[ -z ${OFFLOAD_CPU:-} ]]; then
         declare -A vm_cpu_set=()
+        offload_cpus=()
         while IFS= read -r cpu; do
             vm_cpu_set[$cpu]=1
         done < <(expand_cpu_list "$VM_CPU_LIST")
         for cpu in "${affinity_cpus[@]}"; do
             if [[ -z ${vm_cpu_set[$cpu]:-} ]]; then
-                OFFLOAD_CPU=$cpu
-                break
+                offload_cpus+=("$cpu")
+                ((${#offload_cpus[@]} == OFFLOAD_CPU_COUNT)) && break
             fi
         done
-        [[ -n ${OFFLOAD_CPU:-} ]] || {
-            echo "No socket $CPU_AFFINITY_SOCKET CPU remains for offload_daemon" >&2
+        ((${#offload_cpus[@]} == OFFLOAD_CPU_COUNT)) || {
+            echo "Socket $CPU_AFFINITY_SOCKET does not have $OFFLOAD_CPU_COUNT CPUs available for offload_daemon" >&2
             exit 1
         }
+        printf -v OFFLOAD_CPU '%s,' "${offload_cpus[@]}"
+        OFFLOAD_CPU=${OFFLOAD_CPU%,}
     fi
 fi
 

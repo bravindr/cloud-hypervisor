@@ -135,7 +135,7 @@ Cloud Hypervisor compression benchmark
     CPU workers:  $SOFTWARE_WORKER_COUNTS
     QPL async:    snapshot [$QPL_ASYNC_SNAPSHOT_DEPTHS], restore [$QPL_ASYNC_RESTORE_DEPTHS]
     VM CPUs:      ${VM_CPU_LIST:-unbound}
-    offload CPU:  ${OFFLOAD_CPU:-unbound}
+    offload CPUs: ${OFFLOAD_CPU:-unbound}
   iterations:   $ITERATIONS measured + $WARMUPS warm-up
   results:      $RESULTS_DIR
 EOF
@@ -145,7 +145,7 @@ if ((vm_count > 1)); then
         echo "Multiple VMs require AUTO_CPU_AFFINITY=1" >&2
         exit 1
     }
-    cpus_per_vm=$((VCPUS + 1))
+    cpus_per_vm=$((VCPUS + OFFLOAD_CPU_COUNT))
     required_cpus=$((vm_count * cpus_per_vm))
     ((${#affinity_cpus[@]} >= required_cpus)) || {
         echo "$vm_count VMs require $required_cpus logical CPUs on socket $CPU_AFFINITY_SOCKET; found ${#affinity_cpus[@]}" >&2
@@ -155,8 +155,11 @@ if ((vm_count > 1)); then
         instance_offset=$((instance * cpus_per_vm))
         printf -v instance_vm_cpus '%s,' "${affinity_cpus[@]:instance_offset:VCPUS}"
         instance_vm_cpus=${instance_vm_cpus%,}
-        printf '  VM %-7d CPUs [%s], offload CPU %s\n' \
-            "$instance" "$instance_vm_cpus" "${affinity_cpus[instance_offset + VCPUS]}"
+        printf -v instance_offload_cpus '%s,' \
+            "${affinity_cpus[@]:instance_offset + VCPUS:OFFLOAD_CPU_COUNT}"
+        instance_offload_cpus=${instance_offload_cpus%,}
+        printf '  VM %-7d CPUs [%s], offload CPUs [%s]\n' \
+            "$instance" "$instance_vm_cpus" "$instance_offload_cpus"
     done
 fi
 
@@ -195,7 +198,7 @@ cleanup() {
     if [[ "$tap_created" == 1 && "$CLEANUP_TAP" == 1 ]]; then
         run_privileged ip link delete "$TAP_NAME" 2>/dev/null || true
     fi
-    if ((exit_code != 0)) && [[ -f "$RESULTS_CSV" ]] &&
+    if ((exit_code != 0 && vm_count == 1)) && [[ -f "$RESULTS_CSV" ]] &&
         tail -n +2 "$RESULTS_CSV" | grep -q .; then
         echo "==> Benchmark failed; generating partial KPI report" >&2
         "$BENCHMARK_DIR/report.py" "$RESULTS_CSV" "$REPORT_CSV" || true
@@ -219,7 +222,8 @@ run_multi_vm_benchmark() {
     local barrier_dir=$multi_results_dir/barriers
     local aggregate_results=$multi_results_dir/results.csv
     local aggregate_report=$multi_results_dir/kpi-report.csv
-    local instance instance_offset instance_vm_cpus instance_results config_file
+    local instance instance_offset instance_vm_cpus instance_offload_cpus
+    local instance_results config_file
     local failed=0 pid
 
     if [[ "$CLEAN_RESULTS" == 1 ]]; then
@@ -234,6 +238,9 @@ run_multi_vm_benchmark() {
         instance_offset=$((instance * cpus_per_vm))
         printf -v instance_vm_cpus '%s,' "${affinity_cpus[@]:instance_offset:VCPUS}"
         instance_vm_cpus=${instance_vm_cpus%,}
+        printf -v instance_offload_cpus '%s,' \
+            "${affinity_cpus[@]:instance_offset + VCPUS:OFFLOAD_CPU_COUNT}"
+        instance_offload_cpus=${instance_offload_cpus%,}
         instance_results=$multi_results_dir/vm-$instance
         config_file=$multi_vm_config_dir/vm-$instance.env
         mkdir -p "$instance_results"
@@ -294,7 +301,7 @@ run_multi_vm_benchmark() {
             write_config_value SSH_KEY "${SSH_KEY:-}"
             write_config_value AUTO_CPU_AFFINITY 0
             write_config_value VM_CPU_LIST "$instance_vm_cpus"
-            write_config_value OFFLOAD_CPU "${affinity_cpus[instance_offset + VCPUS]}"
+            write_config_value OFFLOAD_CPU "$instance_offload_cpus"
             write_config_value INSTANCE_ID "$instance"
             write_config_value MULTI_VM_COUNT "$vm_count"
             write_config_value MULTI_VM_BARRIER_DIR "$barrier_dir"
