@@ -13,7 +13,7 @@ WARM=${WARM-all}                       # all = warm synthetic (~77% zero); "" = 
 CELLS=${CELLS:-"qpl-hardware-static-async:8 lz4:8 raw:0"}
 OUT=$HOME/chlogs/perfdaemon_${WARM:-idle}_$(date +%Y%m%d_%H%M); mkdir -p $OUT
 SOCK=/tmp/chiaa.sock; OSOCK=/tmp/chiaa_offload.sock
-SNAPROOT=/mnt/nvme/scratch/perfsnap; sudo mkdir -p $SNAPROOT
+SNAPROOT=${SNAPROOT:-/mnt/nvme/scratch/perfsnap}; sudo mkdir -p $SNAPROOT
 log() { echo "$(date +%H:%M:%S) $*" | tee -a $OUT/summary.txt; }
 
 sudo rm -f $SOCK $OSOCK

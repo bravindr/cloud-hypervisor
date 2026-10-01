@@ -290,6 +290,39 @@ Findings:
 Prediction for phase 1 on this cell: snapshot wall 1.16 → ~0.45 s, daemon CPU
 1.35 → ~0.3 s (IAA submit/poll + output writes), identical output and manifest.
 
+## 7b. Same guest through `djb-dsa-iaa` (in-VMM chain), for scale
+
+Same warm guest and base point, `chsnap3.sh fullziaa` with 64 KiB classify,
+`CH_IAA_ASYNC=128`, spin wait, STREAM, the same 4 node-0 DSA WQs; their daemon
+rerun with output on the same tmpfs (`/mnt/chsnap`) so storage is equal.
+
+| | `iaa-integration` daemon, qpl-hardware-static-async w8 | `djb-dsa-iaa`, 1st snapshot of the process | `djb-dsa-iaa`, 2nd snapshot |
+|---|---|---|---|
+| snapshot wall | 1.12 s | 0.52 s | **0.18 s** |
+| CPU | 1.35 core-s | 0.50 core-s | **0.15 core-s** |
+| classify | CPU byte scan, ~1.0 core-s, serial per slot | DSA COMPARE 341 ms (336 ms waiting on first-touch IOMMU faults) | DSA COMPARE **32 ms** |
+| kept for compression | 1143 MiB (1 MiB chunks) | 1076 MiB (64 KiB chunks) | same |
+| compressed output | 441 MiB (0.39 of kept) | 437 MiB (0.397) | same |
+| source access | pread copy of the memfd | guest memory mapped in-process | same |
+| raw (uncompressed) path | 0.60 s / 0.80 s sys, sparse copy skips holes | 0.84 s / 0.82 core-s `write()` of all 4 GiB | same |
+
+The 6× wall and 9× CPU gap in steady state is the zero scan plus the pread
+copy, which is what §4 removes. Two things the daemon architecture adds that
+the in-VMM chain does not pay:
+
+- **Cold IOMMU translations.** Our first snapshot spent 336 ms blocked on DSA
+  page faults (shared-virtual-addressing first touch of 4 GiB of 2 MiB
+  hugetlb, ~2048 faults). The daemon is a fresh process per snapshot, so it
+  pays this every time unless it stays resident; and their default guest is
+  **not hugepage-backed**, so a 4 GiB memfd is ~1 M 4 KiB faults, not 2048.
+  Phase 1 must measure DSA classify on a 4 KiB-backed memfd from a fresh
+  process before the 0.45 s prediction is trusted; mitigations are a resident
+  daemon, hugepage-backed guests, or `MADV_POPULATE_READ` on the mapping
+  (CPU-cheap: it only walks page tables, no data touch) before submitting.
+- **Sparse raw copy is better than ours**: their raw path skips holes and
+  beat our dense `write()` (0.60 vs 0.84 s). The DSA MEMMOVE row in §2 should
+  keep that hole-skipping.
+
 ## 7. Phases and validation
 
 | phase | content | cell to run | pass criterion |
