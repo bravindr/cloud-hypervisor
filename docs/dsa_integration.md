@@ -17,7 +17,8 @@ one. The QPL path is layered as:
 |---|---|---|
 | C shim | `offload_daemon/src/qpl_shim.c` | one `qpl_job` per slot: create / submit_compress / check / wait / destroy |
 | Rust FFI + pool | `offload_daemon/src/qpl.rs` | `Job`, `JobPool` (bounded in-flight slots, reused in/out buffers, `QUEUES_ARE_BUSY` retry, 60 s bound) |
-| pipeline | `offload_daemon/src/qpl_pipeline.rs` | `compress_files` / `decompress_files`: ring over the pool, `FileMapping` (mmap) source, `is_zero` byte scan, manifest records |
+| live async path | `offload_daemon/src/compression.rs` | `compress_file_qpl_async` → `submit_next_compression_chunk`: **pread** each chunk into the pool's input buffer, `input.iter().all(\|b\| *b == 0)` byte scan, `submit_compress`; `dump_memory_slots` in `main.rs` calls `compress_file` with one thread per slot |
+| mmap pipeline | `offload_daemon/src/qpl_pipeline.rs` | `compress_files` / `decompress_files` over a `FileMapping` (mmap) source with `is_zero` and `submit_compress_mapped_input`. **No callers outside its own tests** on this branch; the live path is the pread one above |
 | codec plumbing | `offload_daemon/src/compression.rs` | `Codec`, `ChunkRecord { uncompressed_offset/len, compressed_offset/len, zero }`, `SlotManifest`, sync path |
 | build | `offload_daemon/build.rs`, feature `qpl` | `cc::Build` of the shim, static `libqpl.a`, `QPL_INCLUDE_DIR` / `QPL_LIB_DIR` |
 
@@ -65,8 +66,8 @@ That is the same shape as `qpl.rs`'s submit/check, so a `dto.rs` can mirror it.
 
 | stage | today | DSA op | DTO entry point | expected |
 |---|---|---|---|---|
-| **zero classify** per chunk | `FileMapping::is_zero` byte loop on the worker thread (`qpl_pipeline.rs:77`), synchronous before each IAA submit | COMPARE chunk vs. a resident zero buffer | **missing in `dto.h`** (only the `memcmp` interposer, synchronous); add `dto_submit_compare` (§4) | ~37 ms / 4 GiB, no CPU; today the 4 GiB scan is all CPU and sits in the IAA submit path |
-| **gather / copy** of kept chunks into the IAA input | none needed: IAA reads the mmap'd source directly (`submit_compress_mapped_input`) | — | — | nothing to do while the chunk is the compression unit |
+| **zero classify** per chunk | `input.iter().all(..)` byte loop in `submit_next_compression_chunk`, on the one thread per slot, synchronous before each IAA submit; measured **75–85 % of daemon CPU and the whole wall** (§7a) | COMPARE chunk vs. a resident zero buffer | **missing in `dto.h`** (only the `memcmp` interposer, synchronous); add `dto_submit_compare` (§4) | ~37 ms / 4 GiB, no CPU; today the 4 GiB scan is all CPU and sits in the IAA submit path |
+| **source read** of every chunk | `read_exact_at` (pread) of each 1 MiB chunk into the pool buffer: a kernel copy of the whole guest (`hugetlbfs_read_iter`/`_copy_to_iter`, 12 % of daemon CPU, §7a) | none: map the memfd instead | `FileMapping` + `submit_compress_mapped_input` already exist in `qpl_pipeline.rs` | removes the 4 GiB copy; DSA needs the source mapped anyway |
 | **raw snapshot** (no `--compression`) | `copy_region` memfd → sparse file via syscalls | MEMMOVE | `dto_batch_copy` / `dto_submit_memcpy_crc` on an mmap'd destination | 15 → 2 ms per 475 MiB (in-VMM figure); needs mmap on both sides |
 | **raw restore** | `copy_region` file → memfd | MEMMOVE | same | same |
 | **restore fill** of zero chunks | holes left in the memfd; guest pays first-touch later | MEMFILL | `dto_memset_pages(start, end, 4096)` on the mapped memfd | 3.1 GiB in 16 ms vs 0.36 s; only when the restore wants populated memory (`--populate`, see §6) |
@@ -143,8 +144,10 @@ chunk cursor ──► DsaPool (depth D) ──► zero?  ──yes──► Chu
   same cursor treatment. Both are polled in one loop so the worker thread
   never blocks on either engine.
 - Memory: the zero buffer is one chunk (1 MiB) per pool; no copies are added.
-- The source is a `FileMapping` of the memfd, which is fully populated when a
-  running VM is snapshotted. DTO sets `BOF`, so a hole (restore of a sparse
+- The source becomes a `FileMapping` of the slot memfd (the live path preads
+  today, §7a; DSA needs a mapped source, and IAA can take the mapped input via
+  `submit_compress_mapped_input`, so the pread copy goes away in the same
+  change). The memfd is fully populated when a running VM is snapshotted. DTO sets `BOF`, so a hole (restore of a sparse
   dump, or an unbacked memfd page) is handled by the kernel fault path instead
   of a `PAGE_FAULT_NOBOF` error.
 
@@ -228,19 +231,76 @@ memfd and leaves zero chunks as holes. Two DSA additions, both optional flags:
 sensible offload threshold in user space (the kernel-side offload is a separate
 project).
 
+## 7a. Measured baseline on `iaa-integration` (2026-10-01, gnr-qual1)
+
+4 GiB guest (`--memory size=4G,hugepages=on,hugepage_size=2M,shared=on`, 2
+vCPUs, node 0), paused at `AGENT_BASE_POINT`, snapshotted through the daemon
+with `send-migration ... memory_mode=memfds,preserve_source=on`. Two guests:
+*warm* (synthetic working set, 72 % of 1 MiB chunks all-zero: 2911/3072 in the
+3 GiB slot, 42/1024 in the 1 GiB slot) and *idle* (fresh boot, ~90 % zero).
+`--chunk-size 1048576 --workers 8` (4 in-flight jobs per slot). Daemon measured
+with `/usr/bin/time`, then separately under `perf record --call-graph dwarf`
+on a debuginfo build (`CARGO_PROFILE_RELEASE_DEBUG=1 ..._STRIP=false`).
+Driver: `~/chlogs/perf_daemon.sh`; results `~/chlogs/perfdaemon_{all,idle}_20261001_13*`.
+
+| cell | migration wall | daemon user | daemon sys | daemon CPU | output |
+|---|---|---|---|---|---|
+| qpl-hardware-static-async, warm | 1.16 s | 0.99 s | 0.36 s | 1.35 s | 455 MiB |
+| qpl-hardware-static-async, idle | 1.20 s | 1.29 s | 0.20 s | 1.49 s | 161 MiB |
+| lz4 w8, warm | 0.71 s | 2.62 s | 0.68 s | 3.30 s | 466 MiB |
+| raw (sparse copy), warm | 2.18 s | 0.00 s | 1.53 s | 1.53 s | 4097 MiB |
+
+Where the QPL daemon's cycles go (perf, self time):
+
+| symbol | warm | idle | what it is |
+|---|---|---|---|
+| `compression::submit_next_compression_chunk` (the `iter().all()` loop, inlined) | 75.1 % | 85.4 % | zero scan |
+| `_copy_to_iter` + `hugetlbfs_read_iter` (pread of the memfd) | 8.2 % (12.3 % incl. children) | 4.6 % | source copy |
+| `iov_iter_zero` | 3.3 % | 5.0 % | pread of unbacked (hole) pages |
+| `copy_folio_from_iter_atomic` (pwrite of output) | 4.0 % | 1.1 % | output write |
+| QPL submit/poll, everything else | < 2 % | < 2 % | |
+
+Findings:
+
+1. **The zero scan is the snapshot.** Wall is flat at ~1.2 s whether the guest
+   holds 455 MiB or 161 MiB of compressible data, because the 3 GiB slot's
+   single thread scans ~2.8 GiB of zero chunks at ~2.6 GiB/s before anything
+   reaches IAA. The 1 GiB slot (mostly non-zero, early exit) finished at
+   2.5 GiB/s; both slots report 2.5–2.7 "GiB/s" because the scan sets the pace.
+2. **The loop is byte-at-a-time.** Disassembly of the hot address:
+   `cmpb $0,(%rbp,%rax); lea 1(%rax),%rax; je` — the workspace
+   `[profile.release] opt-level = "s"` keeps the iterator loop scalar, and
+   `all()`'s short-circuit prevents the autovectoriser from widening it. A
+   word-wide or SIMD scan (compare 32–64 B per iteration) would run ~10×
+   faster on CPU; that, not today's loop, is the baseline DSA classify must
+   beat on wall. On CPU time DSA wins regardless (37 ms of device time vs
+   ~0.3 s of a core at 10 GiB/s).
+3. **The source is copied, not mapped.** Every chunk is pread into a pool
+   buffer: a full 4 GiB kernel copy (12 % of CPU, more for hugetlb). The mmap
+   variant exists (`qpl_pipeline.rs`) but is unused. Mapping the memfd is a
+   prerequisite for DSA and removes this copy for IAA too.
+4. **LZ4 beats IAA on wall today** (0.71 vs 1.16 s) only because its 8 worker
+   threads split the scan 8 ways; it costs 2.4× the CPU. With the scan off the
+   critical path the IAA cell should drop to the 1 GiB slot's IAA time
+   (~0.4 s at 4 in flight) or below with the worker budget rebalanced.
+5. **Raw path**: 2.2 s and 1.5 s of sys for a 4 GiB sparse copy
+   (`copy_folio_from_iter_atomic` 31 %, `_copy_to_iter` 11 %): the DSA
+   MEMMOVE row in §2 applies.
+
+Prediction for phase 1 on this cell: snapshot wall 1.16 → ~0.45 s, daemon CPU
+1.35 → ~0.3 s (IAA submit/poll + output writes), identical output and manifest.
+
 ## 7. Phases and validation
 
 | phase | content | cell to run | pass criterion |
 |---|---|---|---|
-| 1 | DTO fork + `dto.rs` + two-stage ring, feature `dto` | `benchmark/` harness, `qpl-hardware-static-async`, 4 GiB guest, `--workers 8`, `--dsa-depth 32`, A/B feature on/off | same output bytes and manifest; snapshot wall ≤ today; worker CPU (`perf stat` of the daemon) down by the `is_zero` share |
+| 0 | mmap the slot memfd in the live async path (reuse `FileMapping` + `submit_compress_mapped_input`), vectorised CPU scan | §7a cell, `~/chlogs/perf_daemon.sh` | removes the pread 12 %; gives the fair CPU baseline for phase 1 |
+| 1 | DTO fork + `dto.rs` + two-stage ring, feature `dto` | §7a cell, A/B feature on/off, warm and idle guests | same output bytes and manifest; wall ≤ phase 0; daemon CPU ≤ 0.4 s (from 1.35 s) |
 | 2 | per-chunk CRC32 from `dto_submit_crc` or IAA `crc32`, manifest `crc32: Option<u32>` | restore with a deliberately corrupted chunk | restore refuses the chunk |
 | 3 | `--populate` MEMFILL, raw copy via `dto_batch_copy` | restore-latency cell: time to guest console marker | populate ≥ 10× faster than MADV_POPULATE_WRITE on the same guest |
 
-Before phase 1 lands, one measurement is worth taking on this branch as-is:
-`perf record` of the daemon during a 4 GiB `qpl-hardware-static-async`
-snapshot, to size the `is_zero` share of CPU and of wall time. The in-VMM
-figure (65 % of the chain) is for a DSA classify competing with IAA on memory
-bandwidth; the CPU loop's share will differ.
+The baseline measurement is in §7a: the CPU zero scan is 75–85 % of daemon
+CPU and sets the wall on its own.
 
 ## 8. Open questions for the `iaa-integration` authors
 

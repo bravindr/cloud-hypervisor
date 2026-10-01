@@ -1,0 +1,10 @@
+13:10:23 guest paused at AGENT_BASE_POINT (warm=all)
+13:10:25 qpl-hardware-static-async w=8: migration wall 1159 ms, daemon rc=0, wall=1.25 user=0.99 sys=0.36 maxrss=19284kB, out=455 MiB
+[2026-10-01T20:10:24Z INFO  offload_daemon] Compressed slot 1: codec=qpl-hardware-static-async, chunks=1024, input=1073741824 bytes, output=418975631 bytes, ratio=0.390, throughput=2.427 GiB/s
+[2026-10-01T20:10:25Z INFO  offload_daemon] Compressed slot 0: codec=qpl-hardware-static-async, chunks=3072, input=3221225472 bytes, output=56757369 bytes, ratio=0.018, throughput=2.645 GiB/s
+13:10:27 qpl-hardware-static-async w=8: perf cell wall 1872 ms, rc=0
+13:10:29 lz4 w=8: migration wall 711 ms, daemon rc=0, wall=0.80 user=2.62 sys=0.68 maxrss=13788kB, out=466 MiB
+[2026-10-01T20:10:28Z INFO  offload_daemon] Compressed slot 0: codec=lz4, chunks=3072, input=3221225472 bytes, output=53344849 bytes, ratio=0.017, throughput=8.971 GiB/s
+[2026-10-01T20:10:29Z INFO  offload_daemon] Compressed slot 1: codec=lz4, chunks=1024, input=1073741824 bytes, output=433860403 bytes, ratio=0.404, throughput=1.447 GiB/s
+13:10:31 lz4 w=8: perf cell wall 1844 ms, rc=0
+13:10:33 DONE -> /home/byrnedan/chlogs/perfdaemon_all_20261001_1309

@@ -1,0 +1,7 @@
+    37.45%  offload_daemon  offload_daemon        [.] lz4_flex::block::compress::compress_internal
+    31.33%  offload_daemon  offload_daemon        [.] std::sys::backtrace::__rust_begin_short_backtrace
+     9.62%  offload_daemon  offload_daemon        [.] lz4_flex::block::compress::count_same_bytes
+     5.37%  offload_daemon  [kernel.kallsyms]     [k] 0xffffffffb6bbb2de
+     1.89%  offload_daemon  [kernel.kallsyms]     [k] 0xffffffffb6bba0b4
+     1.35%  offload_daemon  [kernel.kallsyms]     [k] 0xffffffffb6bbaae6
+     0.84%  offload_daemon  [kernel.kallsyms]     [k] 0xffffffffb65639c5
