@@ -109,6 +109,13 @@ In-VMM: `fullziaa`, 64 KiB, `CH_IAA_ASYNC=128`, spin, STREAM, 4 DSA WQs.
 | compressed | 441 MiB (0.39) | 437 MiB (0.397) | same |
 | raw (uncompressed) path | 0.60 s / 0.80 s sys, hole-skipping | 0.84 s / 0.82 core-s dense `write()` | same |
 
+After the `dsa-integration` work (same guest, `--classify dsa --workers 32`,
+see `dsa_integration.md` §7c): daemon **0.12 s / 0.20 core-s** with
+byte-identical output, i.e. faster on wall than the in-VMM chain and within
+0.05 core-s of it, while keeping the daemon's process model. DSA restore
+populate was implemented and measured slower than `MADV_POPULATE_WRITE` on
+both page sizes (the in-VMM 16 ms figure was on pre-populated memory).
+
 Where the daemon's cycles go (perf): 75–85 % zero scan, 8–12 % pread copy,
 3–5 % `iov_iter_zero` (pread of unbacked pages), 4 % pwrite, < 2 % QPL. The
 wall is flat between a warm (455 MiB out) and an idle (161 MiB out) guest

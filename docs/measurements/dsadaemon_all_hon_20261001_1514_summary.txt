@@ -1,0 +1,57 @@
+15:15:04 guest paused at AGENT_BASE_POINT (warm=all, hugepages=on)
+15:15:04 cpu: migration wall 492 ms, daemon rc=0, wall=0.58 user=0.22 sys=0.41, out=446 MiB
+    classify=cpu prefault=2.0ms zero_chunks=27/1024 dsa submitted=0 fallback=0 failed=0 cpu_scans=1024 crc=false
+    Compressed slot 1: codec=qpl-hardware-static-async, chunks=1024, input=1073741824 bytes, output=420670879 bytes, ratio=0.392, throughput=5.618 GiB/s
+    classify=cpu prefault=266.8ms zero_chunks=2963/3072 dsa submitted=0 fallback=0 failed=0 cpu_scans=3072 crc=false
+    Compressed slot 0: codec=qpl-hardware-static-async, chunks=3072, input=3221225472 bytes, output=36946814 bytes, ratio=0.011, throughput=6.438 GiB/s
+15:15:05 dsa: migration wall 214 ms, daemon rc=0, wall=0.30 user=0.14 sys=0.17, out=446 MiB
+    classify=dsa prefault=1.9ms zero_chunks=2963/3072 dsa submitted=3072 fallback=0 failed=0 cpu_scans=0 crc=false
+    Compressed slot 0: codec=qpl-hardware-static-async, chunks=3072, input=3221225472 bytes, output=36946814 bytes, ratio=0.011, throughput=23.311 GiB/s
+    classify=dsa prefault=0.6ms zero_chunks=27/1024 dsa submitted=1024 fallback=0 failed=0 cpu_scans=0 crc=false
+    Compressed slot 1: codec=qpl-hardware-static-async, chunks=1024, input=1073741824 bytes, output=420670879 bytes, ratio=0.392, throughput=5.379 GiB/s
+15:15:05 dsa_crc: migration wall 228 ms, daemon rc=0, wall=0.31 user=0.13 sys=0.19, out=446 MiB
+    classify=dsa prefault=1.6ms zero_chunks=2963/3072 dsa submitted=6144 fallback=0 failed=0 cpu_scans=0 crc=true
+    Compressed slot 0: codec=qpl-hardware-static-async, chunks=3072, input=3221225472 bytes, output=36946814 bytes, ratio=0.011, throughput=23.622 GiB/s
+    classify=dsa prefault=0.8ms zero_chunks=27/1024 dsa submitted=2048 fallback=0 failed=0 cpu_scans=0 crc=true
+    Compressed slot 1: codec=qpl-hardware-static-async, chunks=1024, input=1073741824 bytes, output=420670879 bytes, ratio=0.392, throughput=4.957 GiB/s
+15:15:07 dsa_nopf: migration wall 1357 ms, daemon rc=0, wall=1.44 user=1.03 sys=0.92, out=446 MiB
+    classify=dsa prefault=off zero_chunks=27/1024 dsa submitted=1024 fallback=0 failed=0 cpu_scans=0 crc=false
+    Compressed slot 1: codec=qpl-hardware-static-async, chunks=1024, input=1073741824 bytes, output=420670879 bytes, ratio=0.392, throughput=1.579 GiB/s
+    classify=dsa prefault=off zero_chunks=2963/3072 dsa submitted=3072 fallback=0 failed=0 cpu_scans=0 crc=false
+    Compressed slot 0: codec=qpl-hardware-static-async, chunks=3072, input=3221225472 bytes, output=36946814 bytes, ratio=0.011, throughput=2.260 GiB/s
+15:15:07 cpu_crc: migration wall 331 ms, daemon rc=0, wall=0.42 user=0.38 sys=0.14, out=443 MiB
+    classify=cpu prefault=0.7ms zero_chunks=2963/3072 dsa submitted=0 fallback=0 failed=0 cpu_scans=3072 crc=true
+    Compressed slot 0: codec=qpl-hardware-static-async, chunks=3072, input=3221225472 bytes, output=36946814 bytes, ratio=0.011, throughput=13.909 GiB/s
+    classify=cpu prefault=0.5ms zero_chunks=27/1024 dsa submitted=0 fallback=0 failed=0 cpu_scans=1024 crc=true
+    Compressed slot 1: codec=qpl-hardware-static-async, chunks=1024, input=1073741824 bytes, output=420670879 bytes, ratio=0.392, throughput=3.305 GiB/s
+15:15:07 manifest equivalence (cpu vs dsa, ignoring crc):
+  dsa      zero 2990/4096  records IDENTICAL to cpu
+  dsa_crc  zero 2990/4096  records IDENTICAL to cpu
+  dsa_nopf zero 2990/4096  records IDENTICAL to cpu
+  cpu_crc  zero 2990/4096  records IDENTICAL to cpu
+  dsa_crc slot0: 109 records carry crc32c, 2963 zero records carry none: ok
+  dsa crc == software crc for every slot0 chunk: ok
+15:15:11 restore verify_populate_dsa: rc=0 wall 2659 ms, wall=2.64 user=1.33 sys=3.71
+    crc verify: 109 chunks checked (dsa submitted=109 fallback=0 failed=0)
+    Decompressed offload-slot-0: chunks=3072, compressed=36946814 bytes, output=3221225472 bytes, ratio=0.011, throughput=55.829 GiB/s
+    populate: 5 zero runs, dsa submitted=5 fallback=0 failed=0
+    Populated offload-slot-0: 3106930688 zero bytes via dsa in 2294.0 ms
+    crc verify: 997 chunks checked (dsa submitted=997 fallback=0 failed=0)
+    Decompressed offload-slot-1: chunks=1024, compressed=420670879 bytes, output=1073741824 bytes, ratio=0.392, throughput=0.386 GiB/s
+    populate: 15 zero runs, dsa submitted=15 fallback=0 failed=0
+    Populated offload-slot-1: 28311552 zero bytes via dsa in 20.4 ms
+15:15:19     restored guest progressed to AGENT_DIFF_POINT: yes
+15:15:21 restore verify_populate_cpu: rc=0 wall 1146 ms, wall=1.13 user=0.00 sys=1.41
+    crc verify: 109 chunks checked (dsa submitted=109 fallback=0 failed=0)
+    Decompressed offload-slot-0: chunks=3072, compressed=36946814 bytes, output=3221225472 bytes, ratio=0.011, throughput=60.382 GiB/s
+    crc verify: 997 chunks checked (dsa submitted=997 fallback=0 failed=0)
+    Decompressed offload-slot-1: chunks=1024, compressed=420670879 bytes, output=1073741824 bytes, ratio=0.392, throughput=3.227 GiB/s
+    Populated offload-slot-1: 28311552 zero bytes via cpu in 9.3 ms
+    Populated offload-slot-0: 3106930688 zero bytes via cpu in 977.8 ms
+15:15:29     restored guest progressed to AGENT_DIFF_POINT: yes
+15:15:31 restore corrupt_refused: rc=1 wall 92 ms, Command exited with non-zero status 1
+wall=0.07 user=0.01 sys=0.07
+    crc verify: 109 chunks checked (dsa submitted=109 fallback=0 failed=0)
+    Decompressed offload-slot-0: chunks=3072, compressed=36946814 bytes, output=3221225472 bytes, ratio=0.011, throughput=52.845 GiB/s
+Error: Compression(LengthMismatch { expected: 1048576, actual: 10 })
+15:15:32 DONE -> /home/byrnedan/chlogs/dsadaemon_all_hon_20261001_1514

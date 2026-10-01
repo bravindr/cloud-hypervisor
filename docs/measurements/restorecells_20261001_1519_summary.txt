@@ -1,0 +1,33 @@
+15:19:50 snapshot /mnt/chsnap/dsasnap/dsa_crc, guest console /home/byrnedan/chlogs/dsadaemon_all_hon_20261001_1514/console.log
+15:19:59 p4k_none: rc=0 wall 346 ms wall=0.33 user=0.01 sys=0.35 guest-progressed=yes
+    crc verify: 109 chunks checked (dsa submitted=109 fallback=0 failed=0)
+    Decompressed offload-slot-0: chunks=3072, compressed=36946814 bytes, output=3221225472 bytes, ratio=0.011, throughput=53.766 GiB/s
+    crc verify: 997 chunks checked (dsa submitted=997 fallback=0 failed=0)
+    Decompressed offload-slot-1: chunks=1024, compressed=420670879 bytes, output=1073741824 bytes, ratio=0.392, throughput=3.242 GiB/s
+15:20:09 p4k_cpu: rc=0 wall 1181 ms wall=1.16 user=0.02 sys=1.43 guest-progressed=yes
+    crc verify: 109 chunks checked (dsa submitted=109 fallback=0 failed=0)
+    Decompressed offload-slot-0: chunks=3072, compressed=36946814 bytes, output=3221225472 bytes, ratio=0.011, throughput=61.555 GiB/s
+    crc verify: 997 chunks checked (dsa submitted=997 fallback=0 failed=0)
+    Decompressed offload-slot-1: chunks=1024, compressed=420670879 bytes, output=1073741824 bytes, ratio=0.392, throughput=3.231 GiB/s
+    Populated offload-slot-1: 28311552 zero bytes via cpu in 10.1 ms
+    Populated offload-slot-0: 3106930688 zero bytes via cpu in 998.3 ms
+15:20:10 p2m_none: rc=1 wall 42 ms wall=0.03 user=0.00 sys=0.02 guest-progressed=n/a
+Error: Compression(Write(Os { code: 22, kind: InvalidInput, message: "Invalid argument" }))
+15:20:12 p2m_cpu: rc=1 wall 54 ms wall=0.03 user=0.00 sys=0.03 guest-progressed=n/a
+Error: Compression(Write(Os { code: 22, kind: InvalidInput, message: "Invalid argument" }))
+15:20:13 p2m_dsa: rc=1 wall 48 ms wall=0.03 user=0.01 sys=0.02 guest-progressed=n/a
+Error: Compression(Write(Os { code: 22, kind: InvalidInput, message: "Invalid argument" }))
+15:20:24 p4k_dsa: rc=0 wall 2653 ms wall=2.64 user=1.29 sys=3.75 guest-progressed=yes
+    crc verify: 109 chunks checked (dsa submitted=109 fallback=0 failed=0)
+    Decompressed offload-slot-0: chunks=3072, compressed=36946814 bytes, output=3221225472 bytes, ratio=0.011, throughput=55.673 GiB/s
+    populate: 5 zero runs, dsa submitted=5 fallback=0 failed=0
+    Populated offload-slot-0: 3106930688 zero bytes via dsa in 2295.0 ms
+    crc verify: 997 chunks checked (dsa submitted=997 fallback=0 failed=0)
+    Decompressed offload-slot-1: chunks=1024, compressed=420670879 bytes, output=1073741824 bytes, ratio=0.392, throughput=0.385 GiB/s
+    populate: 15 zero runs, dsa submitted=15 fallback=0 failed=0
+    Populated offload-slot-1: 28311552 zero bytes via dsa in 20.7 ms
+15:20:26 crc_corrupt: rc=1 wall 88 ms wall=0.07 user=0.01 sys=0.06 guest-progressed=n/a
+    crc verify: 109 chunks checked (dsa submitted=109 fallback=0 failed=0)
+    Decompressed offload-slot-0: chunks=3072, compressed=36946814 bytes, output=3221225472 bytes, ratio=0.011, throughput=56.915 GiB/s
+Error: Compression(CrcMismatch { offset: 3145728, expected: 2122941892, actual: 2122941893 })
+15:20:27 DONE -> /home/byrnedan/chlogs/restorecells_20261001_1519

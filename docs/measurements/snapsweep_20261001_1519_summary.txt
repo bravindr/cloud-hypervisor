@@ -1,0 +1,10 @@
+15:19:46 guest paused
+15:19:47 dsa_w8: wall 473 ms rc=0 wall=0.56 user=0.08 sys=0.42 | throughput=2.260 slot1 throughput=9.174 slot0
+15:19:47 dsa_w16: wall 149 ms rc=0 wall=0.24 user=0.04 sys=0.15 | throughput=8.103 slot1 throughput=33.618 slot0
+15:19:48 dsa_w32: wall 121 ms rc=0 wall=0.21 user=0.04 sys=0.14 | throughput=11.299 slot1 throughput=31.943 slot0
+15:19:48 dsa_w64: wall 139 ms rc=0 wall=0.23 user=0.03 sys=0.15 | throughput=9.214 slot1 throughput=36.621 slot0
+15:19:48 dsa_w128: wall 154 ms rc=0 wall=0.24 user=0.03 sys=0.17 | throughput=8.339 slot1 throughput=38.831 slot0
+15:19:49 cpu_w32: wall 221 ms rc=0 wall=0.31 user=0.18 sys=0.10 | throughput=12.532 slot1 throughput=15.153 slot0
+15:19:49 dsa_w32: wall 115 ms rc=0 wall=0.20 user=0.04 sys=0.11 | throughput=11.578 slot1 throughput=45.538 slot0
+15:19:49 dsa_w64: wall 137 ms rc=0 wall=0.22 user=0.03 sys=0.16 | throughput=9.484 slot1 throughput=37.940 slot0
+15:19:50 DONE -> /home/byrnedan/chlogs/snapsweep_20261001_1519

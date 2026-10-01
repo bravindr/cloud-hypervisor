@@ -1,7 +1,8 @@
 # DSA integration for the offload daemon (design)
 
-Branch: `dsa-integration` (from `iaa-integration` @ a84016250). Status: design,
-no code yet. Companion: `docs/snapshot_restore.md` ("Offload Snapshot and
+Branch: `dsa-integration` (from `iaa-integration` @ a84016250). Status:
+**implemented and measured** (§7c); §4 below is the design as built, with the
+deviations noted inline. Companion: `docs/snapshot_restore.md` ("Offload Snapshot and
 Restore", "Compression evaluation") describes the IAA side this builds on.
 
 ## 1. Starting points
@@ -323,14 +324,134 @@ the in-VMM chain does not pay:
   beat our dense `write()` (0.60 vs 0.84 s). The DSA MEMMOVE row in §2 should
   keep that hole-skipping.
 
+## 7c. Implemented: results (2026-10-01)
+
+What landed on this branch (daemon side) and on DTO branch `ch-async-ops`
+(`~/DTO`, commit 9b5eb29):
+
+| piece | where | note |
+|---|---|---|
+| DTO async COMPARE / MEMFILL / Translation Fetch + result accessors | `DTO/dto.c`, `dto.h` | `dto_submit_compare`, `dto_submit_memfill`, `dto_submit_transl_fetch`, `dto_async_result/bytes_completed/status`; prepare/enqueue split out of the CRC path |
+| `libdto_explicit` | `DTO/CMakeLists.txt` (`DTO_BUILD_EXPLICIT`) | same code, no libc interposers; the daemon links this |
+| `dto-async-test` | DTO tree | correctness of the new ops, CRC convention, first-touch experiment |
+| `dto.rs` | daemon | Rust FFI over `dto_async_op`, `Submit`/`Poll`, zero buffer, counters |
+| `mapping.rs` | daemon | slot memfd mapped (read for snapshot, write for restore), `MADV_POPULATE_READ/WRITE` |
+| `crc.rs` | daemon | word-wide `is_zero`, software CRC32C in the DSA convention (seed 0, no final xor, SSE4.2) |
+| `classify.rs` | daemon | stage-one ring: COMPARE (+CRC) per chunk, CPU fallback per op |
+| `compression.rs` | daemon | async path rewritten as the two-stage ring; mapped input to IAA (`JobPool::submit_compress_from`); `ChunkRecord.crc32c`; restore writes into the destination mapping; `ChunkVerifier` (DSA CRC on restore); `populate_zero_chunks` |
+| CLI | `main.rs` | snapshot `--classify cpu\|dsa --dsa-depth N --crc --no-prefault`; restore `--verify-crc --populate none\|cpu\|dsa --hugetlb --dsa-depth N` |
+| build | feature `dto`, `DTO_LIB_DIR` | links `libdto_explicit` dynamically with an rpath |
+
+Deviations from §4: no C shim and no `qpl_pipeline.rs` reuse (its `FileMapping`
+became `mapping.rs`); CRC is issued together with COMPARE for every chunk
+rather than only for kept chunks (one extra cheap descriptor, no second
+stage); Translation Fetch is implemented in DTO but not used by the daemon
+(§7c.3).
+
+### 7c.1 Snapshot, same warm 4 GiB guest as §7a/§7b (tmpfs output)
+
+`qpl-hardware-static-async --chunk-size 1 MiB`, 2 slot threads, DTO on the 4
+node-0 DSA WQs (`DTO_WQ_LIST`, `DTO_IS_NUMA_AWARE=1`). `w` = IAA jobs in
+flight across the two slots.
+
+| cell | wall | daemon CPU | notes |
+|---|---|---|---|
+| baseline `iaa-integration` (pread + byte scan), w8 | 1120 ms | 1.35 core-s | §7a |
+| mmap + word scan (`--classify cpu`), w8 | 331–492 ms | 0.52–0.63 core-s | phase 0 alone: ~2.5× |
+| `--classify dsa`, w8 | 214 ms | 0.30 core-s | classify no longer on the critical path; IAA at 4 jobs/slot is |
+| `--classify dsa --crc`, w8 | 228 ms | 0.31 core-s | CRC adds ~14 ms (6144 extra descriptors) |
+| `--classify dsa --no-prefault`, w8 | 1357 ms | 1.95 core-s | device page-request faults on first touch; the §7c.3 cost |
+| `--classify dsa`, w16 | 149 ms | 0.19 core-s | |
+| **`--classify dsa`, w32** | **115–121 ms** | **0.20 core-s** | best; 9.5× wall, 6.7× CPU vs baseline |
+| `--classify dsa`, w64 / w128 | 137–154 ms | 0.22–0.24 core-s | more jobs than the IAA WQs take without `QUEUES_ARE_BUSY` retries |
+| `--classify cpu`, w32 | 221 ms | 0.31 core-s | the fair CPU comparison at the same IAA depth |
+
+Output and manifests are byte-identical between the cpu and dsa classify
+paths (2990/4096 chunks zero, same records), and the DSA CRC32C of every
+kept chunk equals the software value. `dsa submitted=3072 fallback=0
+failed=0` on every run.
+
+Against the in-VMM chain (§7b, 0.18 s / 0.15 core-s steady state): the daemon
+at w32 is now **faster on wall** (0.12 s) at 0.20 core-s. The in-VMM chain's
+remaining advantage is the 0.05 core-s, mostly the CRC-less 64 KiB classify
+batches and in-process IAA output.
+
+### 7c.2 Restore: verify and populate
+
+Restore of the `--crc` snapshot into a fresh VM (`receive-migration`),
+guest resumed and checked to progress (`AGENT_DIFF_POINT` reached) in every
+passing cell. Verification runs the CRC on DSA (`dsa submitted=1106
+fallback=0`); a snapshot with one manifest CRC bit flipped is refused
+(`CrcMismatch` at the right offset). A flipped payload byte was already
+refused by the length check (deflate stops early).
+
+| restore cell | memfd pages | wall | populate step |
+|---|---|---|---|
+| `--verify-crc` | 4 KiB | 346–670 ms | holes left |
+| `--verify-crc --populate cpu` | 4 KiB | 1161 ms | 959 ms `MADV_POPULATE_WRITE` for 3.1 GiB |
+| `--verify-crc --populate dsa` | 4 KiB | 2653–2997 ms | **2295 ms** MEMFILL: every 4 KiB page is a device fault |
+| `--verify-crc --hugetlb` | 2 MiB | 271 ms | holes left |
+| `--verify-crc --populate cpu --hugetlb` | 2 MiB | 349 ms | 262 ms |
+| `--verify-crc --populate dsa --hugetlb` | 2 MiB | 923 ms | 645 ms |
+
+**DSA populate loses, both page sizes.** The cost of populating a hole is
+the kernel allocating and clearing the page; a MEMFILL into an unpopulated
+memfd makes the device take that fault through the page-request path and
+then fill a page the kernel already zeroed. The in-VMM 16 ms figure was
+measured on memory the VMM had already populated, which is a different
+operation. User-space fill only pays on pre-populated memory; offloading the
+clear itself belongs in the kernel (the mm-offload page-zero series). The
+flag stays, default `none`, and `cpu` is the recommendation when populated
+memory is wanted. `--hugetlb` is worth using whenever the source guest was
+hugepage-backed: restore wall 271 vs 346–670 ms and the memory shape matches
+the guest's configuration (the daemon previously always restored onto 4 KiB
+pages). Hugetlb memfds have no `write(2)`; restore now copies decompressed
+chunks into a mapping of the memfd, which also removed the per-chunk pwrite.
+
+### 7c.3 IOMMU first touch: measured, and the fix
+
+`dto-async-test` (fresh process, 2 GiB memfd filled by another mapping, then
+mapped afresh; 2048 × 1 MiB COMPAREs, 32 in flight):
+
+| pages | no prefault | `MADV_POPULATE_READ` then compare | Translation Fetch then compare | warm pass |
+|---|---|---|---|---|
+| 2 MiB | 604 ms | 0.5 + 18 ms | 505 + 18 ms | 17 ms |
+| 4 KiB | 1435 ms | 71 + 18 ms | 2022 + 18 ms | 17 ms |
+
+The cost is page-table entries, not device translation caches: a page the
+process has never touched has no PTE, the device's access becomes a
+page-request-service fault (~300 µs each), and Translation Fetch takes the
+same faults itself. `MADV_POPULATE_READ` creates the PTEs at kernel speed
+(walk only, no data touch) and the first DSA pass is then as fast as a warm
+one. The daemon does this per slot before classification (`prefault` on by
+default: 0.6–2 ms per slot on hugetlb guests), and `--no-prefault` shows the
+alternative (1357 ms). A caching-mappings approach is unnecessary once PTEs
+exist, and would not survive the daemon's one-process-per-snapshot model
+anyway.
+
+One unexplained cost remains: the **first** mapping of a guest slot after
+the VM is paused sometimes pays ~270 ms in the populate step (3 GiB hugetlb
+slot; 2 ms on every later mapping of the same slot). It shows up as the
+slower first cell in each sweep (`cpu` 492 vs 331 ms, `dsa` w8 473 vs 214 ms).
+
+### 7c.4 Follow-ups
+
+- Rebalance `--workers` across slots by kept-chunk count (slot 0 had 109
+  kept chunks and 4 jobs; slot 1 had 997 and 4 jobs).
+- Auto-select `--hugetlb` from the migration config's memory zones.
+- Explain the first-mapping 270 ms.
+- Classify granularity below the 1 MiB chunk is not needed (§3), so the
+  in-VMM 64 KiB batching stays out.
+- Push `ch-async-ops` to a DTO fork; the daemon depends on it.
+
 ## 7. Phases and validation
 
 | phase | content | cell to run | pass criterion |
 |---|---|---|---|
-| 0 | mmap the slot memfd in the live async path (reuse `FileMapping` + `submit_compress_mapped_input`), vectorised CPU scan | §7a cell, `~/chlogs/perf_daemon.sh` | removes the pread 12 %; gives the fair CPU baseline for phase 1 |
-| 1 | DTO fork + `dto.rs` + two-stage ring, feature `dto` | §7a cell, A/B feature on/off, warm and idle guests | same output bytes and manifest; wall ≤ phase 0; daemon CPU ≤ 0.4 s (from 1.35 s) |
-| 2 | per-chunk CRC32 from `dto_submit_crc` or IAA `crc32`, manifest `crc32: Option<u32>` | restore with a deliberately corrupted chunk | restore refuses the chunk |
-| 3 | `--populate` MEMFILL, raw copy via `dto_batch_copy` | restore-latency cell: time to guest console marker | populate ≥ 10× faster than MADV_POPULATE_WRITE on the same guest |
+| 0 ✔ | mmap the slot memfd in the live async path, word-wide CPU scan | §7c.1 | 1120 → 331–492 ms |
+| 1 ✔ | DTO `ch-async-ops` + `dto.rs` + two-stage ring, feature `dto` | §7c.1 | identical output/manifest; 115 ms / 0.20 core-s at w32 |
+| 2 ✔ | per-chunk CRC32C via `dto_submit_crc`, manifest `crc32c`, DSA verify on restore | §7c.2 | corrupted manifest CRC refused; +14 ms on snapshot |
+| 3 ✔/✘ | `--populate dsa` MEMFILL implemented and **measured slower** than `--populate cpu` on 4 KiB and 2 MiB pages (§7c.2); raw copy via DSA not done | §7c.2 | criterion not met; keep `cpu` |
 
 The baseline measurement is in §7a: the CPU zero scan is 75–85 % of daemon
 CPU and sets the wall on its own.

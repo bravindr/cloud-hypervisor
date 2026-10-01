@@ -371,6 +371,51 @@ for existing manifests. The daemon logs input size, output size, ratio, chunk
 count, and uncompressed GiB/s for each slot. Compressed snapshots currently
 support eager restore only; combining them with `--ondemand` is rejected.
 
+### DSA acceleration (feature `dto`)
+
+With the `dto` feature the daemon uses Intel DSA through the explicit
+asynchronous API of DTO (`libdto_explicit`, built from the DTO tree's
+`DTO_BUILD_EXPLICIT` option; `DTO_LIB_DIR` selects its directory, default
+`/usr/local/lib`). DTO's own environment configures the work queues, for
+example `DTO_WQ_LIST="wq0.0;wq2.0;wq4.0;wq6.0"` and `DTO_IS_NUMA_AWARE=1`
+so submissions from one slot thread spread over the node's devices.
+
+```bash
+QPL_INCLUDE_DIR=... QPL_LIB_DIR=... \
+  cargo build -p offload_daemon --release --features qpl,dto
+
+DTO_WQ_LIST="wq0.0;wq2.0;wq4.0;wq6.0" DTO_IS_NUMA_AWARE=1 \
+./target/release/offload_daemon snapshot --socket /tmp/offload.sock \
+  --output-dir /var/snapshots/vm1 --compression qpl-hardware-static-async \
+  --chunk-size 1048576 --workers 32 --classify dsa --crc
+
+DTO_WQ_LIST="wq0.0;wq2.0;wq4.0;wq6.0" DTO_IS_NUMA_AWARE=1 \
+./target/release/offload_daemon restore --socket /tmp/restore.sock \
+  --input-dir /var/snapshots/vm1 --resume --verify-crc --hugetlb
+```
+
+For the async QPL codecs the slot memfd is mapped instead of read, its
+page-table entries are populated up front (`--no-prefault` disables this;
+without it the first device access takes one page-request fault per page),
+and each chunk is classified by a DSA COMPARE against a zero buffer
+(`--classify dsa`, `--dsa-depth` operations in flight) feeding the IAA job
+ring as results arrive. `--classify cpu` keeps the classification on the
+CPU with the same pipeline. `--crc` records a CRC32C (seed 0, no final xor,
+the DSA convention) per compressed chunk in the manifest (`crc32c`),
+generated on DSA alongside the compare; `--verify-crc` on restore checks
+every decompressed chunk against it, on DSA when available, and refuses the
+restore on a mismatch. Every DSA submission falls back to the CPU when DTO
+declines it, so the output is identical whichever path ran.
+
+On restore, `--hugetlb` backs the restored memory with 2 MiB hugetlb pages
+(decompressed chunks are copied into a mapping of the memfd, which hugetlb
+requires). `--populate cpu` fills the all-zero chunks with
+`MADV_POPULATE_WRITE` instead of leaving holes; `--populate dsa` does the
+same with DSA MEMFILL but measured slower on both page sizes, because the
+cost is the kernel's page allocation and the device then takes that fault
+through the page-request path. Measurements for all of this are in
+`docs/dsa_integration.md`.
+
 ### The daemon protocol
 
 The daemon implements the local live-migration wire protocol defined in
