@@ -16,7 +16,12 @@
 //! the VM, and `--ondemand` serves pages on demand over the postcopy fault
 //! connection instead of preloading them.
 
+mod classify;
 mod compression;
+mod crc;
+#[cfg(feature = "dto")]
+mod dto;
+mod mapping;
 #[cfg(feature = "qpl")]
 mod qpl;
 
@@ -47,7 +52,9 @@ use vmm::sparse::copy_region;
 use vmm_sys_util::errno;
 use vmm_sys_util::sock_ctrl_msg::ScmSocket;
 
-use crate::compression::{Codec, compress_file, decompress_file};
+use crate::classify::{AccelOptions, Classify};
+use crate::compression::{Codec, Populate, compress_file, decompress_file, populate_zero_chunks};
+use crate::mapping::Mapping;
 
 const MIGRATION_CONFIG_FILENAME: &str = "migration_config.json";
 
@@ -162,6 +169,20 @@ enum Mode {
         /// Zstd compression level.
         #[arg(long, default_value_t = 1)]
         zstd_level: i32,
+        /// Zero-chunk classification for the async QPL codecs: `cpu` (word
+        /// scan) or `dsa` (DSA COMPARE through DTO; needs DTO_WQ_LIST).
+        #[arg(long, default_value_t = default_classify())]
+        classify: Classify,
+        /// DSA operations kept in flight per memory slot.
+        #[arg(long, default_value_t = 32)]
+        dsa_depth: usize,
+        /// Record a CRC32C per compressed chunk (generated on DSA when
+        /// classify=dsa).
+        #[arg(long)]
+        crc: bool,
+        /// Do not MADV_POPULATE_READ the slot mapping before classification.
+        #[arg(long)]
+        no_prefault: bool,
     },
     /// Read a snapshot from disk and stream it to a listening CH instance.
     Restore {
@@ -181,7 +202,30 @@ enum Mode {
         /// Number of decompression workers.
         #[arg(long, default_value_t = default_workers())]
         workers: usize,
+        /// Verify each chunk's CRC32C against the manifest (DSA when built
+        /// with the dto feature, software otherwise).
+        #[arg(long)]
+        verify_crc: bool,
+        /// Populate the all-zero chunks of the restored memory instead of
+        /// leaving holes: `none`, `cpu` (MADV_POPULATE_WRITE) or `dsa` (MEMFILL).
+        #[arg(long, default_value_t = Populate::None)]
+        populate: Populate,
+        /// DSA operations kept in flight per memory slot.
+        #[arg(long, default_value_t = 32)]
+        dsa_depth: usize,
+        /// Back the restored memory with 2 MiB hugetlb pages (MFD_HUGETLB)
+        /// instead of 4 KiB pages.
+        #[arg(long)]
+        hugetlb: bool,
     },
+}
+
+fn default_classify() -> Classify {
+    if cfg!(feature = "dto") {
+        Classify::Dsa
+    } else {
+        Classify::Cpu
+    }
 }
 
 #[derive(Clone)]
@@ -190,6 +234,16 @@ struct CompressionOptions {
     chunk_size: usize,
     workers: usize,
     zstd_level: i32,
+    accel: AccelOptions,
+}
+
+#[derive(Clone, Copy)]
+struct RestoreOptions {
+    workers: usize,
+    verify_crc: bool,
+    populate: Populate,
+    dsa_depth: usize,
+    hugetlb: bool,
 }
 
 fn default_workers() -> usize {
@@ -208,12 +262,22 @@ fn main() -> Result<()> {
             chunk_size,
             workers,
             zstd_level,
+            classify,
+            dsa_depth,
+            crc,
+            no_prefault,
         } => {
             let compression = compression.map(|codec| CompressionOptions {
                 codec,
                 chunk_size,
                 workers,
                 zstd_level,
+                accel: AccelOptions {
+                    classify,
+                    dsa_depth,
+                    crc,
+                    prefault: !no_prefault,
+                },
             });
             run_snapshot(&socket, &output_dir, compression.as_ref())
         }
@@ -223,7 +287,23 @@ fn main() -> Result<()> {
             resume,
             ondemand,
             workers,
-        } => run_restore(&socket, &input_dir, resume, ondemand, workers),
+            verify_crc,
+            populate,
+            dsa_depth,
+            hugetlb,
+        } => run_restore(
+            &socket,
+            &input_dir,
+            resume,
+            ondemand,
+            RestoreOptions {
+                workers,
+                verify_crc,
+                populate,
+                dsa_depth,
+                hugetlb,
+            },
+        ),
     }
 }
 
@@ -406,6 +486,7 @@ fn dump_memory_slots(
                         options.chunk_size,
                         workers_per_slot,
                         options.zstd_level,
+                        options.accel,
                     )?;
                     info!(
                         "Compressed slot {slot}: codec={}, chunks={}, input={} bytes, output={} bytes, ratio={:.3}, throughput={:.3} GiB/s",
@@ -514,8 +595,9 @@ fn run_restore(
     input_dir: &Path,
     resume: bool,
     ondemand: bool,
-    workers: usize,
+    options: RestoreOptions,
 ) -> Result<()> {
+    let workers = options.workers;
     let migration_config_bytes =
         fs::read(input_dir.join(MIGRATION_CONFIG_FILENAME)).map_err(Error::ReadFile)?;
     let mut migration_config: VmMigrationConfig = serde_json::from_slice(&migration_config_bytes)?;
@@ -554,7 +636,10 @@ fn run_restore(
                         file_offset,
                         size,
                         &format!("offload-slot-{slot}"),
-                        workers_per_slot,
+                        RestoreOptions {
+                            workers: workers_per_slot,
+                            ..options
+                        },
                     )?;
                     Ok::<_, Error>((slot, size, file_offset, memfd))
                 }));
@@ -727,9 +812,18 @@ fn serve_page_faults(stream: &mut UnixStream, slots: &[OnDemandSlot]) -> Result<
 }
 
 fn create_empty_memfd(size: u64, name: &str) -> Result<File> {
+    create_empty_memfd_with(size, name, false)
+}
+
+fn create_empty_memfd_with(size: u64, name: &str, hugetlb: bool) -> Result<File> {
     let cname = CString::new(name).map_err(Error::MemfdName)?;
+    let flags = if hugetlb {
+        libc::MFD_HUGETLB | libc::MFD_HUGE_2MB
+    } else {
+        0
+    };
     // SAFETY: memfd_create has no preconditions. We check the return value.
-    let raw = unsafe { libc::memfd_create(cname.as_ptr(), 0) };
+    let raw = unsafe { libc::memfd_create(cname.as_ptr(), flags) };
     if raw < 0 {
         return Err(Error::MemfdCreate(io::Error::last_os_error()));
     }
@@ -779,12 +873,20 @@ fn create_memfd_with_contents(
     file_offset: u64,
     size: u64,
     name: &str,
-    workers: usize,
+    options: RestoreOptions,
 ) -> Result<File> {
     // Size the memfd to cover the range CH maps at `file_offset`.
-    let memfd = create_empty_memfd(file_offset + size, name)?;
+    let memfd = create_empty_memfd_with(file_offset + size, name, options.hugetlb)?;
     if let Some((data_path, manifest_path)) = compressed_paths {
-        let stats = decompress_file(data_path, manifest_path, &memfd, file_offset, size, workers)?;
+        let stats = decompress_file(
+            data_path,
+            manifest_path,
+            &memfd,
+            file_offset,
+            size,
+            options.workers,
+            options.verify_crc,
+        )?;
         info!(
             "Decompressed {name}: chunks={}, compressed={} bytes, output={} bytes, ratio={:.3}, throughput={:.3} GiB/s",
             stats.chunks,
@@ -793,10 +895,35 @@ fn create_memfd_with_contents(
             stats.ratio(),
             stats.throughput_gib_per_second(),
         );
+        let (bytes, elapsed) = populate_zero_chunks(
+            &memfd,
+            file_offset,
+            size,
+            manifest_path,
+            options.populate,
+            options.dsa_depth,
+        )?;
+        if options.populate != Populate::None {
+            info!(
+                "Populated {name}: {bytes} zero bytes via {} in {:.1} ms",
+                options.populate,
+                elapsed.as_secs_f64() * 1e3
+            );
+        }
     } else {
         let src = File::open(src_path).map_err(Error::ReadFile)?;
         // Copy sparsely so the memfd keeps the snapshot's holes.
         copy_region(&src, 0, &memfd, file_offset, size).map_err(Error::CopyMemory)?;
+        if options.populate != Populate::None {
+            // No manifest to tell holes from data: populate the whole slot.
+            let mapping =
+                Mapping::map_file(&memfd, file_offset, size, true).map_err(Error::CopyMemory)?;
+            let elapsed = mapping.populate(true).map_err(Error::CopyMemory)?;
+            info!(
+                "Populated {name}: whole slot via MADV_POPULATE_WRITE in {:.1} ms",
+                elapsed.as_secs_f64() * 1e3
+            );
+        }
     }
     Ok(memfd)
 }

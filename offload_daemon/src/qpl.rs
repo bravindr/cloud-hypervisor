@@ -235,10 +235,30 @@ impl JobPool {
         &mut slot.input
     }
 
-    pub(crate) fn submit_compress(&mut self, index: usize) -> Result<(), Error> {
+    /// Compress `input_len` bytes at `input` (memory not owned by the pool,
+    /// e.g. a mapped guest memory slot) into the slot's output buffer.
+    ///
+    /// # Safety
+    /// The input must stay mapped and unchanged until `poll` reports the
+    /// job complete (or the pool is dropped).
+    pub(crate) unsafe fn submit_compress_from(
+        &mut self,
+        index: usize,
+        input: *const u8,
+        input_len: usize,
+    ) -> Result<(), Error> {
+        self.submit_compress_ptr(index, input, input_len)
+    }
+
+    fn submit_compress_ptr(
+        &mut self,
+        index: usize,
+        input: *const u8,
+        input_len: usize,
+    ) -> Result<(), Error> {
         let slot = &mut self.slots[index];
         debug_assert!(!slot.submitted);
-        let input_size = u32::try_from(slot.input.len()).map_err(|_| Error::InputTooLarge)?;
+        let input_size = u32::try_from(input_len).map_err(|_| Error::InputTooLarge)?;
         // SAFETY: the context is valid and exclusively owned by this slot.
         let output_capacity =
             unsafe { qpl_shim_compression_bound(slot.job.context.as_ptr(), input_size) }
@@ -254,7 +274,7 @@ impl JobPool {
             let status = unsafe {
                 qpl_shim_submit_compress(
                     slot.job.context.as_ptr(),
-                    slot.input.as_ptr(),
+                    input,
                     input_size,
                     slot.output.as_mut_ptr(),
                     output_capacity,

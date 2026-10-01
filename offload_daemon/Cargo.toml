@@ -25,6 +25,7 @@ default = ["kvm"]
 kvm = ["vmm/kvm"]
 mshv = ["vmm/mshv"]
 qpl = []
+dto = []
 
 [build-dependencies]
 cc = "1"

@@ -2,6 +2,8 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
+#[cfg(feature = "qpl")]
+use std::collections::VecDeque;
 use std::fs::{self, File, OpenOptions};
 use std::os::unix::fs::FileExt;
 use std::path::Path;
@@ -16,6 +18,13 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use zstd::bulk::{compress as zstd_compress, decompress as zstd_decompress};
 
+use crate::classify::{AccelOptions, Error as ClassifyError};
+#[cfg(feature = "qpl")]
+use crate::classify::{Classifier, Verdict};
+use crate::crc::{crc32c, is_zero};
+#[cfg(feature = "dto")]
+use crate::dto::{Op as DtoOp, Poll as DtoPoll, Stats as DtoStats, Submit as DtoSubmit};
+use crate::mapping::Mapping;
 #[cfg(feature = "qpl")]
 use crate::qpl::{
     Error as QplError, ExecutionPath, HuffmanMode, Job as QplJob, JobPool as QplJobPool,
@@ -93,6 +102,10 @@ pub(crate) struct ChunkRecord {
     pub compressed_length: u32,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub zero: bool,
+    /// CRC32C (seed 0, no final xor: the DSA CRC generation convention) of the
+    /// uncompressed chunk, when the snapshot was taken with `--crc`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub crc32c: Option<u32>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -160,6 +173,16 @@ pub(crate) enum Error {
     InvalidManifest(String),
     #[error("Compression worker panicked")]
     WorkerPanic,
+    #[error(
+        "Chunk at offset {offset:#x} failed CRC32C verification (manifest {expected:#010x}, data {actual:#010x})"
+    )]
+    CrcMismatch {
+        offset: u64,
+        expected: u32,
+        actual: u32,
+    },
+    #[error("Chunk classification failed")]
+    Classify(#[from] ClassifyError),
 }
 
 struct CodecWorker {
@@ -299,6 +322,7 @@ pub(crate) fn compress_file(
     chunk_size: usize,
     workers: usize,
     zstd_level: i32,
+    accel: AccelOptions,
 ) -> Result<CompressionStats, Error> {
     let chunk_size_u32 = validate_chunk_size(chunk_size)?;
     #[cfg(feature = "qpl")]
@@ -314,6 +338,7 @@ pub(crate) fn compress_file(
             chunk_size,
             chunk_size_u32,
             workers,
+            accel,
         );
     }
     let started = Instant::now();
@@ -365,16 +390,18 @@ pub(crate) fn compress_file(
                         source
                             .read_exact_at(&mut input, source_offset + uncompressed_offset)
                             .map_err(Error::Read)?;
-                        if input.iter().all(|byte| *byte == 0) {
+                        if is_zero(&input) {
                             records.lock().unwrap().push(ChunkRecord {
                                 uncompressed_offset,
                                 uncompressed_length: uncompressed_length as u32,
                                 compressed_offset: 0,
                                 compressed_length: 0,
                                 zero: true,
+                                crc32c: None,
                             });
                             return Ok(());
                         }
+                        let crc = accel.crc.then(|| crc32c(&input));
                         let compressed = worker.compress(&input)?;
                         let compressed_length =
                             u32::try_from(compressed.len()).map_err(|_| Error::ChunkTooLarge)?;
@@ -389,6 +416,7 @@ pub(crate) fn compress_file(
                             compressed_offset,
                             compressed_length,
                             zero: false,
+                            crc32c: crc,
                         });
                         Ok(())
                     })();
@@ -446,6 +474,7 @@ fn compress_file_qpl_async(
     chunk_size: usize,
     chunk_size_u32: u32,
     workers: usize,
+    accel: AccelOptions,
 ) -> Result<CompressionStats, Error> {
     let started = Instant::now();
     let output = OpenOptions::new()
@@ -456,67 +485,108 @@ fn compress_file_qpl_async(
         .open(data_path)
         .map_err(Error::Write)?;
     let chunk_count = source_size.div_ceil(chunk_size as u64) as usize;
+
+    // The slot memfd is mapped, not read: the engines (and the CPU fallback)
+    // work on the guest memory in place. Creating the page-table entries up
+    // front is what keeps DSA from taking one page-request fault per page.
+    let mapping =
+        Mapping::map_file(source, source_offset, source_size, false).map_err(Error::Read)?;
+    let prefault = if accel.prefault {
+        Some(mapping.populate(false).map_err(Error::Read)?)
+    } else {
+        None
+    };
+
+    let mut classifier = Classifier::new(accel, chunk_size)?;
     let mut pool = QplJobPool::new(ExecutionPath::Hardware, huffman_mode, workers)?;
     let mut records = Vec::with_capacity(chunk_count);
     let mut output_offset = 0_u64;
 
-    let mut active = vec![None; pool.capacity()];
-    let mut next_chunk = 0_usize;
+    // Stage one (classify) runs ahead of stage two (compress) by up to the
+    // classifier's depth; verdicts wait in `ready` for a free IAA slot.
+    let mut ready: VecDeque<Verdict> = VecDeque::new();
+    let mut active: Vec<Option<Verdict>> = (0..pool.capacity()).map(|_| None).collect();
     let mut active_count = 0_usize;
-    for (slot, metadata) in active.iter_mut().enumerate() {
-        *metadata = submit_next_compression_chunk(
-            &mut pool,
-            slot,
-            source,
-            source_offset,
-            source_size,
-            chunk_size,
-            chunk_count,
-            &mut next_chunk,
-            &mut records,
-        )?;
-        active_count += usize::from(metadata.is_some());
-    }
+    let mut next_chunk = 0_usize;
+    // Bound how far classification may run ahead of a stalled IAA pool so the
+    // CPU classifier does not scan the whole slot before compressing starts.
+    let ready_limit = pool.capacity().max(accel.dsa_depth) * 2;
 
-    while active_count != 0 {
+    loop {
         let mut made_progress = false;
-        for (slot, active_entry) in active.iter_mut().enumerate() {
-            if active_entry.is_none() {
-                continue;
-            }
-            let Some(output_size) = pool.poll(slot)? else {
-                continue;
-            };
-            let (uncompressed_offset, uncompressed_length) = active_entry.take().unwrap();
-            let compressed_length = u32::try_from(output_size).map_err(|_| Error::ChunkTooLarge)?;
-            output
-                .write_all_at(pool.output(slot, output_size), output_offset)
-                .map_err(Error::Write)?;
-            records.push(ChunkRecord {
-                uncompressed_offset,
-                uncompressed_length: uncompressed_length as u32,
-                compressed_offset: output_offset,
-                compressed_length,
-                zero: false,
-            });
-            output_offset += output_size as u64;
-            active_count -= 1;
-            made_progress = true;
 
-            *active_entry = submit_next_compression_chunk(
-                &mut pool,
-                slot,
-                source,
-                source_offset,
-                source_size,
-                chunk_size,
-                chunk_count,
-                &mut next_chunk,
-                &mut records,
-            )?;
-            if active_entry.is_some() {
-                active_count += 1;
+        while next_chunk < chunk_count && ready.len() < ready_limit {
+            let offset = next_chunk * chunk_size;
+            let length = (source_size as usize - offset).min(chunk_size);
+            if !classifier.push(&mapping, offset, length)? {
+                break;
             }
+            next_chunk += 1;
+            made_progress = true;
+        }
+
+        let before = ready.len();
+        classifier.drain(&mapping, &mut ready)?;
+        made_progress |= ready.len() != before;
+
+        for (slot, entry) in active.iter_mut().enumerate() {
+            if let Some(verdict) = entry.as_ref() {
+                let Some(output_size) = pool.poll(slot)? else {
+                    continue;
+                };
+                let compressed_length =
+                    u32::try_from(output_size).map_err(|_| Error::ChunkTooLarge)?;
+                output
+                    .write_all_at(pool.output(slot, output_size), output_offset)
+                    .map_err(Error::Write)?;
+                records.push(ChunkRecord {
+                    uncompressed_offset: verdict.offset as u64,
+                    uncompressed_length: verdict.length as u32,
+                    compressed_offset: output_offset,
+                    compressed_length,
+                    zero: false,
+                    crc32c: verdict.crc32c,
+                });
+                output_offset += output_size as u64;
+                *entry = None;
+                active_count -= 1;
+                made_progress = true;
+            }
+            if entry.is_none() {
+                while let Some(verdict) = ready.pop_front() {
+                    if verdict.zero {
+                        records.push(ChunkRecord {
+                            uncompressed_offset: verdict.offset as u64,
+                            uncompressed_length: verdict.length as u32,
+                            compressed_offset: 0,
+                            compressed_length: 0,
+                            zero: true,
+                            crc32c: None,
+                        });
+                        made_progress = true;
+                        continue;
+                    }
+                    let input = mapping
+                        .ptr(verdict.offset, verdict.length)
+                        .map_err(Error::Read)?;
+                    // SAFETY: the mapping outlives the pool and the VM is
+                    // paused for the whole snapshot, so the input is stable
+                    // until the job completes.
+                    unsafe { pool.submit_compress_from(slot, input, verdict.length)? };
+                    *entry = Some(verdict);
+                    active_count += 1;
+                    made_progress = true;
+                    break;
+                }
+            }
+        }
+
+        if next_chunk == chunk_count
+            && classifier.is_idle()
+            && ready.is_empty()
+            && active_count == 0
+        {
+            break;
         }
         if !made_progress {
             thread::yield_now();
@@ -525,6 +595,7 @@ fn compress_file_qpl_async(
 
     output.sync_all().map_err(Error::Write)?;
     records.sort_unstable_by_key(|record| record.uncompressed_offset);
+    let zero_chunks = records.iter().filter(|record| record.zero).count();
     let manifest = SlotManifest {
         version: FORMAT_VERSION,
         codec,
@@ -535,50 +606,27 @@ fn compress_file_qpl_async(
     let manifest_bytes = serde_json::to_vec_pretty(&manifest).map_err(Error::WriteManifest)?;
     fs::write(manifest_path, manifest_bytes).map_err(Error::Write)?;
 
+    let report = classifier.report();
+    log::info!(
+        "classify={} prefault={} zero_chunks={zero_chunks}/{chunk_count} dsa submitted={} fallback={} failed={} cpu_scans={} crc={}",
+        accel.classify,
+        prefault.map_or_else(
+            || "off".to_owned(),
+            |elapsed| format!("{:.1}ms", elapsed.as_secs_f64() * 1e3)
+        ),
+        report.dsa_submitted,
+        report.dsa_fallback,
+        report.dsa_failed,
+        report.cpu_scans,
+        accel.crc,
+    );
+
     Ok(CompressionStats {
         input_bytes: source_size,
         output_bytes: output_offset,
         chunks: chunk_count,
         elapsed: started.elapsed(),
     })
-}
-
-#[cfg(feature = "qpl")]
-#[expect(clippy::too_many_arguments)]
-fn submit_next_compression_chunk(
-    pool: &mut QplJobPool,
-    slot: usize,
-    source: &File,
-    source_offset: u64,
-    source_size: u64,
-    chunk_size: usize,
-    chunk_count: usize,
-    next_chunk: &mut usize,
-    records: &mut Vec<ChunkRecord>,
-) -> Result<Option<(u64, usize)>, Error> {
-    while *next_chunk < chunk_count {
-        let uncompressed_offset = *next_chunk as u64 * chunk_size as u64;
-        let uncompressed_length =
-            (source_size - uncompressed_offset).min(chunk_size as u64) as usize;
-        let input = pool.input_mut(slot, uncompressed_length);
-        source
-            .read_exact_at(input, source_offset + uncompressed_offset)
-            .map_err(Error::Read)?;
-        *next_chunk += 1;
-        if input.iter().all(|byte| *byte == 0) {
-            records.push(ChunkRecord {
-                uncompressed_offset,
-                uncompressed_length: uncompressed_length as u32,
-                compressed_offset: 0,
-                compressed_length: 0,
-                zero: true,
-            });
-            continue;
-        }
-        pool.submit_compress(slot)?;
-        return Ok(Some((uncompressed_offset, uncompressed_length)));
-    }
-    Ok(None)
 }
 
 pub(crate) fn decompress_file(
@@ -588,6 +636,7 @@ pub(crate) fn decompress_file(
     destination_offset: u64,
     expected_size: u64,
     workers: usize,
+    verify_crc: bool,
 ) -> Result<CompressionStats, Error> {
     let started = Instant::now();
     let manifest_bytes = fs::read(manifest_path).map_err(Error::Read)?;
@@ -642,16 +691,29 @@ pub(crate) fn decompress_file(
     }
     let codec = manifest.codec;
     let records = Arc::new(manifest.chunks);
+    if expected_size == 0 {
+        return Ok(CompressionStats {
+            input_bytes: 0,
+            output_bytes: compressed_size,
+            chunks: records.len(),
+            elapsed: started.elapsed(),
+        });
+    }
+    // Decompressed chunks are copied into a mapping of the destination rather
+    // than written with pwrite: hugetlb memfds have no write(2) path, and the
+    // copy is one memcpy instead of a syscall per chunk.
+    let destination = Mapping::map_file(destination, destination_offset, expected_size, true)
+        .map_err(Error::Write)?;
     #[cfg(feature = "qpl")]
     if let Some(huffman_mode) = codec.async_huffman_mode() {
         return decompress_file_qpl_async(
             &input,
             &records,
-            destination,
-            destination_offset,
+            &destination,
             expected_size,
             workers,
             huffman_mode,
+            verify_crc,
             started,
         );
     }
@@ -665,6 +727,7 @@ pub(crate) fn decompress_file(
             let records = Arc::clone(&records);
             let first_error = &first_error;
             let next_chunk = &next_chunk;
+            let destination = &destination;
             handles.push(scope.spawn(move || {
                 let mut worker = match CodecWorker::new(codec, 1) {
                     Ok(worker) => worker,
@@ -695,8 +758,18 @@ pub(crate) fn decompress_file(
                             .map_err(Error::Read)?;
                         let output =
                             worker.decompress(&compressed, record.uncompressed_length as usize)?;
+                        if let Some(expected) = record.crc32c.filter(|_| verify_crc) {
+                            let actual = crc32c(output);
+                            if actual != expected {
+                                return Err(Error::CrcMismatch {
+                                    offset: record.uncompressed_offset,
+                                    expected,
+                                    actual,
+                                });
+                            }
+                        }
                         destination
-                            .write_all_at(output, destination_offset + record.uncompressed_offset)
+                            .write(record.uncompressed_offset as usize, output)
                             .map_err(Error::Write)
                     })();
                     if let Err(error) = result {
@@ -731,14 +804,15 @@ pub(crate) fn decompress_file(
 fn decompress_file_qpl_async(
     input: &File,
     records: &[ChunkRecord],
-    destination: &File,
-    destination_offset: u64,
+    destination: &Mapping,
     expected_size: u64,
     workers: usize,
     huffman_mode: HuffmanMode,
+    verify_crc: bool,
     started: Instant,
 ) -> Result<CompressionStats, Error> {
     let mut pool = QplJobPool::new(ExecutionPath::Hardware, huffman_mode, workers)?;
+    let mut verifier = ChunkVerifier::new(verify_crc, pool.capacity());
     let mut active = vec![None; pool.capacity()];
     let mut next_chunk = 0_usize;
     let mut active_count = 0_usize;
@@ -751,24 +825,54 @@ fn decompress_file_qpl_async(
     while active_count != 0 {
         let mut made_progress = false;
         for (slot, active_entry) in active.iter_mut().enumerate() {
-            if active_entry.is_none() {
-                continue;
-            }
-            let Some(output_size) = pool.poll(slot)? else {
+            let Some(record_index) = *active_entry else {
                 continue;
             };
-            let record_index = active_entry.take().unwrap();
             let record = &records[record_index];
-            if output_size != record.uncompressed_length as usize {
-                return Err(Error::LengthMismatch {
-                    expected: record.uncompressed_length as usize,
-                    actual: output_size,
-                });
-            }
+            let output_size = match verifier.state(slot) {
+                // Still decompressing.
+                None => {
+                    let Some(output_size) = pool.poll(slot)? else {
+                        continue;
+                    };
+                    if output_size != record.uncompressed_length as usize {
+                        return Err(Error::LengthMismatch {
+                            expected: record.uncompressed_length as usize,
+                            actual: output_size,
+                        });
+                    }
+                    if let Some(expected) = record.crc32c.filter(|_| verify_crc) {
+                        verifier.start(slot, pool.output(slot, output_size), expected);
+                        made_progress = true;
+                        continue;
+                    }
+                    output_size
+                }
+                // CRC in flight on the device.
+                Some(Verify::Pending) => {
+                    if !verifier.poll(slot, pool.output(slot, record.uncompressed_length as usize))
+                    {
+                        continue;
+                    }
+                    made_progress = true;
+                    continue;
+                }
+                Some(Verify::Checked { actual, expected }) => {
+                    verifier.clear(slot);
+                    if actual != expected {
+                        return Err(Error::CrcMismatch {
+                            offset: record.uncompressed_offset,
+                            expected,
+                            actual,
+                        });
+                    }
+                    record.uncompressed_length as usize
+                }
+            };
             destination
-                .write_all_at(
+                .write(
+                    record.uncompressed_offset as usize,
                     pool.output(slot, output_size),
-                    destination_offset + record.uncompressed_offset,
                 )
                 .map_err(Error::Write)?;
             active_count -= 1;
@@ -783,6 +887,13 @@ fn decompress_file_qpl_async(
         if !made_progress {
             thread::yield_now();
         }
+    }
+    if verify_crc {
+        let (submitted, fallback, failed) = verifier.report();
+        log::info!(
+            "crc verify: {} chunks checked (dsa submitted={submitted} fallback={fallback} failed={failed})",
+            verifier.checked()
+        );
     }
 
     Ok(CompressionStats {
@@ -817,6 +928,266 @@ fn submit_next_decompression_chunk(
         return Ok(Some(record_index));
     }
     Ok(None)
+}
+
+/// Per-slot CRC verification state for the async restore path: the CRC of a
+/// decompressed chunk is generated on DSA when available (software
+/// otherwise) and compared with the manifest before the chunk is written.
+#[cfg(feature = "qpl")]
+#[derive(Clone, Copy)]
+enum Verify {
+    #[cfg_attr(not(feature = "dto"), allow(dead_code))]
+    Pending,
+    Checked {
+        actual: u32,
+        expected: u32,
+    },
+}
+
+#[cfg(feature = "qpl")]
+struct ChunkVerifier {
+    enabled: bool,
+    states: Vec<Option<Verify>>,
+    expected: Vec<u32>,
+    checked: u64,
+    #[cfg(feature = "dto")]
+    ops: Vec<DtoOp>,
+    #[cfg(feature = "dto")]
+    stats: DtoStats,
+}
+
+#[cfg(feature = "qpl")]
+impl ChunkVerifier {
+    fn new(enabled: bool, slots: usize) -> Self {
+        Self {
+            enabled,
+            states: vec![None; slots],
+            expected: vec![0; slots],
+            checked: 0,
+            #[cfg(feature = "dto")]
+            ops: (0..slots).map(|_| DtoOp::default()).collect(),
+            #[cfg(feature = "dto")]
+            stats: DtoStats::default(),
+        }
+    }
+
+    fn state(&self, slot: usize) -> Option<Verify> {
+        self.states[slot]
+    }
+
+    fn start(&mut self, slot: usize, data: &[u8], expected: u32) {
+        debug_assert!(self.enabled);
+        self.expected[slot] = expected;
+        self.checked += 1;
+        #[cfg(feature = "dto")]
+        {
+            // SAFETY: the pool output buffer is not resized or reused until
+            // this slot is cleared, and the op lives in `self.ops`.
+            if unsafe { self.ops[slot].submit_crc(data.as_ptr(), data.len(), &self.stats) }
+                == DtoSubmit::Submitted
+            {
+                self.states[slot] = Some(Verify::Pending);
+                return;
+            }
+        }
+        self.states[slot] = Some(Verify::Checked {
+            actual: crc32c(data),
+            expected,
+        });
+    }
+
+    /// Returns true when the slot moved from pending to checked.
+    #[cfg(feature = "dto")]
+    fn poll(&mut self, slot: usize, data: &[u8]) -> bool {
+        let actual = match self.ops[slot].poll(&self.stats) {
+            DtoPoll::Pending => return false,
+            DtoPoll::Done => self.ops[slot].crc(),
+            DtoPoll::Failed { .. } => crc32c(data),
+        };
+        self.states[slot] = Some(Verify::Checked {
+            actual,
+            expected: self.expected[slot],
+        });
+        true
+    }
+
+    #[cfg(not(feature = "dto"))]
+    fn poll(&mut self, _slot: usize, _data: &[u8]) -> bool {
+        unreachable!("software verification never pends")
+    }
+
+    fn clear(&mut self, slot: usize) {
+        self.states[slot] = None;
+    }
+
+    fn checked(&self) -> u64 {
+        self.checked
+    }
+
+    #[cfg(feature = "dto")]
+    fn report(&self) -> (u64, u64, u64) {
+        self.stats.snapshot()
+    }
+
+    #[cfg(not(feature = "dto"))]
+    fn report(&self) -> (u64, u64, u64) {
+        (0, 0, 0)
+    }
+}
+
+/// Restore-side population of the all-zero chunks: eager restore leaves them
+/// as holes in the memfd and the guest pays the page allocation on first
+/// touch. `Populate::Dsa` MEMFILLs them through DTO (3.1 GiB in 16 ms in the
+/// in-VMM measurement), `Populate::Cpu` uses `MADV_POPULATE_WRITE`.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum Populate {
+    None,
+    Cpu,
+    Dsa,
+}
+
+impl FromStr for Populate {
+    type Err = ParsePopulateError;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        match value {
+            "none" => Ok(Self::None),
+            "cpu" => Ok(Self::Cpu),
+            "dsa" => Ok(Self::Dsa),
+            _ => Err(ParsePopulateError(value.to_owned())),
+        }
+    }
+}
+
+impl fmt::Display for Populate {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(match self {
+            Self::None => "none",
+            Self::Cpu => "cpu",
+            Self::Dsa => "dsa",
+        })
+    }
+}
+
+#[derive(Debug, Error)]
+#[error("Unknown populate mode {0:?} (expected none, cpu or dsa)")]
+pub(crate) struct ParsePopulateError(String);
+
+/// Largest single fill: stays under any work queue's max_transfer_size.
+const POPULATE_RUN_LIMIT: usize = 1 << 30;
+
+pub(crate) fn populate_zero_chunks(
+    destination: &File,
+    destination_offset: u64,
+    expected_size: u64,
+    manifest_path: &Path,
+    mode: Populate,
+    depth: usize,
+) -> Result<(u64, Duration), Error> {
+    let started = Instant::now();
+    if mode == Populate::None {
+        return Ok((0, started.elapsed()));
+    }
+    let manifest_bytes = fs::read(manifest_path).map_err(Error::Read)?;
+    let manifest: SlotManifest =
+        serde_json::from_slice(&manifest_bytes).map_err(Error::ReadManifest)?;
+    // Merge adjacent zero chunks into runs.
+    let mut runs: Vec<(usize, usize)> = Vec::new();
+    for record in manifest.chunks.iter().filter(|record| record.zero) {
+        let offset = record.uncompressed_offset as usize;
+        let length = record.uncompressed_length as usize;
+        match runs.last_mut() {
+            Some((start, len))
+                if *start + *len == offset && *len + length <= POPULATE_RUN_LIMIT =>
+            {
+                *len += length;
+            }
+            _ => runs.push((offset, length)),
+        }
+    }
+    let total: u64 = runs.iter().map(|(_, len)| *len as u64).sum();
+    if runs.is_empty() {
+        return Ok((0, started.elapsed()));
+    }
+    let mapping = Mapping::map_file(destination, destination_offset, expected_size, true)
+        .map_err(Error::Write)?;
+    match mode {
+        Populate::None => unreachable!(),
+        Populate::Cpu => {
+            for &(offset, length) in &runs {
+                mapping
+                    .populate_range(offset, length, true)
+                    .map_err(Error::Write)?;
+            }
+        }
+        Populate::Dsa => populate_dsa(&mapping, &runs, depth)?,
+    }
+    Ok((total, started.elapsed()))
+}
+
+#[cfg(feature = "dto")]
+fn populate_dsa(mapping: &Mapping, runs: &[(usize, usize)], depth: usize) -> Result<(), Error> {
+    let depth = depth.max(1);
+    let mut ops: Vec<DtoOp> = (0..depth).map(|_| DtoOp::default()).collect();
+    let mut live: Vec<Option<(usize, usize)>> = vec![None; depth];
+    let stats = DtoStats::default();
+    let mut next = 0_usize;
+    let mut inflight = 0_usize;
+    while next < runs.len() || inflight != 0 {
+        let mut made_progress = false;
+        for (slot, entry) in live.iter_mut().enumerate() {
+            if let Some((offset, length)) = *entry {
+                match ops[slot].poll(&stats) {
+                    DtoPoll::Pending => continue,
+                    DtoPoll::Done => {}
+                    DtoPoll::Failed { status } => {
+                        log::warn!(
+                            "DSA memfill of {length} bytes at {offset:#x} failed with status {status:#x}; using MADV_POPULATE_WRITE"
+                        );
+                        mapping
+                            .populate_range(offset, length, true)
+                            .map_err(Error::Write)?;
+                    }
+                }
+                *entry = None;
+                inflight -= 1;
+                made_progress = true;
+            }
+            if next < runs.len() {
+                let (offset, length) = runs[next];
+                next += 1;
+                let destination = mapping.mut_ptr(offset, length).map_err(Error::Write)?;
+                // SAFETY: the destination memfd is owned by this daemon and the
+                // mapping outlives the loop; ops stay at fixed addresses.
+                match unsafe { ops[slot].submit_memfill_zero(destination, length, &stats) } {
+                    DtoSubmit::Submitted => {
+                        *entry = Some((offset, length));
+                        inflight += 1;
+                    }
+                    DtoSubmit::Fallback => {
+                        mapping
+                            .populate_range(offset, length, true)
+                            .map_err(Error::Write)?;
+                    }
+                }
+                made_progress = true;
+            }
+        }
+        if !made_progress {
+            thread::yield_now();
+        }
+    }
+    let (submitted, fallback, failed) = stats.snapshot();
+    log::info!(
+        "populate: {} zero runs, dsa submitted={submitted} fallback={fallback} failed={failed}",
+        runs.len()
+    );
+    Ok(())
+}
+
+#[cfg(not(feature = "dto"))]
+fn populate_dsa(_mapping: &Mapping, _runs: &[(usize, usize)], _depth: usize) -> Result<(), Error> {
+    Err(Error::Classify(ClassifyError::DsaUnavailable))
 }
 
 #[cfg(test)]
@@ -922,6 +1293,7 @@ mod tests {
                 64 * 1024,
                 4,
                 1,
+                AccelOptions::default(),
             )
             .unwrap();
             decompress_file(
@@ -931,6 +1303,7 @@ mod tests {
                 0,
                 input.len() as u64,
                 4,
+                false,
             )
             .unwrap();
 
@@ -975,6 +1348,7 @@ mod tests {
             256 * 1024,
             4,
             1,
+            AccelOptions::default(),
         )
         .unwrap();
         assert_eq!(compressed.chunks, 13);
@@ -994,6 +1368,7 @@ mod tests {
             0,
             input.len() as u64,
             3,
+            false,
         )
         .unwrap();
         assert_eq!(decompressed.chunks, 13);
@@ -1023,6 +1398,7 @@ mod tests {
             64 * 1024,
             2,
             1,
+            AccelOptions::default(),
         )
         .unwrap();
         let manifest: SlotManifest =
@@ -1051,6 +1427,7 @@ mod tests {
             0,
             input.len() as u64,
             2,
+            false,
         )
         .unwrap();
         let mut actual = vec![0_u8; input.len()];
