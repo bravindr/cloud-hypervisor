@@ -8,6 +8,7 @@
 
 use std::fs::File;
 use std::io;
+use std::mem;
 use std::os::fd::AsRawFd;
 use std::ptr::{self, NonNull};
 #[cfg(feature = "qpl")]
@@ -65,6 +66,23 @@ pub(crate) fn data_extents(
 pub(crate) struct Mapping {
     address: NonNull<u8>,
     length: usize,
+    /// Backing page size: hugetlbfs page tables can only be populated in
+    /// whole huge pages, so populate ranges are rounded out to it.
+    page: usize,
+}
+
+const HUGETLBFS_MAGIC: i64 = 0x9584_58f6;
+
+fn backing_page_size(file: &File) -> usize {
+    // SAFETY: zeroed statfs buffer filled by the kernel; the result is checked.
+    let mut stat: libc::statfs = unsafe { mem::zeroed() };
+    // SAFETY: valid fd and out pointer.
+    if unsafe { libc::fstatfs(file.as_raw_fd(), &mut stat) } == 0 && stat.f_type == HUGETLBFS_MAGIC
+    {
+        stat.f_bsize as usize
+    } else {
+        4096
+    }
 }
 
 impl Mapping {
@@ -106,6 +124,7 @@ impl Mapping {
         Ok(Self {
             address: NonNull::new(address.cast()).expect("mmap returned a null address"),
             length,
+            page: backing_page_size(file),
         })
     }
 
@@ -140,9 +159,12 @@ impl Mapping {
         } else {
             MADV_POPULATE_READ
         };
-        // SAFETY: the range was validated against this live mapping; madvise
-        // needs a page-aligned start, which chunk offsets are.
-        if unsafe { libc::madvise(self.address.as_ptr().add(offset).cast(), length, advice) } != 0 {
+        let start = offset / self.page * self.page;
+        let end = (offset + length).div_ceil(self.page) * self.page;
+        let length = end.min(self.length) - start;
+        // SAFETY: the range lies inside this live mapping and starts on a
+        // backing-page boundary, as madvise requires.
+        if unsafe { libc::madvise(self.address.as_ptr().add(start).cast(), length, advice) } != 0 {
             return Err(io::Error::last_os_error());
         }
         Ok(())
