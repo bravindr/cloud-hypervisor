@@ -20,6 +20,10 @@
 //! `batch` pages per batch descriptor, `depth` batches in flight); any DSA
 //! operation that does not complete successfully is redone on the CPU.
 
+// Diff checkpoints are written only by the async QPL path; restore needs
+// the rest. Without QPL the snapshot half is compiled but unused.
+#![cfg_attr(not(feature = "qpl"), allow(dead_code))]
+
 use std::fmt;
 #[cfg(feature = "qpl")]
 use std::fs::OpenOptions;

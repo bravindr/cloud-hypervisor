@@ -268,6 +268,7 @@ struct CompressionOptions {
     accel: AccelOptions,
     reference_dir: Option<PathBuf>,
     parent: Option<PathBuf>,
+    #[cfg_attr(not(feature = "qpl"), allow(dead_code))]
     diff: DiffOptions,
 }
 
