@@ -615,6 +615,41 @@ pub struct VmSendMigrationData {
     /// Requested memory transfer mode.
     #[serde(default)]
     pub memory_mode: MigrationMode,
+    /// memfd migration only: report the guest pages written since the
+    /// previous such migration (see [`MemfdDirtyLog`]).
+    #[serde(default)]
+    pub dirty_log: MemfdDirtyLog,
+}
+
+/// Dirty-page reporting for repeated `memory_mode=memfds` migrations of the
+/// same, preserved VM (offload checkpoints). The first migration with a value
+/// other than `off` starts dirty logging and sends no log; every later one
+/// sends the pages written since then as a `DirtyLog` message.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum MemfdDirtyLog {
+    #[default]
+    Off,
+    /// Send the accumulated dirty set and keep it, so another peer can be
+    /// given the same set for the same paused image.
+    Keep,
+    /// Send the accumulated dirty set and clear it.
+    Consume,
+}
+
+impl FromStr for MemfdDirtyLog {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "off" => Ok(Self::Off),
+            "keep" => Ok(Self::Keep),
+            "consume" => Ok(Self::Consume),
+            _ => Err(format!(
+                "invalid dirty_log value {s:?}, expected off|keep|consume"
+            )),
+        }
+    }
 }
 
 impl VmSendMigrationData {
@@ -623,7 +658,7 @@ impl VmSendMigrationData {
         downtime_ms=<milliseconds>,timeout_s=<seconds>,\
         timeout_strategy=cancel|ignore,connections=<amount>,\
         tls_dir=<path>,memory_mode=memfds|precopy|postcopy,\
-        local=on|off (deprecated; use memory_mode=memfds)]\"";
+        dirty_log=off|keep|consume,local=on|off (deprecated; use memory_mode=memfds)]\"";
 
     // Same as QEMU.
     pub const DEFAULT_DOWNTIME: Duration = Duration::from_millis(300);
@@ -654,7 +689,8 @@ impl VmSendMigrationData {
             .add("timeout_strategy")
             .add("connections")
             .add("tls_dir")
-            .add("memory_mode");
+            .add("memory_mode")
+            .add("dirty_log");
         parser
             .parse(migration)
             .map_err(VmSendMigrationConfigError::ParseError)?;
@@ -721,6 +757,10 @@ impl VmSendMigrationData {
             .convert::<MigrationMode>("memory_mode")
             .map_err(VmSendMigrationConfigError::ParseError)?
             .unwrap_or_default();
+        let dirty_log = parser
+            .convert::<MemfdDirtyLog>("dirty_log")
+            .map_err(VmSendMigrationConfigError::ParseError)?
+            .unwrap_or_default();
 
         #[expect(deprecated)]
         let data = Self {
@@ -733,6 +773,7 @@ impl VmSendMigrationData {
             connections,
             tls_dir,
             memory_mode,
+            dirty_log,
         };
 
         data.validate()?;
@@ -803,6 +844,14 @@ impl VmSendMigrationData {
                         .to_string(),
                 ));
             }
+        }
+
+        if self.dirty_log != MemfdDirtyLog::Off
+            && !(self.preserve_source && self.effective_memory_mode() == MigrationMode::MemFDs)
+        {
+            return Err(VmSendMigrationConfigError::ValidationError(
+                "dirty_log requires memory_mode=memfds and preserve_source=on.".to_string(),
+            ));
         }
 
         if self.preserve_source && self.effective_memory_mode() != MigrationMode::MemFDs {
@@ -2476,6 +2525,7 @@ mod tests {
                 connections: VmSendMigrationData::default_connections(),
                 tls_dir: None,
                 memory_mode: MigrationMode::Precopy,
+                dirty_log: MemfdDirtyLog::Off,
             }
         );
 
@@ -2498,6 +2548,7 @@ mod tests {
                 connections: NonZeroU32::new(4).unwrap(),
                 tls_dir: Some(tls_dir_path),
                 memory_mode: MigrationMode::Precopy,
+                dirty_log: MemfdDirtyLog::Off,
             }
         );
 

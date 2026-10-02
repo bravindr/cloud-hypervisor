@@ -555,6 +555,10 @@ pub struct Vm {
     numa_nodes: NumaNodes,
     stop_on_boot: bool,
     load_payload_handle: Option<thread::JoinHandle<Result<EntryPoint>>>,
+    /// Dirty logging started by a `dirty_log` memfd migration, and the
+    /// accumulated per-mapping dirty bitmaps not yet consumed.
+    memfd_dirty_log_active: bool,
+    memfd_pending_dirty: Vec<(u64, u64, Vec<u64>)>,
 }
 
 impl Vm {
@@ -735,7 +739,50 @@ impl Vm {
             numa_nodes,
             stop_on_boot,
             load_payload_handle,
+            memfd_dirty_log_active: false,
+            memfd_pending_dirty: Vec::new(),
         })
+    }
+
+    /// Dirty pages for a `dirty_log` memfd migration. The first call starts
+    /// dirty logging and returns `None` (everything is dirty). Later calls
+    /// fold the pages written since the previous fetch into the pending set
+    /// and return it; `consume` clears the pending set afterwards.
+    pub fn memfd_dirty_log(
+        &mut self,
+        consume: bool,
+    ) -> std::result::Result<Option<MemoryRangeTable>, MigratableError> {
+        if !self.memfd_dirty_log_active {
+            self.memory_manager.lock().unwrap().start_dirty_log()?;
+            self.memfd_dirty_log_active = true;
+            self.memfd_pending_dirty.clear();
+            return Ok(None);
+        }
+        let fresh = self.memory_manager.lock().unwrap().dirty_bitmaps()?;
+        if self.memfd_pending_dirty.is_empty() {
+            self.memfd_pending_dirty = fresh;
+        } else {
+            for ((gpa, _, pending), (fgpa, _, bitmap)) in
+                self.memfd_pending_dirty.iter_mut().zip(fresh)
+            {
+                assert_eq!(*gpa, fgpa, "guest RAM mappings changed while dirty logging");
+                for (p, b) in pending.iter_mut().zip(bitmap) {
+                    *p |= b;
+                }
+            }
+        }
+        let mut table = MemoryRangeTable::default();
+        for (gpa, _, bitmap) in &self.memfd_pending_dirty {
+            table.extend(MemoryRangeTable::from_dirty_bitmap(
+                bitmap.iter().copied(),
+                *gpa,
+                4096,
+            ));
+        }
+        if consume {
+            self.memfd_pending_dirty.clear();
+        }
+        Ok(Some(table))
     }
 
     /// Determine if VIRTIO_F_ACCESS_PLATFORM should be forced based on

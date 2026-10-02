@@ -154,6 +154,12 @@ pub enum Command {
     /// Request a page to be faulted in. The page content can be sent
     /// through the response or simply written to the shared memory.
     PageFault = 9,
+    /// memfd migration with `dirty_log=keep|consume`: the payload is a
+    /// [`MemoryRangeTable`] of the guest pages written since dirty logging
+    /// started for these memfds (4 KiB granularity). Not sent for the first
+    /// such migration, which starts the log: the peer then sees no DirtyLog
+    /// and must treat all memory as dirty.
+    DirtyLog = 10,
 }
 
 /// Role announced as the first message on an additional migration connection.
@@ -266,6 +272,10 @@ impl Request {
     }
 
     /// PageFault request always carries a single `MemoryRange`.
+    pub fn dirty_log(length: u64) -> Self {
+        Self::new(Command::DirtyLog, length)
+    }
+
     pub fn page_fault() -> Self {
         Self::new(Command::PageFault, size_of::<MemoryRange>() as u64)
     }

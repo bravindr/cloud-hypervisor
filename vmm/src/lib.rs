@@ -1861,6 +1861,26 @@ impl Vmm {
                 let memory_ranges = vm.dirty_log()?;
                 transport::send_memory_ranges(&vm.guest_memory(), &memory_ranges, &mut socket)?;
             }
+            // Offload checkpoints: tell the peer which pages changed since
+            // the previous checkpoint (after the snapshot, so its side
+            // effects are included).
+            if matches!(memory_mode, MigrationMode::MemFDs)
+                && send_data_migration.dirty_log != api::MemfdDirtyLog::Off
+            {
+                let consume = send_data_migration.dirty_log == api::MemfdDirtyLog::Consume;
+                if let Some(table) = vm.memfd_dirty_log(consume)? {
+                    info!(
+                        "memfd dirty log: {} ranges, {} KiB",
+                        table.regions().len(),
+                        table.effective_size() >> 10
+                    );
+                    Request::dirty_log(table.length()).write_to(&mut socket)?;
+                    table.write_to(&mut socket)?;
+                    Response::read_from(&mut socket)?.ok_or_fatal_error(
+                        MigratableError::MigrateSend(anyhow!("Error sending the dirty log")),
+                    )?;
+                }
+            }
             Ok(snapshot)
         })?;
 

@@ -3582,6 +3582,40 @@ impl Transportable for MemoryManager {
     }
 }
 
+impl MemoryManager {
+    /// Per guest RAM mapping: (gpa, size, dirty bitmap at 4 KiB granularity)
+    /// since the last call or since the log started, combining the
+    /// hypervisor's log with the VMM's own write bitmap (device writes).
+    /// Fetching resets both.
+    pub fn dirty_bitmaps(&mut self) -> result::Result<Vec<(u64, u64, Vec<u64>)>, MigratableError> {
+        let mut out = Vec::with_capacity(self.guest_ram_mappings.len());
+        for r in &self.guest_ram_mappings {
+            let vm_dirty_bitmap = self
+                .vm
+                .get_dirty_log(r.slot, r.gpa, r.size)
+                .context("Error getting VM dirty log")
+                .map_err(MigratableError::MigrateSend)?;
+            let vmm_dirty_bitmap = match self.guest_memory.memory().find_region(GuestAddress(r.gpa))
+            {
+                Some(region) => (**region).bitmap().get_and_reset(),
+                None => {
+                    return Err(MigratableError::MigrateSend(anyhow!(
+                        "Error finding 'guest memory region' with address {:x}",
+                        r.gpa
+                    )));
+                }
+            };
+            let bitmap = vm_dirty_bitmap
+                .iter()
+                .zip(vmm_dirty_bitmap.iter().chain(std::iter::repeat(&0)))
+                .map(|(x, y)| x | y)
+                .collect();
+            out.push((r.gpa, r.size, bitmap));
+        }
+        Ok(out)
+    }
+}
+
 impl Migratable for MemoryManager {
     // Start the dirty log in the hypervisor (kvm/mshv).
     // Also, reset the dirty bitmap logged by the vmm.
