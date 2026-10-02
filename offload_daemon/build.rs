@@ -1,4 +1,6 @@
-use std::env;
+use std::path::PathBuf;
+use std::process::Command;
+use std::{env, fs};
 
 fn main() {
     println!("cargo:rerun-if-changed=src/qpl_shim.c");
@@ -34,7 +36,7 @@ fn main() {
 /// the `libdto_explicit` target (no libc interposers) live on this branch.
 const DTO_REPO: &str = "https://github.com/byrnedj/DTO";
 const DTO_BRANCH: &str = "ch-async-ops";
-const DTO_53d37322af526aa5c7cb7e176c0d6612b8e1d9d7: &str = "53d37322af526aa5c7cb7e176c0d6612b8e1d9d7";
+const DTO_REV: &str = "53d37322af526aa5c7cb7e176c0d6612b8e1d9d7";
 
 /// Link `libdto_explicit`. Either build it from a DTO checkout named by
 /// `DTO_SRC_DIR` (cmake, into OUT_DIR), or take a prebuilt library from
@@ -42,30 +44,41 @@ const DTO_53d37322af526aa5c7cb7e176c0d6612b8e1d9d7: &str = "53d37322af526aa5c7cb
 /// ships, with an rpath to wherever the library was found.
 fn link_dto() {
     let dto_dir = if let Some(src) = env::var_os("DTO_SRC_DIR") {
-        let src = std::path::PathBuf::from(src);
-        let out = std::path::PathBuf::from(env::var_os("OUT_DIR").expect("OUT_DIR")).join("dto");
+        let src = PathBuf::from(src);
+        let out = PathBuf::from(env::var_os("OUT_DIR").expect("OUT_DIR")).join("dto");
         println!("cargo:rerun-if-changed={}", src.join("dto.c").display());
         println!("cargo:rerun-if-changed={}", src.join("dto.h").display());
-        let status = std::process::Command::new("cmake")
+        let status = Command::new("cmake")
             .args(["-S"])
             .arg(&src)
             .arg("-B")
             .arg(&out)
-            .args(["-DCMAKE_BUILD_TYPE=RelWithDebInfo", "-DDTO_BUILD_EXPLICIT=ON"])
+            .args([
+                "-DCMAKE_BUILD_TYPE=RelWithDebInfo",
+                "-DDTO_BUILD_EXPLICIT=ON",
+            ])
             .status()
             .expect("running cmake for DTO");
-        assert!(status.success(), "cmake configure of DTO in {} failed", src.display());
-        let status = std::process::Command::new("cmake")
+        assert!(
+            status.success(),
+            "cmake configure of DTO in {} failed",
+            src.display()
+        );
+        let status = Command::new("cmake")
             .args(["--build"])
             .arg(&out)
             .args(["--target", "dto_explicit", "--parallel"])
             .status()
             .expect("running cmake --build for DTO");
-        assert!(status.success(), "building libdto_explicit from {} failed", src.display());
-        let header = std::fs::read_to_string(src.join("dto.h")).unwrap_or_default();
+        assert!(
+            status.success(),
+            "building libdto_explicit from {} failed",
+            src.display()
+        );
+        let header = fs::read_to_string(src.join("dto.h")).unwrap_or_default();
         assert!(
             header.contains("dto_submit_compare"),
-            "{} is not the DTO revision this daemon needs ({DTO_REPO} branch {DTO_BRANCH}, {DTO_53d37322af526aa5c7cb7e176c0d6612b8e1d9d7})",
+            "{} is not the DTO revision this daemon needs ({DTO_REPO} branch {DTO_BRANCH}, {DTO_REV})",
             src.display()
         );
         out.display().to_string()
