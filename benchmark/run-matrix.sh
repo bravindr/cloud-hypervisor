@@ -14,7 +14,24 @@ usage() {
 phase=$1
 [[ "$phase" == snapshot || "$phase" == restore ]] || usage
 
-read -r -a codecs <<<"${CODECS:-raw lz4 zstd qpl-hardware-static-async qpl-hardware-dynamic-async}"
+read -r -a base_codecs <<<"${CODECS:-raw lz4 zstd qpl-hardware-static-async qpl-hardware-dynamic-async}"
+# CLASSIFY_MODES expands each async QPL codec into daemon variants:
+# base (unmodified daemon when BASE_OFFLOAD_BIN is set), cpu, dsa, dsacrc.
+read -r -a classify_modes <<<"${CLASSIFY_MODES:-base}"
+codecs=()
+for base_codec in "${base_codecs[@]}"; do
+    if [[ "$base_codec" == qpl-*-async ]]; then
+        for mode in "${classify_modes[@]}"; do
+            if [[ "$mode" == base ]]; then
+                codecs+=("$base_codec")
+            else
+                codecs+=("${base_codec}+${mode}")
+            fi
+        done
+    else
+        codecs+=("$base_codec")
+    fi
+done
 read -r -a chunk_sizes <<<"${CHUNK_SIZES:-65536 262144 1048576 2097152}"
 iterations=${ITERATIONS:-5}
 warmups=${WARMUPS:-1}
@@ -26,7 +43,7 @@ workers_for_codec() {
     local selected_phase=$2
     local counts
     case "$selected_codec" in
-        qpl-*-async)
+        qpl-*-async | qpl-*-async+*)
             if [[ "$selected_phase" == snapshot ]]; then
                 counts=${QPL_ASYNC_SNAPSHOT_DEPTHS:-8}
             else

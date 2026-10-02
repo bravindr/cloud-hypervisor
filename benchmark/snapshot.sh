@@ -13,12 +13,15 @@ usage() {
 
 [[ $# -ge 4 && $# -le 5 ]] || usage
 
-codec=$1
+codec_label=$1
+codec=$(codec_base "$codec_label")
+variant=$(codec_variant "$codec_label")
+OFFLOAD_BIN=$(offload_bin_for_label "$codec_label")
 chunk_size=$2
 workers=$3
 iteration=$4
-snapshot_dir=${5:-$SNAPSHOT_ROOT/${codec}-c${chunk_size}-w${workers}-i${iteration}}
-run_name="snapshot-${codec}-c${chunk_size}-w${workers}-i${iteration}"
+snapshot_dir=${5:-$SNAPSHOT_ROOT/${codec_label}-c${chunk_size}-w${workers}-i${iteration}}
+run_name="snapshot-${codec_label}-c${chunk_size}-w${workers}-i${iteration}"
 daemon_log="$LOG_DIR/$run_name-daemon.log"
 cpu_time_file="$LOG_DIR/$run_name-cpu.txt"
 
@@ -54,6 +57,13 @@ fi
 if [[ "$codec" == zstd ]]; then
     daemon_args+=(--zstd-level "${ZSTD_LEVEL:-1}")
 fi
+case "$variant" in
+    "") ;;
+    +cpu) daemon_args+=(--classify cpu) ;;
+    +dsa) daemon_args+=(--classify dsa --dsa-depth "${DSA_DEPTH:-32}") ;;
+    +dsacrc) daemon_args+=(--classify dsa --dsa-depth "${DSA_DEPTH:-32}" --crc) ;;
+    *) echo "Unknown codec variant $variant" >&2; exit 2 ;;
+esac
 
 daemon_pid=
 cleanup() {
@@ -85,10 +95,10 @@ duration_ms=$(elapsed_ms "$start_ns" "$end_ns")
 cpu_util_pct=$(read_cpu_utilization "$cpu_time_file")
 stored_bytes=$(snapshot_size_bytes "$snapshot_dir")
 if [[ ${RECORD_RESULT:-1} == 1 ]]; then
-    record_result snapshot "$codec" "$chunk_size" "$workers" "$iteration" \
+    record_result snapshot "$codec_label" "$chunk_size" "$workers" "$iteration" \
         "$duration_ms" "$cpu_util_pct" "$stored_bytes" "$snapshot_dir"
 fi
 
 printf 'snapshot codec=%s chunk=%s workers=%s elapsed_ms=%s cpu=%s%% bytes=%s\n' \
-    "$codec" "$chunk_size" "$workers" "$duration_ms" "$cpu_util_pct" "$stored_bytes"
-grep -E 'Compressed slot|Snapshot persisted' "$daemon_log" || true
+    "$codec_label" "$chunk_size" "$workers" "$duration_ms" "$cpu_util_pct" "$stored_bytes"
+grep -E 'Compressed slot|Snapshot persisted|classify=' "$daemon_log" || true

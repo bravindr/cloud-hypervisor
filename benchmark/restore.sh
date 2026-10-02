@@ -13,11 +13,14 @@ usage() {
 [[ $# -eq 5 ]] || usage
 
 snapshot_dir=$1
-codec=$2
+codec_label=$2
+codec=$(codec_base "$codec_label")
+variant=$(codec_variant "$codec_label")
+OFFLOAD_BIN=$(offload_bin_for_label "$codec_label")
 chunk_size=$3
 workers=$4
 iteration=$5
-run_name="restore-${codec}-c${chunk_size}-w${workers}-i${iteration}"
+run_name="restore-${codec_label}-c${chunk_size}-w${workers}-i${iteration}"
 vmm_log="$LOG_DIR/$run_name-vmm.log"
 receiver_log="$LOG_DIR/$run_name-receiver.log"
 daemon_log="$LOG_DIR/$run_name-daemon.log"
@@ -69,6 +72,11 @@ restore_args=(
 if [[ ${RESUME_VM:-1} == 1 ]]; then
     restore_args+=(--resume)
 fi
+if [[ -n "$variant" ]]; then
+    [[ "$variant" == +dsacrc ]] && restore_args+=(--verify-crc)
+    [[ ${RESTORE_HUGETLB:-0} == 1 ]] && restore_args+=(--hugetlb)
+    restore_args+=(--dsa-depth "${DSA_DEPTH:-32}")
+fi
 
 start_ns=$(date +%s%N)
 "$TIME_BIN" --format='%P' --output="$cpu_time_file" \
@@ -83,11 +91,11 @@ duration_ms=$(elapsed_ms "$start_ns" "$end_ns")
 cpu_util_pct=$(read_cpu_utilization "$cpu_time_file")
 stored_bytes=$(snapshot_size_bytes "$snapshot_dir")
 if [[ ${RECORD_RESULT:-1} == 1 ]]; then
-    record_result restore "$codec" "$chunk_size" "$workers" "$iteration" \
+    record_result restore "$codec_label" "$chunk_size" "$workers" "$iteration" \
         "$duration_ms" "$cpu_util_pct" "$stored_bytes" "$snapshot_dir"
 fi
 
 printf 'restore codec=%s chunk=%s workers=%s elapsed_ms=%s cpu=%s%% bytes=%s\n' \
-    "$codec" "$chunk_size" "$workers" "$duration_ms" "$cpu_util_pct" "$stored_bytes"
-grep -E 'Decompressed|Restore replay finished' "$daemon_log" || true
+    "$codec_label" "$chunk_size" "$workers" "$duration_ms" "$cpu_util_pct" "$stored_bytes"
+grep -E 'Decompressed|Restore replay finished|crc verify|Populated' "$daemon_log" || true
 grep -E 'Migration \(incoming\)' "$vmm_log" || true

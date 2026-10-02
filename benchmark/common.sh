@@ -154,6 +154,22 @@ if [[ -n ${VM_CPU_LIST:-} ]]; then
 fi
 
 OFFLOAD_PREFIX=()
+# Codec labels may carry a daemon variant suffix: "<codec>+cpu" / "+dsa" /
+# "+dsacrc" run the dsa-integration daemon with that classifier (and CRC);
+# a bare codec runs BASE_OFFLOAD_BIN (the unmodified iaa-integration daemon)
+# when it is set, otherwise OFFLOAD_BIN. Snapshot directories and result rows
+# are keyed by the full label so the variants stay distinct.
+codec_base() { printf '%s\n' "${1%%+*}"; }
+codec_variant() { local label=$1; local base=${label%%+*}; printf '%s\n' "${label#"$base"}"; }
+offload_bin_for_label() {
+    if [[ -z "$(codec_variant "$1")" && -n ${BASE_OFFLOAD_BIN:-} ]]; then
+        printf '%s\n' "$BASE_OFFLOAD_BIN"
+    else
+        printf '%s\n' "$OFFLOAD_BIN"
+    fi
+}
+# DTO reads its configuration from the environment of the daemon process.
+export DTO_WQ_LIST DTO_IS_NUMA_AWARE DTO_LOG_LEVEL 2>/dev/null || true
 if [[ -n ${OFFLOAD_CPU:-} ]]; then
     command -v taskset >/dev/null || {
         echo "OFFLOAD_CPU requires taskset" >&2
