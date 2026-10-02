@@ -1,0 +1,21 @@
+18:48:46 snapshot /mnt/chsnap/dsasnap/dsa_crc, guest console /home/byrnedan/chlogs/dsadaemon_all_hon_20261001_1514/console.log
+18:48:55 p4k_cpu: rc=0 wall 1169 ms wall=1.15 user=0.08 sys=1.68 guest-progressed=yes
+    crc verify: 109 chunks checked (dsa submitted=109 fallback=0 failed=0)
+    Decompressed offload-slot-0: chunks=3072, compressed=36946814 bytes, output=3221225472 bytes, ratio=0.011, throughput=35.549 GiB/s
+    crc verify: 997 chunks checked (dsa submitted=997 fallback=0 failed=0)
+    Decompressed offload-slot-1: chunks=1024, compressed=420670879 bytes, output=1073741824 bytes, ratio=0.392, throughput=1.681 GiB/s
+    Populated offload-slot-1: 28311552 zero bytes via cpu in 12.5 ms
+    Populated offload-slot-0: 3106930688 zero bytes via cpu in 945.2 ms
+18:49:05 p2m_none: rc=0 wall 236 ms wall=0.21 user=0.10 sys=0.09 guest-progressed=yes
+    crc verify: 109 chunks checked (dsa submitted=109 fallback=0 failed=0)
+    Decompressed offload-slot-0: chunks=3072, compressed=36946814 bytes, output=3221225472 bytes, ratio=0.011, throughput=79.514 GiB/s
+    crc verify: 997 chunks checked (dsa submitted=997 fallback=0 failed=0)
+    Decompressed offload-slot-1: chunks=1024, compressed=420670879 bytes, output=1073741824 bytes, ratio=0.392, throughput=5.043 GiB/s
+18:49:14 p2m_cpu: rc=0 wall 247 ms wall=0.23 user=0.11 sys=0.11 guest-progressed=yes
+    crc verify: 109 chunks checked (dsa submitted=109 fallback=0 failed=0)
+    Decompressed offload-slot-0: chunks=3072, compressed=36946814 bytes, output=3221225472 bytes, ratio=0.011, throughput=73.605 GiB/s
+    Populated offload-slot-0: 3106930688 zero bytes via cpu in 94.6 ms
+    crc verify: 997 chunks checked (dsa submitted=997 fallback=0 failed=0)
+    Decompressed offload-slot-1: chunks=1024, compressed=420670879 bytes, output=1073741824 bytes, ratio=0.392, throughput=4.797 GiB/s
+    Populated offload-slot-1: 28311552 zero bytes via cpu in 0.9 ms
+18:49:15 DONE -> /home/byrnedan/chlogs/restorecells_20261001_1848

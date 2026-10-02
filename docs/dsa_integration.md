@@ -408,6 +408,39 @@ the guest's configuration (the daemon previously always restored onto 4 KiB
 pages). Hugetlb memfds have no `write(2)`; restore now copies decompressed
 chunks into a mapping of the memfd, which also removed the per-chunk pwrite.
 
+### 7c.2b Restore populate through the mm_offload kernel (clear offload)
+
+UFFDIO_COPY from the mm_offload kernel does not apply to the daemon's
+restore: the on-demand path serves faults by writing into the shared memfd
+and letting CH issue UFFDIO_CONTINUE (no COPY ioctl at all), and the kernel's
+batched COPY offload refuses `VM_SHARED` VMAs and is not hooked for shmem or
+hugetlb mfill, while offload/migration memory must be shared or hugepage
+backed. What the same kernel does hook is the hugetlb/THP page **clear**
+(`folio_zero_user`, hugetlb fault path), and that is exactly the populate
+cost above. qual1 runs `7.2.0-mmoff-uffd+` with the `dcbm` provider; it
+needs kernel dmaengine work queues, which this host did not have (every DSA
+had only the user queue). Added `wq0.1/wq2.1/wq4.1/wq6.1`: kernel, dedicated,
+size 128 (the user queues keep their 128 of 256), driver `dmaengine`, group
+0, so both kinds share the engines. `echo 1 > /sys/module/dcbm/parameters/offloading`
+then claims 4 channels.
+
+| restore cell (hugetlb memfd, `--verify-crc`) | provider off | provider on |
+|---|---|---|
+| no populate | 266–276 ms | 236 ms |
+| `--populate cpu` (MADV_POPULATE_WRITE 3.1 GiB) | 347 ms, populate 264 ms, sys 0.45 s | **247 ms, populate 95 ms, sys 0.11 s** |
+| 4 KiB memfd, `--populate cpu` | 945–959 ms | 945 ms (order-0 clears are below `min_clear_bytes` = 2 MiB) |
+
+`folios_cleared` rose by 2609 over the run with no failures or gating, so
+the 2 MiB clears went to DSA: the hugetlb populate is 2.8× faster and the
+no-populate restore gains too, because IAA writing a chunk into a hugetlb
+hole triggers the same clear. This is the right split: the kernel clears
+the page it allocates, the daemon never fills zeros itself (`--populate dsa`
+stays measured-worse), and user-space DSA is left to classify, CRC and
+compress. The queue change is per boot (`accel-config` does not persist)
+and the device had to be disabled to add a queue, so the DTO/QPL user queues
+were recreated identically in the same step; the provider knob was set back
+to 0 after the measurement.
+
 ### 7c.3 IOMMU first touch: measured, and the fix
 
 `dto-async-test` (fresh process, 2 GiB memfd filled by another mapping, then
@@ -443,6 +476,8 @@ slower first cell in each sweep (`cpu` 492 vs 331 ms, `dsa` w8 473 vs 214 ms).
 - Classify granularity below the 1 MiB chunk is not needed (§3), so the
   in-VMM 64 KiB batching stays out.
 - Push `ch-async-ops` to a DTO fork; the daemon depends on it.
+- On-demand restore of compressed snapshots: decompress the faulting chunk
+  into the memfd mapping with IAA and let CH `UFFDIO_CONTINUE` (§7c.2b).
 
 ## 7. Phases and validation
 

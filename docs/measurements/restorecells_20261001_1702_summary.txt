@@ -1,0 +1,14 @@
+17:02:46 snapshot /mnt/chsnap/dsasnap/dsa_crc, guest console /home/byrnedan/chlogs/dsadaemon_all_hon_20261001_1514/console.log
+17:02:54 p2m_none: rc=0 wall 276 ms wall=0.26 user=0.09 sys=0.19 guest-progressed=yes
+    crc verify: 109 chunks checked (dsa submitted=109 fallback=0 failed=0)
+    Decompressed offload-slot-0: chunks=3072, compressed=36946814 bytes, output=3221225472 bytes, ratio=0.011, throughput=65.990 GiB/s
+    crc verify: 997 chunks checked (dsa submitted=997 fallback=0 failed=0)
+    Decompressed offload-slot-1: chunks=1024, compressed=420670879 bytes, output=1073741824 bytes, ratio=0.392, throughput=4.227 GiB/s
+17:03:03 p2m_cpu: rc=0 wall 348 ms wall=0.33 user=0.11 sys=0.43 guest-progressed=yes
+    crc verify: 109 chunks checked (dsa submitted=109 fallback=0 failed=0)
+    Decompressed offload-slot-0: chunks=3072, compressed=36946814 bytes, output=3221225472 bytes, ratio=0.011, throughput=81.138 GiB/s
+    crc verify: 997 chunks checked (dsa submitted=997 fallback=0 failed=0)
+    Populated offload-slot-0: 3106930688 zero bytes via cpu in 266.6 ms
+    Decompressed offload-slot-1: chunks=1024, compressed=420670879 bytes, output=1073741824 bytes, ratio=0.392, throughput=4.291 GiB/s
+    Populated offload-slot-1: 28311552 zero bytes via cpu in 2.6 ms
+17:03:04 DONE -> /home/byrnedan/chlogs/restorecells_20261001_1702

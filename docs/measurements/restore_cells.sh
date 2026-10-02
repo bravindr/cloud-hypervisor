@@ -12,6 +12,7 @@ log() { echo "$(date +%H:%M:%S) $*" | tee -a $OUT/summary.txt; }
 CONSOLE=$(sudo python3 -c "import json;c=json.load(open('$SNAPDIR/config.json'));print(c['serial']['file'])" 2>/dev/null)
 [ -n "$CONSOLE" ] || CONSOLE=$(sudo grep -oE '"file":"[^"]+console.log"' $SNAPDIR/*.json | head -1 | cut -d'"' -f4)
 log "snapshot $SNAPDIR, guest console $CONSOLE"
+want() { [ -z "${CELLS:-}" ] || [[ " $CELLS " == *" $1 "* ]]; }
 restore() {  # restore <name> <args...>
   local name=$1; shift
   sudo rm -f $RSOCK $RDATA; sudo truncate -s 0 $CONSOLE 2>/dev/null
@@ -29,12 +30,13 @@ restore() {  # restore <name> <args...>
   grep -hE "Populated|populate:|crc verify|Decompressed|Error" $OUT/daemon_$name.log | sed -E "s/^.*(INFO|ERROR) +offload_daemon(::compression)?\] /    /" | cut -c1-170 | tee -a $OUT/summary.txt
   sudo $REM --api-socket $RSOCK shutdown-vmm >/dev/null 2>&1; sleep 1; sudo kill $RPID 2>/dev/null; wait $RPID 2>/dev/null
 }
-restore p4k_none     --verify-crc
-restore p4k_cpu      --verify-crc --populate cpu
-restore p2m_none     --verify-crc --hugetlb
-restore p2m_cpu      --verify-crc --populate cpu --hugetlb
-restore p2m_dsa      --verify-crc --populate dsa --hugetlb
-restore p4k_dsa      --verify-crc --populate dsa
+want p4k_none && restore p4k_none     --verify-crc
+want p4k_cpu && restore p4k_cpu      --verify-crc --populate cpu
+want p2m_none && restore p2m_none     --verify-crc --hugetlb
+want p2m_cpu && restore p2m_cpu      --verify-crc --populate cpu --hugetlb
+want p2m_dsa && restore p2m_dsa      --verify-crc --populate dsa --hugetlb
+want p4k_dsa && restore p4k_dsa      --verify-crc --populate dsa
+[ -z "${CELLS:-}" ] || { log "DONE -> $OUT"; exit 0; }
 # manifest CRC corruption: must be refused by the verifier
 CORR=${SNAPDIR}_crccorrupt; sudo rm -rf $CORR; sudo cp -r $SNAPDIR $CORR
 sudo python3 - $CORR <<'PY'
