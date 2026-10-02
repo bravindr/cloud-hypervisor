@@ -565,6 +565,76 @@ Reading:
   builds the Huffman table on the CPU), so the classifier savings are a
   smaller fraction there.
 
+### 7c.2e Real-agent microVM lifecycle (benchmark/agent)
+
+Seven recorded Terminal-Bench 2 agent sessions (10-60 turns, 170 turns in
+all) replayed in cloud-hypervisor guests booted from each task's own Docker
+image (RW copy, 2 vCPUs, 4 GiB `shared=on`, 4 KiB or 2 MiB hugetlb). After
+the warm base point and after every agent turn the VM is paused and **every
+daemon variant checkpoints the same paused image** (order rotated per turn),
+then the VM resumes; each variant's `send-migration` wall time is the pause
+it alone would impose. After the last turn the final and the base
+checkpoints are restored per variant into a fresh VMM and the guest must
+progress (resume the session; fork from the warm base). All variants use
+`qpl-hardware-static-async`, 1 MiB chunks, `--workers 8`, daemon pinned to
+cores 4-5, VM to cores 0-3. `bash benchmark/agent/run_all.sh 4k 2m`;
+results in `docs/measurements/lifecycle/`. 1770 checkpoints, 0 failures,
+0 DSA fallbacks; 140/140 restores resumed the guest; manifests identical
+across variants (193 MiB compressed per checkpoint, median).
+
+Per-turn checkpoint (median over all 170 turns; p95 within ~25 %):
+
+| variant | 4 KiB wall | 4 KiB core-s | 2 MiB wall | 2 MiB core-s |
+|---|---|---|---|---|
+| base (unmodified daemon) | 1147 ms | 1.47 | 1416 ms | 1.79 |
+| cpu | 97 ms | 0.13 | 229 ms | 0.32 |
+| dsa | 97 ms | 0.13 | 96 ms | 0.14 |
+| cpu + CRC | 138 ms | 0.20 | 250 ms | 0.39 |
+| dsa + CRC | 96 ms | 0.13 | 123 ms | 0.20 |
+
+Daemon CPU for all checkpoints of all seven sessions (171 per variant):
+4 KiB base 261 s, cpu 24.3, dsa 23.1, cpucrc 36.5, dsacrc 23.2; 2 MiB base
+321 s, cpu 60.2, dsa 25.4, cpucrc 69.5, dsacrc 34.7. Restores: 130-175 ms
+for every variant and both page sizes (IAA decompression of ~200 MiB).
+
+Reading:
+
+- **Agent guests are almost all untouched memory.** At 4 KiB the daemon
+  sees it directly: `SEEK_DATA` finds ~250 MiB of data per 4 GiB guest and
+  2800+ of 3072 chunks in the large slot are holes that are never read.
+  Classification then touches 250 MiB per checkpoint and the word-wide CPU
+  scan is as fast as DSA (97 ms both). DSA still wins with CRC: 96 vs
+  138 ms per turn and 35 % less CPU.
+- **hugetlbfs reports no holes**, so on 2 MiB guests every checkpoint
+  classifies all 4 GiB. That is where DSA pays: 2.4x lower pause than CPU
+  classification (96 vs 229 ms) at 2.3x less CPU, and 2x with CRC.
+- **Against the unmodified daemon** a turn checkpoint is 12-15x shorter on
+  either page size with DSA, and a 60-turn session's checkpoint CPU drops
+  from 117 s to 9-12 s (2 MiB). The base daemon's ~1.1-1.4 s per turn is the
+  byte-at-a-time scan plus pread of 4 GiB, regardless of how much the agent
+  touched.
+
+**Defect found by this benchmark and fixed (f8d5a1633).** Mapping a shmem
+memfd and populating or reading it allocates a zeroed page for every hole.
+The first lifecycle run grew each 4 KiB guest's memfd from ~90 MiB to its
+full 4096 MiB (system Shmem +4 GiB) at the first checkpoint, and made that
+checkpoint ~1.9 s. The daemon now finds data extents with
+`SEEK_DATA`/`SEEK_HOLE`, records chunks wholly inside a hole as zero
+without touching them, and populates only data extents: memfd stays at
+480-490 MiB and the populate step is 5-7 ms. On hugetlb guests the same
+populate turns the guest's reserved huge pages into zeroed ones (in use 249
+-> 2048, `HugePages_Rsvd` 1799 -> 0, unreserved free unchanged at 1024), so
+it takes no memory from anyone else; it costs ~0.2-0.8 s of kernel page
+zeroing once, at the first checkpoint, which the mm_offload clear provider
+can absorb (§7c.2b). The pre-fix run is kept as
+`docs/measurements/lifecycle/prefix_memory_inflation_summary.txt`.
+
+Guest time is small: these agents mostly ran `ls`, `cat` and small edits;
+the heaviest turn (`gcc -static` and run) took 0.86 s, and the 170 turns
+took 9 s of guest time in all. The restore "guest progressed" times are a
+liveness check that includes the guest's own post-step sleep, not a restore
+latency.
+
 ### 7c.3 IOMMU first touch: measured, and the fix
 
 `dto-async-test` (fresh process, 2 GiB memfd filled by another mapping, then

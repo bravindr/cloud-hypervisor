@@ -1,0 +1,11 @@
+session,pages,turn,guest_secs,rc
+circuit-fibsqrt_7b,4k,1,0.02,0
+circuit-fibsqrt_7b,4k,2,0.15,1
+circuit-fibsqrt_7b,4k,3,0.02,0
+circuit-fibsqrt_7b,4k,4,0.04,1
+circuit-fibsqrt_7b,4k,5,0.02,0
+circuit-fibsqrt_7b,4k,6,0.03,0
+circuit-fibsqrt_7b,4k,7,0.03,127
+circuit-fibsqrt_7b,4k,8,0.14,0
+circuit-fibsqrt_7b,4k,9,0.02,0
+circuit-fibsqrt_7b,4k,10,0.01,0

@@ -1,0 +1,14 @@
+session,pages,turn,guest_secs,rc
+write-compressor_30b,4k,1,0.03,0
+write-compressor_30b,4k,2,0.02,0
+write-compressor_30b,4k,3,0.03,0
+write-compressor_30b,4k,4,0.02,0
+write-compressor_30b,4k,5,0.02,0
+write-compressor_30b,4k,6,0.02,127
+write-compressor_30b,4k,7,0.03,139
+write-compressor_30b,4k,8,0.02,0
+write-compressor_30b,4k,9,0.02,0
+write-compressor_30b,4k,10,0.02,0
+write-compressor_30b,4k,11,0.02,0
+write-compressor_30b,4k,12,0.02,139
+write-compressor_30b,4k,13,0.01,0

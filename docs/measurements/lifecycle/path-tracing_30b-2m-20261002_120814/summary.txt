@@ -1,0 +1,18 @@
+12:08:15 session path-tracing_30b pages=2m turns=23 variants=base cpu dsa cpucrc dsacrc workers=8 daemon_cpus=4,5
+12:08:21 boot to AGENT_BASE_POINT: 6643 ms
+12:08:46   checkpointed turn 5/23
+12:09:09   checkpointed turn 10/23
+12:09:30   checkpointed turn 15/23
+12:09:51   checkpointed turn 20/23
+12:10:03 session done; restoring
+12:10:10 restore last base: rc=0 171 ms, guest 'AGENT_DIFF_POINT' ok=1 after 3328 ms
+12:10:20 restore base base: rc=0 147 ms, guest 'AGENT_STEP_DONE 1 ' ok=1 after 6025 ms
+12:10:25 restore last cpu: rc=0 151 ms, guest 'AGENT_DIFF_POINT' ok=1 after 1668 ms
+12:10:34 restore base cpu: rc=0 474 ms, guest 'AGENT_STEP_DONE 1 ' ok=1 after 4787 ms
+12:10:41 restore last dsa: rc=0 154 ms, guest 'AGENT_DIFF_POINT' ok=1 after 1251 ms
+12:10:48 restore base dsa: rc=0 125 ms, guest 'AGENT_STEP_DONE 1 ' ok=1 after 4163 ms
+12:10:56 restore last cpucrc: rc=0 148 ms, guest 'AGENT_DIFF_POINT' ok=1 after 3957 ms
+12:11:03 restore base cpucrc: rc=0 128 ms, guest 'AGENT_STEP_DONE 1 ' ok=1 after 3958 ms
+12:11:10 restore last dsacrc: rc=0 158 ms, guest 'AGENT_DIFF_POINT' ok=1 after 3540 ms
+12:11:16 restore base dsacrc: rc=0 127 ms, guest 'AGENT_STEP_DONE 1 ' ok=1 after 3538 ms
+12:11:17 DONE -> /home/byrnedan/chlogs/lifecycle/path-tracing_30b-2m-20261002_120814

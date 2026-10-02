@@ -1,0 +1,11 @@
+session,pages,checkpoint,variant,restore_ms,user_s,sys_s,guest_ms,guest_ok,rc
+circuit-fibsqrt_7b,2m,last,base,158,0.01,0.19,3951,1,0
+circuit-fibsqrt_7b,2m,base,base,152,0.01,0.18,6029,1,0
+circuit-fibsqrt_7b,2m,last,cpu,141,0.05,0.12,2288,1,0
+circuit-fibsqrt_7b,2m,base,cpu,122,0.05,0.10,4779,1,0
+circuit-fibsqrt_7b,2m,last,dsa,139,0.04,0.12,1881,1,0
+circuit-fibsqrt_7b,2m,base,dsa,128,0.04,0.12,4162,1,0
+circuit-fibsqrt_7b,2m,last,cpucrc,135,0.06,0.11,1671,1,0
+circuit-fibsqrt_7b,2m,base,cpucrc,130,0.04,0.12,3957,1,0
+circuit-fibsqrt_7b,2m,last,dsacrc,143,0.05,0.12,1254,1,0
+circuit-fibsqrt_7b,2m,base,dsacrc,132,0.04,0.11,3539,1,0

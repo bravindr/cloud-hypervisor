@@ -1,0 +1,11 @@
+session,pages,checkpoint,variant,restore_ms,user_s,sys_s,guest_ms,guest_ok,rc
+regex-chess_30b,2m,last,base,165,0.00,0.20,3545,1,0
+regex-chess_30b,2m,base,base,145,0.01,0.18,6032,1,0
+regex-chess_30b,2m,last,cpu,157,0.06,0.12,2082,1,0
+regex-chess_30b,2m,base,cpu,129,0.05,0.10,4789,1,0
+regex-chess_30b,2m,last,dsa,155,0.06,0.12,1663,1,0
+regex-chess_30b,2m,base,dsa,127,0.04,0.12,3950,1,0
+regex-chess_30b,2m,last,cpucrc,150,0.04,0.13,1250,1,0
+regex-chess_30b,2m,base,cpucrc,125,0.04,0.12,3741,1,0
+regex-chess_30b,2m,last,dsacrc,148,0.04,0.13,3740,1,0
+regex-chess_30b,2m,base,dsacrc,133,0.04,0.12,3331,1,0

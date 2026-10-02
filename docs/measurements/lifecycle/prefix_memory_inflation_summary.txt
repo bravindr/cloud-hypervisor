@@ -1,0 +1,61 @@
+checkpoints: 1770 (0 failed); restores: 140; guest turns: 340
+
+=== 2m pages: checkpoint cost per variant (all sessions) ===
+variant   base ms turn ms med    p95 turn cpu-s med    p95 total cpu-s MiB/turn med dsa fb
+base         1119        1412   1505           1.79   1.92       320.6          194      0
+cpu           532         228    260           0.32   0.36        60.1          194      0
+dsa            93          96    112           0.14   0.17        25.7          194      0
+cpucrc        251         249    284           0.39   0.42        69.4          194      0
+dsacrc        125         124    137           0.19   0.21        34.5          194      0
+
+=== 2m pages: per session  (turn checkpoint median ms / session daemon cpu-s) ===
+session                      turns            base             cpu             dsa          cpucrc          dsacrc
+circuit-fibsqrt_30b             24    1405/  44.3s     224/   8.1s      94/   3.5s     245/   9.4s     126/   4.9s
+circuit-fibsqrt_7b              10    1416/  19.3s     223/   3.7s     100/   1.6s     232/   4.1s     116/   2.1s
+path-tracing_30b                23    1406/  42.2s     223/   7.9s     101/   3.6s     249/   9.2s     122/   4.8s
+polyglot-rust-c_30b             16    1418/  29.7s     222/   5.8s     112/   2.6s     236/   6.7s     124/   3.3s
+regex-chess_30b                 24    1398/  44.0s     227/   8.2s      98/   3.7s     246/   9.5s     124/   5.0s
+winning-avg-corewars_30b        60    1499/ 116.4s     258/  21.8s      92/   8.8s     281/  25.5s     124/  11.7s
+write-compressor_30b            13    1396/  24.7s     227/   4.7s      90/   1.9s     244/   5.1s     125/   2.8s
+
+=== 2m pages: restores (median over sessions) ===
+  last base    restore     165 ms  daemon cpu  0.20 s  guest progressed 7/7
+  last cpu     restore     145 ms  daemon cpu  0.17 s  guest progressed 7/7
+  last dsa     restore     147 ms  daemon cpu  0.17 s  guest progressed 7/7
+  last cpucrc  restore     149 ms  daemon cpu  0.17 s  guest progressed 7/7
+  last dsacrc  restore     144 ms  daemon cpu  0.17 s  guest progressed 7/7
+  base base    restore     152 ms  daemon cpu  0.18 s  guest progressed 7/7
+  base cpu     restore     134 ms  daemon cpu  0.15 s  guest progressed 7/7
+  base dsa     restore     129 ms  daemon cpu  0.15 s  guest progressed 7/7
+  base cpucrc  restore     132 ms  daemon cpu  0.15 s  guest progressed 7/7
+  base dsacrc  restore     134 ms  daemon cpu  0.15 s  guest progressed 7/7
+
+=== 4k pages: checkpoint cost per variant (all sessions) ===
+variant   base ms turn ms med    p95 turn cpu-s med    p95 total cpu-s MiB/turn med dsa fb
+base         1160        1547   1566           1.96   1.99       339.4          194      0
+cpu          1923         426    439           0.54   0.56       103.8          194      0
+dsa           285         235    260           0.30   0.33        53.5          194      0
+cpucrc        456         448    474           0.63   0.66       107.3          194      0
+dsacrc        256         254    269           0.33   0.35        58.7          194      0
+
+=== 4k pages: per session  (turn checkpoint median ms / session daemon cpu-s) ===
+session                      turns            base             cpu             dsa          cpucrc          dsacrc
+circuit-fibsqrt_30b             24    1550/  48.9s     434/  15.0s     234/   7.5s     458/  15.7s     258/   8.3s
+circuit-fibsqrt_7b              10    1548/  21.3s     428/   7.5s     234/   3.3s     465/   6.9s     255/   3.6s
+path-tracing_30b                23    1552/  46.8s     431/  14.7s     241/   7.5s     461/  15.4s     261/   8.0s
+polyglot-rust-c_30b             16    1562/  32.9s     428/  10.9s     230/   5.2s     444/  11.0s     252/   5.7s
+regex-chess_30b                 24    1550/  48.9s     430/  15.2s     236/   7.6s     464/  15.9s     261/   8.5s
+winning-avg-corewars_30b        60    1458/ 113.2s     386/  31.3s     236/  18.2s     416/  33.7s     252/  19.9s
+write-compressor_30b            13    1553/  27.4s     434/   9.1s     236/   4.1s     466/   8.8s     250/   4.6s
+
+=== 4k pages: restores (median over sessions) ===
+  last base    restore     174 ms  daemon cpu  0.22 s  guest progressed 7/7
+  last cpu     restore     177 ms  daemon cpu  0.21 s  guest progressed 7/7
+  last dsa     restore     170 ms  daemon cpu  0.21 s  guest progressed 7/7
+  last cpucrc  restore     174 ms  daemon cpu  0.22 s  guest progressed 7/7
+  last dsacrc  restore     169 ms  daemon cpu  0.21 s  guest progressed 7/7
+  base base    restore     154 ms  daemon cpu  0.20 s  guest progressed 7/7
+  base cpu     restore     153 ms  daemon cpu  0.20 s  guest progressed 7/7
+  base dsa     restore     155 ms  daemon cpu  0.20 s  guest progressed 7/7
+  base cpucrc  restore     157 ms  daemon cpu  0.20 s  guest progressed 7/7
+  base dsacrc  restore     154 ms  daemon cpu  0.20 s  guest progressed 7/7
