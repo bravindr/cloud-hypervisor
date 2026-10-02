@@ -1,0 +1,24 @@
+silesia-4k  raw                                n=5 wall med    5618 ms (min  5577 max  5660)  cpu  0.89 core-s  out   2551 MiB  
+silesia-4k  qpl-hardware-static-async          n=5 wall med    2553 ms (min  2500 max  2669)  cpu  1.24 core-s  out   1091 MiB  
+silesia-4k  qpl-hardware-static-async+cpu      n=5 wall med    2541 ms (min  2529 max  2609)  cpu  0.69 core-s  out   1091 MiB  dsa sub=0 fb=0 fail=0 cpu_scans=20480 prefault~47ms
+silesia-4k  qpl-hardware-static-async+dsa      n=5 wall med    2546 ms (min  2533 max  2743)  cpu  0.57 core-s  out   1091 MiB  dsa sub=20480 fb=0 fail=0 cpu_scans=0 prefault~45ms
+silesia-4k  qpl-hardware-static-async+cpucrc   n=5 wall med    2734 ms (min  2719 max  2745)  cpu  1.13 core-s  out   1091 MiB  dsa sub=0 fb=0 fail=0 cpu_scans=20480 prefault~47ms
+silesia-4k  qpl-hardware-static-async+dsacrc   n=5 wall med    2540 ms (min  2528 max  2555)  cpu  0.58 core-s  out   1091 MiB  dsa sub=40960 fb=0 fail=0 cpu_scans=0 prefault~46ms
+silesia-4k  qpl-hardware-dynamic-async         n=5 wall med    2636 ms (min  2620 max  2771)  cpu  1.78 core-s  out    929 MiB  
+silesia-4k  qpl-hardware-dynamic-async+cpu     n=5 wall med    2362 ms (min  2341 max  2531)  cpu  0.99 core-s  out    929 MiB  dsa sub=0 fb=0 fail=0 cpu_scans=20480 prefault~47ms
+silesia-4k  qpl-hardware-dynamic-async+dsa     n=5 wall med    2361 ms (min  2332 max  2444)  cpu  0.88 core-s  out    929 MiB  dsa sub=20480 fb=0 fail=0 cpu_scans=0 prefault~46ms
+silesia-4k  qpl-hardware-dynamic-async+cpucrc  n=5 wall med    2545 ms (min  2525 max  2589)  cpu  1.43 core-s  out    929 MiB  dsa sub=0 fb=0 fail=0 cpu_scans=20480 prefault~46ms
+silesia-4k  qpl-hardware-dynamic-async+dsacrc  n=5 wall med    2341 ms (min  2324 max  2368)  cpu  0.89 core-s  out    929 MiB  dsa sub=40960 fb=0 fail=0 cpu_scans=0 prefault~46ms
+
+silesia-2m  raw                                n=5 wall med    8887 ms (min  8763 max  9214)  cpu  1.16 core-s  out   4096 MiB  
+silesia-2m  qpl-hardware-static-async          n=5 wall med    2514 ms (min  2494 max  2538)  cpu  1.16 core-s  out   1094 MiB  
+silesia-2m  qpl-hardware-static-async+cpu      n=5 wall med    2739 ms (min  2419 max  2832)  cpu  0.53 core-s  out   1094 MiB  dsa sub=0 fb=0 fail=0 cpu_scans=20480 prefault~1ms
+silesia-2m  qpl-hardware-static-async+dsa      n=5 wall med    2873 ms (min  2752 max  2975)  cpu  0.47 core-s  out   1094 MiB  dsa sub=20480 fb=0 fail=0 cpu_scans=0 prefault~1ms
+silesia-2m  qpl-hardware-static-async+cpucrc   n=5 wall med    2634 ms (min  2570 max  2990)  cpu  0.90 core-s  out   1094 MiB  dsa sub=0 fb=0 fail=0 cpu_scans=20480 prefault~1ms
+silesia-2m  qpl-hardware-static-async+dsacrc   n=5 wall med    2452 ms (min  2422 max  3072)  cpu  0.46 core-s  out   1094 MiB  dsa sub=40960 fb=0 fail=0 cpu_scans=0 prefault~1ms
+silesia-2m  qpl-hardware-dynamic-async         n=5 wall med    2590 ms (min  2555 max  2700)  cpu  1.71 core-s  out    932 MiB  
+silesia-2m  qpl-hardware-dynamic-async+cpu     n=5 wall med    2369 ms (min  2219 max  2781)  cpu  0.85 core-s  out    932 MiB  dsa sub=0 fb=0 fail=0 cpu_scans=20480 prefault~1ms
+silesia-2m  qpl-hardware-dynamic-async+dsa     n=5 wall med    2225 ms (min  2222 max  2275)  cpu  0.77 core-s  out    932 MiB  dsa sub=20480 fb=0 fail=0 cpu_scans=0 prefault~1ms
+silesia-2m  qpl-hardware-dynamic-async+cpucrc  n=5 wall med    2423 ms (min  2370 max  2576)  cpu  1.21 core-s  out    932 MiB  dsa sub=0 fb=0 fail=0 cpu_scans=20480 prefault~1ms
+silesia-2m  qpl-hardware-dynamic-async+dsacrc  n=5 wall med    2223 ms (min  2221 max  2246)  cpu  0.78 core-s  out    932 MiB  dsa sub=40960 fb=0 fail=0 cpu_scans=0 prefault~1ms
+

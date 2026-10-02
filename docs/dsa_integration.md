@@ -507,6 +507,64 @@ Reading:
   §7c.2/§7c.2b apply. `MEMORY_SIZE=4G` with `hugepages=on` would be the
   configuration to show them, and is a one-line change in `source-vm.sh`.
 
+### 7c.2d Fair CPU-vs-DSA snapshot comparison (harness, 4 KiB and 2 MiB guests)
+
+Supersedes the snapshot half of §7c.2c, which mixed IAA depths (8 and 32)
+across cells and pinned the daemon's two slot threads to one core. Here every
+cell uses the same IAA depth (`--workers 8`, the harness default), the VM is
+pinned to cores 0-3 and the daemon to cores 4-5 (one core per slot thread),
+and only the classifier differs. 1 warm-up + 5 measured iterations, medians.
+Same Silesia guest (1536 MiB working set, ~39 % zero chunks), 4 KiB shared
+pages vs 2 MiB hugetlb (`HUGEPAGES=1` in `source-vm.sh`). Configs:
+`benchmark/benchmark_fair_{4k,2m}.env`; results:
+`docs/measurements/harness/fair_{4k,2m}_results.csv`. Every DSA cell submitted
+all its descriptors to DSA with zero fallbacks and zero CPU scans.
+
+Snapshot, static Huffman (`qpl-hardware-static-async`):
+
+| classifier | 4 KiB wall | 4 KiB core-s | 2 MiB wall | 2 MiB core-s |
+|---|---|---|---|---|
+| base daemon (byte scan + pread) | 2553 ms | 1.24 | 2514 ms | 1.16 |
+| CPU (word scan, mapped) | 2541 ms | 0.69 | 2739 ms | 0.53 |
+| DSA | 2546 ms | 0.57 | 2873 ms | 0.47 |
+| CPU + CRC32C | 2734 ms | 1.13 | 2634 ms | 0.90 |
+| DSA + CRC32C | 2540 ms | 0.58 | 2452 ms | 0.46 |
+
+Snapshot, dynamic Huffman (`qpl-hardware-dynamic-async`):
+
+| classifier | 4 KiB wall | 4 KiB core-s | 2 MiB wall | 2 MiB core-s |
+|---|---|---|---|---|
+| base daemon | 2636 ms | 1.78 | 2590 ms | 1.71 |
+| CPU | 2362 ms | 0.99 | 2369 ms | 0.85 |
+| DSA | 2361 ms | 0.88 | 2225 ms | 0.77 |
+| CPU + CRC32C | 2545 ms | 1.43 | 2423 ms | 1.21 |
+| DSA + CRC32C | 2341 ms | 0.89 | 2223 ms | 0.78 |
+
+Raw (sparse copy) for reference: 5618 ms / 0.89 core-s on 4 KiB, 8887 ms /
+1.16 core-s on 2 MiB (hugetlb has no holes for `SEEK_DATA` to skip, so all
+4096 MiB is written).
+
+Reading:
+
+- **Wall is IAA-bound and the classifier does not move it** on this
+  workload: CPU and DSA classify are within run-to-run noise (2 MiB static
+  spans 2419-2975 ms across iterations). The one wall difference is CRC:
+  generating CRC32C on the CPU adds ~190 ms (4 KiB), on DSA it adds nothing.
+- **CPU cost, classify only:** DSA saves 0.06-0.12 core-s per snapshot
+  over the word-wide CPU scan (10-17 %). Most of the earlier "halved CPU"
+  came from mapping instead of pread and from replacing the byte loop, which
+  the CPU variant also gets.
+- **CPU cost with integrity:** DSA saves 0.44-0.55 core-s per snapshot
+  (40-49 %) because COMPARE and CRC both stay on the device.
+- **Against the unmodified daemon** DSA+CRC uses 0.46-0.89 core-s instead of
+  1.16-1.78 (about half) at equal or lower wall, and adds per-chunk CRC.
+- **2 MiB pages:** prefault drops from ~46 ms to ~1 ms per slot and CPU per
+  snapshot falls a further 10-20 % in every variant; wall is unchanged
+  because IAA sets it.
+- Dynamic Huffman costs more host CPU than static in every variant (QPL
+  builds the Huffman table on the CPU), so the classifier savings are a
+  smaller fraction there.
+
 ### 7c.3 IOMMU first touch: measured, and the fix
 
 `dto-async-test` (fresh process, 2 GiB memfd filled by another mapping, then
