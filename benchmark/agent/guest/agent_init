@@ -1,0 +1,88 @@
+#!/bin/bash
+# PID-1 for the agent-step diff-snapshot experiment. Boot with
+#   init=/agent_init agent_wl=<idle|py|shell|pyc|mixed>
+# Prints AGENT_BASE_POINT (host takes full snapshot), runs the workload,
+# prints AGENT_DIFF_POINT (host takes diff snapshot), then reboots.
+export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin HOME=/root
+mount -t proc proc /proc 2>/dev/null
+mount -t sysfs sys /sys 2>/dev/null
+mount -t devtmpfs dev /dev 2>/dev/null
+mount -t tmpfs -o size=3g tmpfs /tmp 2>/dev/null
+WL=$(sed -n 's/.*agent_wl=\([^ ]*\).*/\1/p' /proc/cmdline); WL=${WL:-py}
+WARM=$(sed -n 's/.*agent_warm=\([^ ]*\).*/\1/p' /proc/cmdline)
+STEPS=$(sed -n 's/.*agent_steps=\([^ ]*\).*/\1/p' /proc/cmdline)
+echo "AGENT_BOOTED wl=$WL warm=$WARM"
+run_shell() {
+	(cd /usr && find . -type f | wc -l) > /tmp/nfiles
+	ls -lR /usr/lib > /tmp/lsout 2>/dev/null
+	sort /tmp/lsout | uniq -c | sort -rn | head -50 > /tmp/top
+	grep -rl "import os" /usr/lib/python3.12 2>/dev/null | sort > /tmp/imports
+	wc -l /tmp/imports /tmp/lsout
+}
+run_pyc() {
+	python3 -m compileall -q -f -j2 /usr/lib/python3.12 >/dev/null 2>&1
+	du -sh /tmp/pyc
+}
+run_wl() {
+case $1 in
+	idle)  sleep 3 ;;
+	py)    AGENT_SEED=$2 python3 /agent_wl.py /tmp ;;
+	shell) run_shell ;;
+	pyc)   run_pyc ;;
+	mixed) run_shell; AGENT_SEED=$2 python3 /agent_wl.py /tmp; run_pyc ;;
+	# traj-<name>:<turn> -- one recorded real-agent turn (agent_traj.py reads
+	# /traj/<name>.traj.json). The step:seed split puts <turn> in $2, so a
+	# recorded turn is a pinned step like any other and session.py can
+	# record/verify it unchanged.
+	traj-*) if [ -x /agent_traj.sh ]; then /agent_traj.sh "${1#traj-}" "$2"; else python3 /agent_traj.py "${1#traj-}" "$2"; fi ;;
+	*)     python3 /agent_wl2.py $1 $2 ;;
+esac
+}
+sleep 2
+export PYTHONPYCACHEPREFIX=/tmp/pyc
+if [ -n "$WARM" ]; then run_wl $WARM 1; echo "AGENT_WARM_DONE"; sleep 1; fi
+sync
+echo AGENT_BASE_POINT
+sleep 6
+if [ -n "$STEPS" ]; then
+	k=0
+	# Expand compact ranges first: "traj-<name>:0-59" -> 60 tokens. A 60-turn
+	# session spelled out one token per turn pushes the kernel command line to
+	# ~2000 bytes, against x86's 2048-byte COMMAND_LINE_SIZE, and the guest
+	# booted silently (no console output at all) when it got that close.
+	EXP=""
+	for tok in ${STEPS//,/ }; do
+		case $tok in
+			*:[0-9]*-[0-9]*) base=${tok%:*}; r=${tok##*:}; lo=${r%-*}; hi=${r#*-}
+				for ((n = lo; n <= hi; n++)); do EXP="$EXP${EXP:+,}$base:$n"; done ;;
+			*) EXP="$EXP${EXP:+,}$tok" ;;
+		esac
+	done
+	STEPS=$EXP
+	for tok in ${STEPS//,/ }; do
+		k=$((k+1))
+		# agent_steps= accepts "step" or "step:seed". A bare step keeps the
+		# legacy position-derived seed; a pinned seed makes the step do the
+		# same work wherever it sits in the sequence, which is what a
+		# session fixture replays (see fixture.py / session.py).
+		st=${tok%%:*}; sd=${tok#*:}
+		[ "$sd" = "$tok" ] && sd=$((k+1))
+		t0=$(date +%s.%N)
+		run_wl $st $sd
+		t1=$(date +%s.%N); sync
+		echo "AGENT_STEP_DONE $k $st seed=$sd secs=$(echo "$t1 $t0" | awk '{printf "%.2f",$1-$2}')"
+		sleep 4
+	done
+else
+	t0=$(date +%s.%N)
+	run_wl $WL 2
+	t1=$(date +%s.%N)
+	echo "AGENT_WL_SECS=$(echo "$t1 $t0" | awk '{printf "%.2f",$1-$2}')"
+fi
+grep -E "MemTotal|MemFree|AnonPages|^Cached|Shmem:" /proc/meminfo
+sync
+echo AGENT_DIFF_POINT
+sleep 6
+echo AGENT_EXIT
+echo b > /proc/sysrq-trigger
+sleep 60
