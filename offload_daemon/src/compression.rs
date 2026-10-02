@@ -5,6 +5,8 @@
 #[cfg(feature = "qpl")]
 use std::collections::VecDeque;
 use std::fs::{self, File, OpenOptions};
+use std::mem;
+use std::os::fd::AsRawFd;
 use std::os::unix::fs::FileExt;
 use std::path::Path;
 use std::str::FromStr;
@@ -629,6 +631,37 @@ fn compress_file_qpl_async(
     })
 }
 
+/// Where decompressed chunks go: pwrite into the file, or a memcpy into a
+/// mapping when the file is hugetlbfs-backed (no write(2) there).
+enum Destination<'a> {
+    File { file: &'a File, offset: u64 },
+    Mapped(Mapping),
+}
+
+const HUGETLBFS_MAGIC: i64 = 0x958458f6;
+
+impl<'a> Destination<'a> {
+    fn open(file: &'a File, offset: u64, length: u64) -> io::Result<Self> {
+        // SAFETY: zeroed statfs buffer filled by the kernel.
+        let mut stat: libc::statfs = unsafe { mem::zeroed() };
+        // SAFETY: valid fd and out pointer.
+        let hugetlb = unsafe { libc::fstatfs(file.as_raw_fd(), &mut stat) } == 0
+            && stat.f_type == HUGETLBFS_MAGIC;
+        if hugetlb {
+            Ok(Self::Mapped(Mapping::map_file(file, offset, length, true)?))
+        } else {
+            Ok(Self::File { file, offset })
+        }
+    }
+
+    fn write(&self, chunk_offset: usize, data: &[u8]) -> io::Result<()> {
+        match self {
+            Self::File { file, offset } => file.write_all_at(data, offset + chunk_offset as u64),
+            Self::Mapped(mapping) => mapping.write(chunk_offset, data),
+        }
+    }
+}
+
 pub(crate) fn decompress_file(
     data_path: &Path,
     manifest_path: &Path,
@@ -699,10 +732,11 @@ pub(crate) fn decompress_file(
             elapsed: started.elapsed(),
         });
     }
-    // Decompressed chunks are copied into a mapping of the destination rather
-    // than written with pwrite: hugetlb memfds have no write(2) path, and the
-    // copy is one memcpy instead of a syscall per chunk.
-    let destination = Mapping::map_file(destination, destination_offset, expected_size, true)
+    // Hugetlb memfds have no write(2) path, so decompressed chunks are copied
+    // into a mapping of the destination there. On 4 KiB-backed memfds pwrite
+    // stays: writing through a fresh mapping takes one page fault per page,
+    // which measured 2x slower than letting the kernel allocate per write.
+    let destination = Destination::open(destination, destination_offset, expected_size)
         .map_err(Error::Write)?;
     #[cfg(feature = "qpl")]
     if let Some(huffman_mode) = codec.async_huffman_mode() {
@@ -804,7 +838,7 @@ pub(crate) fn decompress_file(
 fn decompress_file_qpl_async(
     input: &File,
     records: &[ChunkRecord],
-    destination: &Mapping,
+    destination: &Destination<'_>,
     expected_size: u64,
     workers: usize,
     huffman_mode: HuffmanMode,
