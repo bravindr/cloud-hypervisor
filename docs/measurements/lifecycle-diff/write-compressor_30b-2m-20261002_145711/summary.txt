@@ -1,0 +1,13 @@
+14:57:12 diff lifecycle write-compressor_30b pages=2m turns=13 variants=full-dsa diff-none diff-cpu diff-dsa diff-dsa1 batch=256 depth=8
+14:58:01   turn 10/13
+14:58:20 restore full-dsa (chain of 0 diffs): rc=0 143 ms, guest ok=1
+14:58:25 restore diff-none (chain of 13 diffs): rc=0 181 ms, guest ok=1
+14:58:32 restore diff-cpu (chain of 13 diffs): rc=0 473 ms, guest ok=1
+14:58:38 restore diff-dsa (chain of 13 diffs): rc=0 172 ms, guest ok=1
+14:58:44 restore diff-dsa1 (chain of 13 diffs): rc=0 179 ms, guest ok=1
+639	diff-cpu/
+639	diff-dsa/
+639	diff-dsa1/
+641	diff-none/
+387	full-dsa/
+14:58:45 DONE -> /home/byrnedan/chlogs/lifecycle-diff/write-compressor_30b-2m-20261002_145711

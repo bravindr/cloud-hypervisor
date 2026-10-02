@@ -1,0 +1,6 @@
+session,pages,variant,chain,restore_ms,user_s,sys_s,guest_ok,rc
+winning-avg-corewars_30b,2m,full-dsa,0,151,0.04,0.13,1,0
+winning-avg-corewars_30b,2m,diff-none,60,290,0.15,0.15,1,0
+winning-avg-corewars_30b,2m,diff-cpu,60,252,0.13,0.14,1,0
+winning-avg-corewars_30b,2m,diff-dsa,60,249,0.12,0.14,1,0
+winning-avg-corewars_30b,2m,diff-dsa1,60,248,0.12,0.15,1,0

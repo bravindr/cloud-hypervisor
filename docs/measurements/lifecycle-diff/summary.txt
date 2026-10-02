@@ -1,0 +1,51 @@
+checkpoints 1770 (0 failed), restores 70
+
+=== 2m: per-turn checkpoint (median over 170 turns) ===
+variant     wall ms    p95  cpu-s  KiB out dirty pg stored pg compare ms gather ms compress ms prep ms  redo
+full-dsa         96    112   0.14   197702        0         0        0.0       0.0         0.0     0.0     0
+diff-none        37     47   0.03      835     1376      1376        0.0       1.9        11.0     8.7     0
+diff-cpu         37     60   0.02      610     1376       920        0.5       1.9        10.4     8.0     0
+diff-dsa         34     49   0.02      610     1376       920        0.5       1.0         9.2     7.3     0
+diff-dsa1        35     65   0.02      610     1376       920        1.5       1.7         9.2     7.0     0
+
+=== 2m: whole sessions (sum over all checkpoints incl. base) ===
+variant      wall s   cpu-s stored MiB
+full-dsa       19.4    27.2      36171
+diff-none       8.7     8.6       1742
+diff-cpu        8.9     8.6       1704
+diff-dsa        7.7     6.5       1704
+diff-dsa1       8.1     6.8       1704
+
+  diff-cpu and diff-dsa agree on changed pages in 170/170 turns
+
+=== 2m: restores ===
+  full-dsa   restore median    155 ms, chain up to 0 diffs, guest ok 7/7
+  diff-none  restore median    290 ms, chain up to 60 diffs, guest ok 7/7
+  diff-cpu   restore median    296 ms, chain up to 60 diffs, guest ok 7/7
+  diff-dsa   restore median    249 ms, chain up to 60 diffs, guest ok 7/7
+  diff-dsa1  restore median    248 ms, chain up to 60 diffs, guest ok 7/7
+
+=== 4k: per-turn checkpoint (median over 170 turns) ===
+variant     wall ms    p95  cpu-s  KiB out dirty pg stored pg compare ms gather ms compress ms prep ms  redo
+full-dsa         96    125   0.13   198302        0         0        0.0       0.0         0.0     0.0     0
+diff-none        33     45   0.03      836     1388      1388        0.0       1.9        17.6     8.3     0
+diff-cpu         33     59   0.03      622     1388       934        0.6       1.9        15.9     8.3     0
+diff-dsa         32     50   0.02      622     1388       934        0.5       1.1        15.9     8.2     0
+diff-dsa1        32     65   0.03      622     1388       934        1.7       1.9        14.4     8.1     0
+
+=== 4k: whole sessions (sum over all checkpoints incl. base) ===
+variant      wall s   cpu-s stored MiB
+full-dsa       18.0    23.8      36258
+diff-none       8.0     7.8       1746
+diff-cpu        8.1     7.9       1709
+diff-dsa        7.5     6.9       1709
+diff-dsa1       7.8     7.6       1709
+
+  diff-cpu and diff-dsa agree on changed pages in 170/170 turns
+
+=== 4k: restores ===
+  full-dsa   restore median    176 ms, chain up to 0 diffs, guest ok 7/7
+  diff-none  restore median    298 ms, chain up to 60 diffs, guest ok 7/7
+  diff-cpu   restore median    261 ms, chain up to 60 diffs, guest ok 7/7
+  diff-dsa   restore median    256 ms, chain up to 60 diffs, guest ok 7/7
+  diff-dsa1  restore median    254 ms, chain up to 60 diffs, guest ok 7/7

@@ -1,0 +1,6 @@
+session,pages,variant,chain,restore_ms,user_s,sys_s,guest_ok,rc
+polyglot-rust-c_30b,2m,full-dsa,0,184,0.07,0.14,1,0
+polyglot-rust-c_30b,2m,diff-none,16,337,0.16,0.19,1,0
+polyglot-rust-c_30b,2m,diff-cpu,16,342,0.14,0.21,1,0
+polyglot-rust-c_30b,2m,diff-dsa,16,331,0.15,0.20,1,0
+polyglot-rust-c_30b,2m,diff-dsa1,16,324,0.14,0.20,1,0

@@ -1,0 +1,14 @@
+15:04:22 diff lifecycle path-tracing_30b pages=2m turns=23 variants=full-dsa diff-none diff-cpu diff-dsa diff-dsa1 batch=256 depth=8
+15:05:13   turn 10/23
+15:05:55   turn 20/23
+15:06:15 restore full-dsa (chain of 0 diffs): rc=0 165 ms, guest ok=1
+15:06:22 restore diff-none (chain of 23 diffs): rc=0 365 ms, guest ok=1
+15:06:29 restore diff-cpu (chain of 23 diffs): rc=0 339 ms, guest ok=1
+15:06:37 restore diff-dsa (chain of 23 diffs): rc=0 328 ms, guest ok=1
+15:06:44 restore diff-dsa1 (chain of 23 diffs): rc=0 306 ms, guest ok=1
+839	diff-cpu/
+839	diff-dsa/
+839	diff-dsa1/
+731	diff-none/
+417	full-dsa/
+15:06:45 DONE -> /home/byrnedan/chlogs/lifecycle-diff/path-tracing_30b-2m-20261002_150422

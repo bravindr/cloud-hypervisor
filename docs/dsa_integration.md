@@ -635,6 +635,85 @@ took 9 s of guest time in all. The restore "guest progressed" times are a
 liveness check that includes the guest's own post-step sleep, not a restore
 latency.
 
+### 7c.2f Dirty-log diff checkpoints (real-agent lifecycle)
+
+CH now reports the pages written since the previous checkpoint over the memfd
+migration path (`send-migration ... dirty_log=keep|consume`, new `DirtyLog`
+command; f62af5364). The daemon keeps a sparse reference copy of the last
+checkpoint, compares each dirty 4 KiB page against it, writes the changed
+pages to the reference and a gather buffer in one pass, and compresses the
+gather buffer with IAA (f8425c6ae). Compare and copy run on the CPU or as
+batched DSA COMPARE + DUALCAST through DTO's new `dto_batch_*` API
+(byrnedj/DTO a8d14aa). Restore follows the parent chain.
+
+**Correctness**: on 4 KiB and 2 MiB guests, the chain of every variant
+restores identical to a raw dump of the source at the final checkpoint,
+except one page (0xaa401000 / 0xae401000) that a plain restore of that raw
+dump rewrites as well. In the lifecycle run, CPU and DSA comparison chose the
+same changed pages in 340/340 turns; 70/70 chain restores (up to 60 diffs)
+resumed the guest.
+
+**Run**: `benchmark/agent/run_all_diff.sh 4k 2m`, the seven sessions of
+§7c.2e, every checkpoint taken by five variants from the same paused image
+(all diff variants fed the same dirty set): `full-dsa` (§7c.2e's best full
+checkpoint), `diff-none` (store every dirty page), `diff-cpu`, `diff-dsa`
+(256 pages per batch descriptor, 8 in flight), `diff-dsa1` (one descriptor
+per page, 32 in flight).
+
+Per-turn checkpoint, median over 170 turns:
+
+| variant | 4K wall | 4K cpu-s | 2M wall | 2M cpu-s | stored | compare | gather | compress | prepare |
+|---|---|---|---|---|---|---|---|---|---|
+| full-dsa | 96 ms | 0.13 | 96 ms | 0.14 | 198 MB | | | | |
+| diff-none | 33 ms | 0.03 | 37 ms | 0.03 | 835 KiB | 0 | 1.9 ms | 11-18 ms | 8 ms |
+| diff-cpu | 33 ms | 0.03 | 37 ms | 0.02 | 610-622 KiB | 0.5-0.6 ms | 1.9 ms | 10-16 ms | 8 ms |
+| diff-dsa | 32 ms | 0.02 | 34 ms | 0.02 | 610-622 KiB | 0.5 ms | 1.0-1.1 ms | 9-16 ms | 7-8 ms |
+| diff-dsa1 | 32 ms | 0.03 | 35 ms | 0.02 | 610-622 KiB | 1.5-1.7 ms | 1.7-1.9 ms | 9-14 ms | 7-8 ms |
+
+Whole sessions (all 171 checkpoints of the seven sessions, per variant):
+
+| variant | 4K wall | 4K cpu-s | 2M wall | 2M cpu-s | stored |
+|---|---|---|---|---|---|
+| full-dsa | 18.0 s | 23.8 | 19.4 s | 27.2 | 36.2 GB |
+| diff-none | 8.0 s | 7.8 | 8.7 s | 8.6 | 1.75 GB |
+| diff-cpu | 8.1 s | 7.9 | 8.9 s | 8.6 | 1.71 GB |
+| diff-dsa | 7.5 s | 6.9 | 7.7 s | 6.5 | 1.71 GB |
+| diff-dsa1 | 7.8 s | 7.6 | 8.1 s | 6.8 | 1.71 GB |
+
+Restore: full 155-176 ms; diff chains 249-298 ms (DSA variants 248-256 ms).
+(Whole-session totals include each variant's full base checkpoint, which
+dominates diff storage: ~1.4 GB of the 1.7 GB.)
+
+Reading:
+
+- **The dirty log is the lever.** A turn dirties a median 1,380 pages
+  (5.4 MiB) of a 4 GiB guest, so a diff checkpoint pauses the VM 3x shorter
+  than the best full checkpoint, uses 4-7x less CPU and stores 240-320x
+  less (0.6-0.8 MB vs 198 MB). Over the seven sessions storage drops from
+  36 GB to 1.7 GB, most of it the base.
+- **Comparing dirty pages pays in size, not time.** A third of dirty pages
+  are false dirty (written with the same content); filtering them shrinks
+  each diff by 27 % (835 to 610-622 KiB). It costs 0.5 ms per turn.
+- **CPU vs DSA**: at 5 MiB per turn both are fast. Batched DSA compares as
+  fast as memcmp (0.5 ms) and halves the copy (1.0 vs 1.9 ms, one DUALCAST
+  replacing two memcpy); end to end DSA saves 1-3 ms per turn and 12-24 % of
+  the session's daemon CPU (6.5-6.9 vs 7.9-8.6 core-s). The per-turn wall
+  differences are within run-to-run noise.
+- **Batching**: one descriptor per page is 3x slower to compare (1.5-1.7 vs
+  0.5 ms) and 1.7x slower to copy than batches of 256, matching the
+  microbenchmark (40 vs ~800 ns per page). Batching is what makes DSA viable
+  at 4 KiB granularity at all.
+- **What remains in a 33 ms diff checkpoint** is not compare or copy:
+  compression of ~3.6 MiB (9-18 ms, IAA job-pool setup per process plus a few
+  chunk round trips), preparation (7-8 ms: mapping both slots, the reference
+  hole map, one populate call per dirty run), and ~7 ms of daemon start-up
+  and protocol. Those are the next things to batch: one populate over the
+  dirty span instead of one per run, reuse of IAA jobs across slots, and a
+  resident daemon instead of one process per checkpoint.
+- KVM dirty logging write-protects guest memory and forces 4 KiB mappings in
+  the second-level page tables, which costs the guest on 2 MiB guests; guest
+  time is tiny in these sessions (§7c.2e) so it does not show here.
+
 ### 7c.3 IOMMU first touch: measured, and the fix
 
 `dto-async-test` (fresh process, 2 GiB memfd filled by another mapping, then

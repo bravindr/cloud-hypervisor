@@ -1,0 +1,18 @@
+14:52:29 diff lifecycle winning-avg-corewars_30b pages=4k turns=60 variants=full-dsa diff-none diff-cpu diff-dsa diff-dsa1 batch=256 depth=8
+14:53:18   turn 10/60
+14:53:59   turn 20/60
+14:54:39   turn 30/60
+14:55:19   turn 40/60
+14:56:00   turn 50/60
+14:56:40   turn 60/60
+14:56:47 restore full-dsa (chain of 0 diffs): rc=0 158 ms, guest ok=1
+14:56:53 restore diff-none (chain of 60 diffs): rc=0 298 ms, guest ok=1
+14:56:59 restore diff-cpu (chain of 60 diffs): rc=0 261 ms, guest ok=1
+14:57:05 restore diff-dsa (chain of 60 diffs): rc=0 256 ms, guest ok=1
+14:57:11 restore diff-dsa1 (chain of 60 diffs): rc=0 254 ms, guest ok=1
+684	diff-cpu/
+684	diff-dsa/
+684	diff-dsa1/
+693	diff-none/
+388	full-dsa/
+14:57:11 DONE -> /home/byrnedan/chlogs/lifecycle-diff/winning-avg-corewars_30b-4k-20261002_145228

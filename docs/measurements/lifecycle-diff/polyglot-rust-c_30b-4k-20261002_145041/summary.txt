@@ -1,0 +1,13 @@
+14:50:41 diff lifecycle polyglot-rust-c_30b pages=4k turns=16 variants=full-dsa diff-none diff-cpu diff-dsa diff-dsa1 batch=256 depth=8
+14:51:31   turn 10/16
+14:52:02 restore full-dsa (chain of 0 diffs): rc=0 227 ms, guest ok=1
+14:52:09 restore diff-none (chain of 16 diffs): rc=0 402 ms, guest ok=1
+14:52:15 restore diff-cpu (chain of 16 diffs): rc=0 374 ms, guest ok=1
+14:52:21 restore diff-dsa (chain of 16 diffs): rc=0 376 ms, guest ok=1
+14:52:27 restore diff-dsa1 (chain of 16 diffs): rc=0 374 ms, guest ok=1
+876	diff-cpu/
+876	diff-dsa/
+876	diff-dsa1/
+724	diff-none/
+446	full-dsa/
+14:52:28 DONE -> /home/byrnedan/chlogs/lifecycle-diff/polyglot-rust-c_30b-4k-20261002_145041

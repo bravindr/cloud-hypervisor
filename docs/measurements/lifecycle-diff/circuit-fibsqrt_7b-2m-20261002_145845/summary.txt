@@ -1,0 +1,13 @@
+14:58:45 diff lifecycle circuit-fibsqrt_7b pages=2m turns=10 variants=full-dsa diff-none diff-cpu diff-dsa diff-dsa1 batch=256 depth=8
+14:59:34   turn 10/10
+14:59:39 restore full-dsa (chain of 0 diffs): rc=0 149 ms, guest ok=1
+14:59:44 restore diff-none (chain of 10 diffs): rc=0 210 ms, guest ok=1
+14:59:49 restore diff-cpu (chain of 10 diffs): rc=0 209 ms, guest ok=1
+14:59:54 restore diff-dsa (chain of 10 diffs): rc=0 203 ms, guest ok=1
+14:59:59 restore diff-dsa1 (chain of 10 diffs): rc=0 202 ms, guest ok=1
+711	diff-cpu/
+711	diff-dsa/
+711	diff-dsa1/
+669	diff-none/
+406	full-dsa/
+14:59:59 DONE -> /home/byrnedan/chlogs/lifecycle-diff/circuit-fibsqrt_7b-2m-20261002_145845

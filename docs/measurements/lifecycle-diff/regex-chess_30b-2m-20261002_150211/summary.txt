@@ -1,0 +1,14 @@
+15:02:11 diff lifecycle regex-chess_30b pages=2m turns=24 variants=full-dsa diff-none diff-cpu diff-dsa diff-dsa1 batch=256 depth=8
+15:03:02   turn 10/24
+15:03:42   turn 20/24
+15:04:03 restore full-dsa (chain of 0 diffs): rc=0 167 ms, guest ok=1
+15:04:08 restore diff-none (chain of 24 diffs): rc=0 318 ms, guest ok=1
+15:04:12 restore diff-cpu (chain of 24 diffs): rc=0 296 ms, guest ok=1
+15:04:16 restore diff-dsa (chain of 24 diffs): rc=0 308 ms, guest ok=1
+15:04:21 restore diff-dsa1 (chain of 24 diffs): rc=0 296 ms, guest ok=1
+770	diff-cpu/
+770	diff-dsa/
+770	diff-dsa1/
+707	diff-none/
+411	full-dsa/
+15:04:22 DONE -> /home/byrnedan/chlogs/lifecycle-diff/regex-chess_30b-2m-20261002_150211

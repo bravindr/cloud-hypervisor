@@ -1,0 +1,6 @@
+session,pages,variant,chain,restore_ms,user_s,sys_s,guest_ok,rc
+path-tracing_30b,2m,full-dsa,0,165,0.04,0.16,1,0
+path-tracing_30b,2m,diff-none,23,365,0.19,0.20,1,0
+path-tracing_30b,2m,diff-cpu,23,339,0.16,0.21,1,0
+path-tracing_30b,2m,diff-dsa,23,328,0.18,0.18,1,0
+path-tracing_30b,2m,diff-dsa1,23,306,0.14,0.19,1,0
