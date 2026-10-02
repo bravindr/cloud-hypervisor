@@ -85,7 +85,7 @@ impl FromStr for Codec {
 
 #[cfg(feature = "qpl")]
 impl Codec {
-    fn async_huffman_mode(self) -> Option<HuffmanMode> {
+    pub(crate) fn async_huffman_mode(self) -> Option<HuffmanMode> {
         match self {
             Self::QplHardwareStaticAsync => Some(HuffmanMode::Static),
             Self::QplHardwareDynamicAsync => Some(HuffmanMode::Dynamic),
@@ -189,7 +189,7 @@ pub(crate) enum Error {
     Classify(#[from] ClassifyError),
 }
 
-struct CodecWorker {
+pub(crate) struct CodecWorker {
     codec: Codec,
     zstd_level: i32,
     output: Vec<u8>,
@@ -198,7 +198,7 @@ struct CodecWorker {
 }
 
 impl CodecWorker {
-    fn new(codec: Codec, zstd_level: i32) -> Result<Self, Error> {
+    pub(crate) fn new(codec: Codec, zstd_level: i32) -> Result<Self, Error> {
         #[cfg(feature = "qpl")]
         let qpl_job = match codec {
             Codec::QplHardware | Codec::QplHardwareDynamic | Codec::QplHardwareDynamicAsync => {
@@ -259,7 +259,11 @@ impl CodecWorker {
         Ok(&self.output)
     }
 
-    fn decompress(&mut self, input: &[u8], expected_length: usize) -> Result<&[u8], Error> {
+    pub(crate) fn decompress(
+        &mut self,
+        input: &[u8],
+        expected_length: usize,
+    ) -> Result<&[u8], Error> {
         match self.codec {
             Codec::Lz4 => {
                 self.output = lz4_decompress(input, expected_length)
@@ -663,7 +667,7 @@ fn compress_file_qpl_async(
 
 /// Where decompressed chunks go: pwrite into the file, or a memcpy into a
 /// mapping when the file is hugetlbfs-backed (no write(2) there).
-enum Destination<'a> {
+pub(crate) enum Destination<'a> {
     File { file: &'a File, offset: u64 },
     Mapped(Mapping),
 }
@@ -671,7 +675,7 @@ enum Destination<'a> {
 const HUGETLBFS_MAGIC: i64 = 0x958458f6;
 
 impl<'a> Destination<'a> {
-    fn open(file: &'a File, offset: u64, length: u64) -> io::Result<Self> {
+    pub(crate) fn open(file: &'a File, offset: u64, length: u64) -> io::Result<Self> {
         // SAFETY: zeroed statfs buffer filled by the kernel.
         let mut stat: libc::statfs = unsafe { mem::zeroed() };
         // SAFETY: valid fd and out pointer.
@@ -684,7 +688,7 @@ impl<'a> Destination<'a> {
         }
     }
 
-    fn write(&self, chunk_offset: usize, data: &[u8]) -> io::Result<()> {
+    pub(crate) fn write(&self, chunk_offset: usize, data: &[u8]) -> io::Result<()> {
         match self {
             Self::File { file, offset } => file.write_all_at(data, offset + chunk_offset as u64),
             Self::Mapped(mapping) => mapping.write(chunk_offset, data),

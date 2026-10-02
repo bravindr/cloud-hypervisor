@@ -36,7 +36,7 @@ fn main() {
 /// the `libdto_explicit` target (no libc interposers) live on this branch.
 const DTO_REPO: &str = "https://github.com/byrnedj/DTO";
 const DTO_BRANCH: &str = "ch-async-ops";
-const DTO_REV: &str = "53d37322af526aa5c7cb7e176c0d6612b8e1d9d7";
+const DTO_REV: &str = "a8d14aabab0f349f9d3fc47cab00069de109f171";
 
 /// Link `libdto_explicit`. Either build it from a DTO checkout named by
 /// `DTO_SRC_DIR` (cmake, into OUT_DIR), or take a prebuilt library from

@@ -19,6 +19,7 @@
 mod classify;
 mod compression;
 mod crc;
+mod diff;
 #[cfg(feature = "dto")]
 mod dto;
 mod mapping;
@@ -33,6 +34,9 @@ use std::os::unix::fs::FileExt;
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+#[cfg(feature = "qpl")]
+use std::time::Duration;
+use std::time::Instant;
 use std::{result, thread};
 
 use clap::{Parser, Subcommand};
@@ -44,7 +48,9 @@ use vm_memory::{
     MemoryRegionAddress,
 };
 use vm_migration::MigratableError;
-use vm_migration::protocol::{Command, ConnectionRole, MemoryRange, Request, Response, Status};
+use vm_migration::protocol::{
+    Command, ConnectionRole, MemoryRange, MemoryRangeTable, Request, Response, Status,
+};
 use vmm::VmMigrationConfig;
 use vmm::api::MigrationMode;
 use vmm::migration::SNAPSHOT_STATE_FILE;
@@ -54,6 +60,7 @@ use vmm_sys_util::sock_ctrl_msg::ScmSocket;
 
 use crate::classify::{AccelOptions, Classify};
 use crate::compression::{Codec, Populate, compress_file, decompress_file, populate_zero_chunks};
+use crate::diff::{DiffCompare, DiffOptions};
 use crate::mapping::Mapping;
 
 const MIGRATION_CONFIG_FILENAME: &str = "migration_config.json";
@@ -132,6 +139,10 @@ enum Error {
     Compression(#[from] compression::Error),
     #[error("Compressed snapshots do not support on demand restore")]
     CompressedOnDemand,
+    #[error("Diff checkpoint")]
+    Diff(#[from] diff::Error),
+    #[error("Diff checkpoints need an async QPL codec")]
+    DiffCodec,
 }
 
 type Result<T> = result::Result<T, Error>;
@@ -183,6 +194,26 @@ enum Mode {
         /// Do not MADV_POPULATE_READ the slot mapping before classification.
         #[arg(long)]
         no_prefault: bool,
+        /// Keep a reference copy of the guest (one sparse file per slot) in
+        /// this directory: a full checkpoint initialises it, a diff
+        /// checkpoint compares dirty pages against it and updates it.
+        #[arg(long)]
+        reference_dir: Option<PathBuf>,
+        /// The previous checkpoint of this chain. With a dirty log from CH
+        /// (send-migration dirty_log=keep|consume) and a reference, write a
+        /// diff against it instead of a full checkpoint.
+        #[arg(long)]
+        parent: Option<PathBuf>,
+        /// How dirty pages are checked against the reference: none (store
+        /// every dirty page), cpu, or dsa (batched COMPARE + DUALCAST).
+        #[arg(long, default_value = "cpu")]
+        diff_compare: DiffCompare,
+        /// Pages per DSA batch descriptor.
+        #[arg(long, default_value_t = 256)]
+        diff_batch: usize,
+        /// DSA batch descriptors in flight.
+        #[arg(long, default_value_t = 8)]
+        diff_depth: usize,
     },
     /// Read a snapshot from disk and stream it to a listening CH instance.
     Restore {
@@ -235,6 +266,9 @@ struct CompressionOptions {
     workers: usize,
     zstd_level: i32,
     accel: AccelOptions,
+    reference_dir: Option<PathBuf>,
+    parent: Option<PathBuf>,
+    diff: DiffOptions,
 }
 
 #[derive(Clone, Copy)]
@@ -266,6 +300,11 @@ fn main() -> Result<()> {
             dsa_depth,
             crc,
             no_prefault,
+            reference_dir,
+            parent,
+            diff_compare,
+            diff_batch,
+            diff_depth,
         } => {
             let compression = compression.map(|codec| CompressionOptions {
                 codec,
@@ -277,6 +316,13 @@ fn main() -> Result<()> {
                     dsa_depth,
                     crc,
                     prefault: !no_prefault,
+                },
+                reference_dir,
+                parent,
+                diff: DiffOptions {
+                    compare: diff_compare,
+                    batch: diff_batch,
+                    depth: diff_depth,
                 },
             });
             run_snapshot(&socket, &output_dir, compression.as_ref())
@@ -372,6 +418,7 @@ fn run_snapshot(
         .map_err(Error::Protocol)?;
 
     let mut memory_slots: Vec<(u32, File)> = Vec::new();
+    let mut dirty: Option<Vec<(u64, u64)>> = None;
     let mut migration_config: Option<VmMigrationConfig> = None;
     let mut state_bytes: Option<Vec<u8>> = None;
 
@@ -397,6 +444,19 @@ fn run_snapshot(
                     .write_to(&mut stream)
                     .map_err(Error::Protocol)?;
             }
+            Command::DirtyLog => {
+                let table = MemoryRangeTable::read_from(&mut stream, req.length())
+                    .map_err(Error::Protocol)?;
+                info!(
+                    "dirty log: {} ranges, {} KiB",
+                    table.regions().len(),
+                    table.effective_size() >> 10
+                );
+                dirty = Some(table.regions().iter().map(|r| (r.gpa, r.length)).collect());
+                Response::ok()
+                    .write_to(&mut stream)
+                    .map_err(Error::Protocol)?;
+            }
             Command::State => {
                 let mut buf = vec![0u8; req.length() as usize];
                 stream.read_exact(&mut buf).map_err(Error::ReadPayload)?;
@@ -415,7 +475,7 @@ fn run_snapshot(
                 let _ = state_bytes
                     .as_ref()
                     .ok_or(Error::PrematureCompletion("State"))?;
-                dump_memory_slots(&memory_slots, mm, output_dir, compression)?;
+                dump_memory_slots(&memory_slots, mm, output_dir, compression, dirty.as_deref())?;
                 Response::ok()
                     .write_to(&mut stream)
                     .map_err(Error::Protocol)?;
@@ -456,6 +516,7 @@ fn dump_memory_slots(
     config: &VmMigrationConfig,
     output_dir: &Path,
     compression: Option<&CompressionOptions>,
+    dirty: Option<&[(u64, u64)]>,
 ) -> Result<()> {
     let sizes = slot_sizes(config)?;
     for (expected_slot, _, _) in &sizes {
@@ -465,17 +526,39 @@ fn dump_memory_slots(
     }
     if let Some(options) = compression {
         let workers_per_slot = options.workers.div_ceil(slots.len().max(1)).max(1);
-        return thread::scope(|scope| {
+        let info = slot_info(config)?;
+        let diff_parent = match (&options.parent, dirty, &options.reference_dir) {
+            (Some(parent), Some(_), Some(_)) => Some(parent.clone()),
+            _ => None,
+        };
+        thread::scope(|scope| {
             let mut handles = Vec::with_capacity(slots.len());
             for (slot, file) in slots {
-                let (size, file_offset) = sizes
+                let (gpa, size, file_offset) = info
                     .iter()
-                    .find(|(candidate, _, _)| candidate == slot)
-                    .map(|(_, size, file_offset)| (*size, *file_offset))
+                    .find(|(candidate, ..)| candidate == slot)
+                    .map(|&(_, gpa, size, file_offset)| (gpa, size, file_offset))
                     .ok_or(Error::MissingSlot(*slot))?;
                 let data_path = output_dir.join(format!("memory-{slot}.compressed"));
                 let manifest_path = output_dir.join(format!("memory-{slot}.index.json"));
+                let diff_parent = diff_parent.as_ref();
                 handles.push(scope.spawn(move || {
+                    if let (Some(_), Some(dirty), Some(reference_dir)) =
+                        (diff_parent, dirty, options.reference_dir.as_ref())
+                    {
+                        return diff_slot(
+                            file,
+                            *slot,
+                            gpa,
+                            size,
+                            file_offset,
+                            dirty,
+                            reference_dir,
+                            output_dir,
+                            options,
+                            workers_per_slot,
+                        );
+                    }
                     let stats = compress_file(
                         file,
                         file_offset,
@@ -497,14 +580,31 @@ fn dump_memory_slots(
                         stats.ratio(),
                         stats.throughput_gib_per_second(),
                     );
+                    if let Some(reference_dir) = &options.reference_dir {
+                        init_reference_slot(
+                            file,
+                            *slot,
+                            size,
+                            file_offset,
+                            &manifest_path,
+                            reference_dir,
+                            options,
+                        )?;
+                    }
                     Ok::<(), Error>(())
                 }));
             }
             for handle in handles {
                 handle.join().map_err(|_| Error::WorkerPanic)??;
             }
-            Ok(())
-        });
+            Ok::<(), Error>(())
+        })?;
+        if let Some(parent) = diff_parent {
+            let marker = diff::DiffMarker { parent };
+            fs::write(diff::marker_path(output_dir), serde_json::to_vec(&marker)?)
+                .map_err(Error::WriteFile)?;
+        }
+        return Ok(());
     }
     thread::scope(|scope| {
         let mut handles = Vec::with_capacity(slots.len());
@@ -618,15 +718,26 @@ fn run_restore(
 
     let mut ondemand_slots: Vec<OnDemandSlot> = Vec::new();
     let slots = slot_info(&migration_config)?;
+    // A diff checkpoint restores its full base, then each diff, oldest first.
+    let chain = diff::chain(input_dir)?;
+    let base_dir = chain
+        .last()
+        .cloned()
+        .unwrap_or_else(|| input_dir.to_path_buf());
+    let diffs: Vec<PathBuf> = chain[..chain.len() - 1].iter().rev().cloned().collect();
+    if ondemand && !diffs.is_empty() {
+        return Err(Error::CompressedOnDemand);
+    }
+    let (base_dir, diffs) = (&base_dir, &diffs);
 
     if !ondemand {
         let workers_per_slot = workers.div_ceil(slots.len().max(1)).max(1);
         let memfds = thread::scope(|scope| {
             let mut handles = Vec::with_capacity(slots.len());
             for &(slot, _, size, file_offset) in &slots {
-                let disk_path = input_dir.join(memory_slot_filename(slot));
-                let compressed_data_path = input_dir.join(format!("memory-{slot}.compressed"));
-                let manifest_path = input_dir.join(format!("memory-{slot}.index.json"));
+                let disk_path = base_dir.join(memory_slot_filename(slot));
+                let compressed_data_path = base_dir.join(format!("memory-{slot}.compressed"));
+                let manifest_path = base_dir.join(format!("memory-{slot}.index.json"));
                 handles.push(scope.spawn(move || {
                     let compressed = manifest_path.exists();
                     let memfd = create_memfd_with_contents(
@@ -641,6 +752,18 @@ fn run_restore(
                             ..options
                         },
                     )?;
+                    if !diffs.is_empty() {
+                        let started = Instant::now();
+                        let mut pages = 0_u64;
+                        for dir in diffs {
+                            pages += diff::apply_diff(dir, slot, &memfd, file_offset, size)?;
+                        }
+                        info!(
+                            "Applied {} diffs to slot {slot}: {pages} pages in {:.1} ms",
+                            diffs.len(),
+                            started.elapsed().as_secs_f64() * 1e3
+                        );
+                    }
                     Ok::<_, Error>((slot, size, file_offset, memfd))
                 }));
             }
@@ -971,4 +1094,121 @@ mod tests {
             Err(Error::MissingField("file_offset"))
         ));
     }
+}
+
+#[cfg(feature = "qpl")]
+#[expect(clippy::too_many_arguments)]
+fn diff_slot(
+    file: &File,
+    slot: u32,
+    gpa: u64,
+    size: u64,
+    file_offset: u64,
+    dirty: &[(u64, u64)],
+    reference_dir: &Path,
+    output_dir: &Path,
+    options: &CompressionOptions,
+    workers: usize,
+) -> Result<()> {
+    let huffman = options.codec.async_huffman_mode().ok_or(Error::DiffCodec)?;
+    let ranges = diff::slot_dirty_ranges(dirty, gpa, size);
+    let stats = diff::diff_snapshot_slot(
+        file,
+        file_offset,
+        size,
+        &diff::reference_path(reference_dir, slot),
+        &ranges,
+        output_dir,
+        slot,
+        options.codec,
+        huffman,
+        options.chunk_size,
+        workers,
+        options.diff,
+    )?;
+    let ms = |d: Duration| d.as_secs_f64() * 1e3;
+    info!(
+        "Diff slot {slot}: compare={} dirty_pages={} changed_pages={} prepare_ms={:.1} compare_ms={:.1} gather_ms={:.1} compress_ms={:.1} output_bytes={} dsa_ops={} dsa_cpu_redo={}",
+        options.diff.compare,
+        stats.dirty_pages,
+        stats.changed_pages,
+        ms(stats.prepare),
+        ms(stats.compare),
+        ms(stats.gather),
+        ms(stats.compress),
+        stats.output_bytes,
+        stats.dsa_ops,
+        stats.dsa_cpu_redo,
+    );
+    Ok(())
+}
+
+#[cfg(not(feature = "qpl"))]
+#[expect(clippy::too_many_arguments)]
+fn diff_slot(
+    _: &File,
+    _: u32,
+    _: u64,
+    _: u64,
+    _: u64,
+    _: &[(u64, u64)],
+    _: &Path,
+    _: &Path,
+    _: &CompressionOptions,
+    _: usize,
+) -> Result<()> {
+    Err(Error::DiffCodec)
+}
+
+#[cfg(feature = "qpl")]
+fn init_reference_slot(
+    file: &File,
+    slot: u32,
+    size: u64,
+    file_offset: u64,
+    manifest_path: &Path,
+    reference_dir: &Path,
+    options: &CompressionOptions,
+) -> Result<()> {
+    let manifest: compression::SlotManifest =
+        serde_json::from_slice(&fs::read(manifest_path).map_err(Error::ReadFile)?)?;
+    let nonzero: Vec<(usize, usize)> = manifest
+        .chunks
+        .iter()
+        .filter(|c| !c.zero)
+        .map(|c| {
+            (
+                c.uncompressed_offset as usize,
+                c.uncompressed_length as usize,
+            )
+        })
+        .collect();
+    fs::create_dir_all(reference_dir).map_err(Error::WriteFile)?;
+    let elapsed = diff::init_reference(
+        file,
+        file_offset,
+        size,
+        &diff::reference_path(reference_dir, slot),
+        &nonzero,
+        options.diff.compare == DiffCompare::Dsa,
+    )?;
+    info!(
+        "Reference slot {slot}: {} non-zero chunks copied in {:.1} ms",
+        nonzero.len(),
+        elapsed.as_secs_f64() * 1e3
+    );
+    Ok(())
+}
+
+#[cfg(not(feature = "qpl"))]
+fn init_reference_slot(
+    _: &File,
+    _: u32,
+    _: u64,
+    _: u64,
+    _: &Path,
+    _: &Path,
+    _: &CompressionOptions,
+) -> Result<()> {
+    Err(Error::DiffCodec)
 }

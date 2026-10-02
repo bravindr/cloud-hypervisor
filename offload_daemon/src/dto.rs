@@ -13,6 +13,7 @@
 //! does the same work on the CPU.
 
 use std::error::Error as StdError;
+use std::hint;
 use std::os::raw::{c_int, c_void};
 use std::ptr::{self, NonNull};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -245,6 +246,166 @@ impl Op {
     pub(crate) fn crc(&self) -> u32 {
         // SAFETY: completion record of a finished operation.
         unsafe { dto_async_crc_val(self) as u32 }
+    }
+}
+
+#[repr(C)]
+struct RawBatch {
+    _private: [u8; 0],
+}
+
+unsafe extern "C" {
+    fn dto_batch_create(capacity: c_int) -> *mut RawBatch;
+    fn dto_batch_destroy(batch: *mut RawBatch);
+    fn dto_batch_reset(batch: *mut RawBatch);
+    fn dto_batch_add_compare(
+        batch: *mut RawBatch,
+        src1: *const c_void,
+        src2: *const c_void,
+        n: usize,
+    ) -> c_int;
+    fn dto_batch_add_memmove(
+        batch: *mut RawBatch,
+        dst: *mut c_void,
+        src: *const c_void,
+        n: usize,
+        cache_control: c_int,
+    ) -> c_int;
+    fn dto_batch_add_dualcast(
+        batch: *mut RawBatch,
+        dst1: *mut c_void,
+        dst2: *mut c_void,
+        src: *const c_void,
+        n: usize,
+        cache_control: c_int,
+    ) -> c_int;
+    fn dto_batch_submit(batch: *mut RawBatch) -> c_int;
+    fn dto_batch_poll(batch: *mut RawBatch) -> c_int;
+    fn dto_batch_status(batch: *const RawBatch, i: c_int) -> c_int;
+    fn dto_batch_result(batch: *const RawBatch, i: c_int) -> c_int;
+}
+
+/// One DSA batch descriptor (DTO `dto_batch`): up to `capacity` operations
+/// submitted with a single ENQCMD and completed with a single poll.
+pub(crate) struct Batch {
+    raw: NonNull<RawBatch>,
+    submitted: bool,
+}
+
+// SAFETY: the batch is owned by one thread at a time; DTO keeps no
+// thread-local references to it.
+unsafe impl Send for Batch {}
+
+impl Batch {
+    pub(crate) fn new(capacity: usize) -> io::Result<Self> {
+        let capacity = c_int::try_from(capacity.clamp(1, 1024)).unwrap_or(1024);
+        // SAFETY: plain allocation call; NULL is checked.
+        let raw = unsafe { dto_batch_create(capacity) };
+        let raw = NonNull::new(raw).ok_or_else(|| io::Error::other("dto_batch_create failed"))?;
+        Ok(Self {
+            raw,
+            submitted: false,
+        })
+    }
+
+    pub(crate) fn reset(&mut self) {
+        debug_assert!(!self.submitted || self.poll() != BatchPoll::Pending);
+        // SAFETY: valid batch with no operation in flight.
+        unsafe { dto_batch_reset(self.raw.as_ptr()) };
+        self.submitted = false;
+    }
+
+    /// # Safety
+    /// Both ranges must stay mapped and unchanged until the batch completes.
+    pub(crate) unsafe fn add_compare(
+        &mut self,
+        src1: *const u8,
+        src2: *const u8,
+        n: usize,
+    ) -> bool {
+        // SAFETY: forwarded under the caller's guarantees.
+        unsafe { dto_batch_add_compare(self.raw.as_ptr(), src1.cast(), src2.cast(), n) >= 0 }
+    }
+
+    /// # Safety
+    /// `src` must stay mapped and `dst` exclusively owned until completion.
+    pub(crate) unsafe fn add_memmove(&mut self, dst: *mut u8, src: *const u8, n: usize) -> bool {
+        // SAFETY: forwarded under the caller's guarantees.
+        unsafe { dto_batch_add_memmove(self.raw.as_ptr(), dst.cast(), src.cast(), n, 0) >= 0 }
+    }
+
+    /// Copy `src` to both destinations; bits 11:0 of `dst1` and `dst2` must
+    /// match (DSA rule). Returns false when the batch is full or they do not.
+    ///
+    /// # Safety
+    /// As for [`Batch::add_memmove`], for both destinations.
+    pub(crate) unsafe fn add_dualcast(
+        &mut self,
+        dst1: *mut u8,
+        dst2: *mut u8,
+        src: *const u8,
+        n: usize,
+    ) -> bool {
+        // SAFETY: forwarded under the caller's guarantees.
+        unsafe {
+            dto_batch_add_dualcast(
+                self.raw.as_ptr(),
+                dst1.cast(),
+                dst2.cast(),
+                src.cast(),
+                n,
+                0,
+            ) >= 0
+        }
+    }
+
+    pub(crate) fn submit(&mut self) -> Submit {
+        // SAFETY: valid batch; the operands are covered by the add_* contracts.
+        let submit = submit_result(unsafe { dto_batch_submit(self.raw.as_ptr()) });
+        self.submitted = submit == Submit::Submitted;
+        submit
+    }
+
+    pub(crate) fn poll(&mut self) -> BatchPoll {
+        // SAFETY: valid batch.
+        match unsafe { dto_batch_poll(self.raw.as_ptr()) } {
+            DTO_ASYNC_PENDING => BatchPoll::Pending,
+            DTO_ASYNC_DONE => BatchPoll::Done,
+            _ => BatchPoll::Failed,
+        }
+    }
+
+    /// DSA completion status of operation `i` (1 = success).
+    pub(crate) fn status(&self, i: usize) -> u8 {
+        // SAFETY: valid batch and index below len().
+        unsafe { dto_batch_status(self.raw.as_ptr(), i as c_int) as u8 }
+    }
+
+    /// COMPARE result of operation `i`: true when the ranges differ.
+    pub(crate) fn differs(&self, i: usize) -> bool {
+        // SAFETY: as above.
+        unsafe { dto_batch_result(self.raw.as_ptr(), i as c_int) != 0 }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum BatchPoll {
+    Pending,
+    Done,
+    /// The batch reported an error: read each operation's status and redo
+    /// the ones that did not succeed on the CPU.
+    Failed,
+}
+
+impl Drop for Batch {
+    fn drop(&mut self) {
+        if self.submitted {
+            while self.poll() == BatchPoll::Pending {
+                hint::spin_loop();
+            }
+        }
+        // SAFETY: created by dto_batch_create, no operation in flight.
+        unsafe { dto_batch_destroy(self.raw.as_ptr()) };
     }
 }
 
