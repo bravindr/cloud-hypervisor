@@ -109,6 +109,12 @@ In-VMM: `fullziaa`, 64 KiB, `CH_IAA_ASYNC=128`, spin, STREAM, 4 DSA WQs.
 | compressed | 441 MiB (0.39) | 437 MiB (0.397) | same |
 | raw (uncompressed) path | 0.60 s / 0.80 s sys, hole-skipping | 0.84 s / 0.82 core-s dense `write()` | same |
 
+On the `iaa-integration` harness (Silesia guest, 4 KiB pages, daemon pinned to
+one core, `dsa_integration.md` §7c.2c) the picture is IAA-bound: the daemon
+variants with DSA classify cut snapshot wall 10–20 % and CPU by half
+(1.24–1.46 → 0.46–0.64 core-s) against the unmodified daemon, restore at
+parity after a pwrite fix, and lz4/zstd 2.7–3.7× slower at 5–8× the CPU.
+
 After the `dsa-integration` work (same guest, `--classify dsa --workers 32`,
 see `dsa_integration.md` §7c): daemon **0.12 s / 0.20 core-s** with
 byte-identical output, i.e. faster on wall than the in-VMM chain and within

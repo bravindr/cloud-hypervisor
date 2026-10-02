@@ -374,14 +374,19 @@ support eager restore only; combining them with `--ondemand` is rejected.
 ### DSA acceleration (feature `dto`)
 
 With the `dto` feature the daemon uses Intel DSA through the explicit
-asynchronous API of DTO (`libdto_explicit`, built from the DTO tree's
-`DTO_BUILD_EXPLICIT` option; `DTO_LIB_DIR` selects its directory, default
-`/usr/local/lib`). DTO's own environment configures the work queues, for
+asynchronous API of DTO. The API it needs (`dto_submit_compare`,
+`dto_submit_memfill`, `dto_submit_transl_fetch`) and the `libdto_explicit`
+target (DTO without its libc interposers) are on branch `ch-async-ops` of
+https://github.com/byrnedj/DTO; `offload_daemon/build.rs` pins that revision.
+Point `DTO_SRC_DIR` at a checkout of it and the build runs cmake for
+`libdto_explicit` itself, or set `DTO_LIB_DIR` (default `/usr/local/lib`) to a
+directory holding a prebuilt `libdto_explicit.so`. DTO's own environment configures the work queues, for
 example `DTO_WQ_LIST="wq0.0;wq2.0;wq4.0;wq6.0"` and `DTO_IS_NUMA_AWARE=1`
 so submissions from one slot thread spread over the node's devices.
 
 ```bash
-QPL_INCLUDE_DIR=... QPL_LIB_DIR=... \
+git clone -b ch-async-ops https://github.com/byrnedj/DTO.git /path/to/dto
+QPL_INCLUDE_DIR=... QPL_LIB_DIR=... DTO_SRC_DIR=/path/to/dto \
   cargo build -p offload_daemon --release --features qpl,dto
 
 DTO_WQ_LIST="wq0.0;wq2.0;wq4.0;wq6.0" DTO_IS_NUMA_AWARE=1 \

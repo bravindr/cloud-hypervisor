@@ -340,7 +340,7 @@ What landed on this branch (daemon side) and on DTO branch `ch-async-ops`
 | `classify.rs` | daemon | stage-one ring: COMPARE (+CRC) per chunk, CPU fallback per op |
 | `compression.rs` | daemon | async path rewritten as the two-stage ring; mapped input to IAA (`JobPool::submit_compress_from`); `ChunkRecord.crc32c`; restore writes into the destination mapping; `ChunkVerifier` (DSA CRC on restore); `populate_zero_chunks` |
 | CLI | `main.rs` | snapshot `--classify cpu\|dsa --dsa-depth N --crc --no-prefault`; restore `--verify-crc --populate none\|cpu\|dsa --hugetlb --dsa-depth N` |
-| build | feature `dto`, `DTO_LIB_DIR` | links `libdto_explicit` dynamically with an rpath |
+| build | feature `dto`, `DTO_SRC_DIR` or `DTO_LIB_DIR` | `DTO_SRC_DIR` = a checkout of https://github.com/byrnedj/DTO `ch-async-ops` (53d3732): cmake-builds `libdto_explicit` into OUT_DIR and links it with an rpath; `DTO_LIB_DIR` takes a prebuilt one |
 
 Deviations from §4: no C shim and no `qpl_pipeline.rs` reuse (its `FileMapping`
 became `mapping.rs`); CRC is issued together with COMPARE for every chunk
@@ -441,6 +441,72 @@ and the device had to be disabled to add a queue, so the DTO/QPL user queues
 were recreated identically in the same step; the provider knob was set back
 to 0 after the measurement.
 
+### 7c.2c Their harness: `benchmark/benchmark.sh` with daemon variants
+
+`benchmark/benchmark_dsa.env` runs the branch's own harness (Ubuntu 22.04
+cloud guest, 4 vCPUs, 4 GiB `shared=on` on 4 KiB pages, 1536 MiB Silesia
+working set in guest RAM, daemon pinned to one CPU by `AUTO_CPU_AFFINITY`,
+1 warm-up + 3 iterations, medians) with the async QPL codecs expanded into
+variants: bare = the unmodified `iaa-integration` daemon (`BASE_OFFLOAD_BIN`),
+`+cpu` / `+dsa` / `+dsacrc` = this branch's daemon. 39 % of the chunks are
+zero (1612/4096); the rest is Silesia, which IAA deflates at roughly
+1 GiB/s per slot thread here. Results in `docs/measurements/harness/`.
+
+Snapshot (median of 3; CPU is the daemon's share of its one pinned core):
+
+| codec / variant | workers | median ms | CPU % | core-s | MiB out |
+|---|---|---|---|---|---|
+| raw (sparse copy) | 1 | 6651 | 21 | 1.40 | 2557 |
+| lz4 | 1 | 8305 | 80 | 6.64 | 1128 |
+| zstd -1 | 1 | 11378 | 89 | 10.13 | 811 |
+| qpl static async (base) | 8 | 3098 | 40 | 1.24 | 1095 |
+| qpl static async (base) | 32 | 3237 | 39 | 1.26 | 1095 |
+| qpl static async +cpu | 32 | 2645 | 22 | 0.58 | 1095 |
+| qpl static async +dsa | 8 | 2871 | 18 | 0.52 | 1095 |
+| qpl static async +dsacrc | 32 | 2606 | 19 | 0.50 | 1095 |
+| qpl dynamic async (base) | 8 | 2867 | 51 | 1.46 | 935 |
+| qpl dynamic async +dsa | 8 | 2668 | 24 | 0.64 | 935 |
+| qpl dynamic async +dsacrc | 32 | 2576 | 18 | 0.46 | 935 |
+
+Restore (`--resume`, median of 3; variants after the pwrite fix below):
+
+| codec / variant | median ms | CPU % |
+|---|---|---|
+| raw | 1099 | 97 |
+| lz4 | 2348 | 98 |
+| zstd | 3151 | 98 |
+| qpl static async (base) | 798 | 96 |
+| qpl static async +cpu / +dsa / +dsacrc | 802 / 813 / 825 | 96–97 |
+| qpl dynamic async (base) | 847 | 96 |
+| qpl dynamic async +cpu / +dsa / +dsacrc | 814 / 788 / 804 | 96 |
+
+Reading:
+
+- **IAA is the bottleneck on this workload, for every variant.** 2.5 GiB of
+  Silesia at ~1 GiB/s per slot sets a ~2.5 s floor; the base daemon spends
+  ~0.6 s more scanning and copying. DSA classify therefore buys 10–20 % of
+  wall (3.1–3.2 s → 2.6–2.9 s) and **halves the CPU**: 1.24–1.46 core-s →
+  0.46–0.64 core-s, with the pinned core 16–24 % busy instead of 40–51 %.
+  On the mostly-zero guests of §7c.1 the same change was 9×, because there
+  the scan *was* the critical path.
+- **The CPU codecs are not in the race**: lz4 and zstd at one worker take
+  2.7–3.7× longer than IAA and 5–8× the CPU; `+dsacrc` reaches lz4's ratio
+  class at 0.5 core-s against lz4's 6.6.
+- **`+dsacrc` costs nothing visible** (CRC descriptors ride alongside the
+  compares) and makes every restore verifiable for ~15–25 ms.
+- **Restore regression found and fixed.** The first run had the variants at
+  1.55–1.74 s against the base daemon's 0.8 s: writing decompressed chunks
+  through a mapping of a fresh 4 KiB memfd takes one page fault per page,
+  whereas pwrite lets the kernel allocate in bulk per call. The daemon now
+  uses pwrite unless the destination is hugetlbfs (detected with
+  `fstatfs`), where the mapping is required. Rerun: 788–825 ms, i.e. parity
+  with the base daemon plus the verify cost.
+- **4 KiB shared guests are the harness default.** Prefault
+  (`MADV_POPULATE_READ`) costs 25–70 ms per slot here (first cell 650 ms,
+  the §7c.3 first-mapping effect), and none of the hugetlb benefits of
+  §7c.2/§7c.2b apply. `MEMORY_SIZE=4G` with `hugepages=on` would be the
+  configuration to show them, and is a one-line change in `source-vm.sh`.
+
 ### 7c.3 IOMMU first touch: measured, and the fix
 
 `dto-async-test` (fresh process, 2 GiB memfd filled by another mapping, then
@@ -475,7 +541,9 @@ slower first cell in each sweep (`cpu` 492 vs 331 ms, `dsa` w8 473 vs 214 ms).
 - Explain the first-mapping 270 ms.
 - Classify granularity below the 1 MiB chunk is not needed (§3), so the
   in-VMM 64 KiB batching stays out.
-- Push `ch-async-ops` to a DTO fork; the daemon depends on it.
+- ~~Push `ch-async-ops` to a DTO fork~~: pushed to https://github.com/byrnedj/DTO branch
+  `ch-async-ops` (53d3732); `build.rs` builds `libdto_explicit` from a checkout
+  named by `DTO_SRC_DIR` and pins that revision.
 - On-demand restore of compressed snapshots: decompress the faulting chunk
   into the memfd mapping with IAA and let CH `UFFDIO_CONTINUE` (§7c.2b).
 
