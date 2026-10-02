@@ -57,7 +57,7 @@ use crate::mapping::{Mapping, data_extents};
 use crate::qpl::{Error as QplError, ExecutionPath, HuffmanMode, JobPool};
 
 pub(crate) const PAGE: usize = 4096;
-const DIFF_VERSION: u32 = 1;
+pub(crate) const DIFF_VERSION: u32 = 1;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum DiffCompare {
@@ -214,7 +214,7 @@ pub(crate) fn slot_dirty_ranges(
     merged
 }
 
-fn runs_of(pages: &[usize]) -> Vec<(u64, u32)> {
+pub(crate) fn runs_of(pages: &[usize]) -> Vec<(u64, u32)> {
     let mut runs: Vec<(u64, u32)> = Vec::new();
     for &p in pages {
         match runs.last_mut() {
@@ -236,18 +236,19 @@ pub(crate) struct DiffStats {
     pub output_bytes: u64,
     pub dsa_ops: u64,
     pub dsa_cpu_redo: u64,
+    pub populate_calls: u64,
 }
 
 /// Anonymous, populated, page-aligned buffer.
 #[cfg(feature = "qpl")]
-struct Buffer {
+pub(crate) struct Buffer {
     address: ptr::NonNull<u8>,
     length: usize,
 }
 
 #[cfg(feature = "qpl")]
 impl Buffer {
-    fn new(length: usize) -> io::Result<Self> {
+    pub(crate) fn new(length: usize) -> io::Result<Self> {
         let length = length.max(PAGE);
         // SAFETY: anonymous private mapping; the result is checked.
         let address = unsafe {
@@ -269,7 +270,7 @@ impl Buffer {
         })
     }
 
-    fn page(&self, index: usize) -> *mut u8 {
+    pub(crate) fn page(&self, index: usize) -> *mut u8 {
         debug_assert!((index + 1) * PAGE <= self.length);
         // SAFETY: within the mapping.
         unsafe { self.address.as_ptr().add(index * PAGE) }
@@ -780,4 +781,65 @@ pub(crate) fn apply_diff(
         at += length;
     }
     Ok(manifest.changed_pages)
+}
+
+/// Which of `pages` differ from the reference (or from zero where
+/// `has_ref[i]` is false), by the configured method.
+#[cfg(feature = "qpl")]
+pub(crate) fn changed_pages(
+    src: &Mapping,
+    refm: &Mapping,
+    pages: &[usize],
+    has_ref: &[bool],
+    options: DiffOptions,
+    stats: &mut DiffStats,
+) -> Result<Vec<usize>, Error> {
+    match options.compare {
+        DiffCompare::None => Ok(pages.to_vec()),
+        DiffCompare::Cpu => {
+            let mut out = Vec::new();
+            for (i, &p) in pages.iter().enumerate() {
+                let page = page_slice(src, p)?;
+                let differs = if has_ref[i] {
+                    page != page_slice(refm, p)?
+                } else {
+                    !is_zero(page)
+                };
+                if differs {
+                    out.push(p);
+                }
+            }
+            Ok(out)
+        }
+        DiffCompare::Dsa => compare_dsa(src, refm, pages, has_ref, options, stats),
+    }
+}
+
+/// Copy the `changed` pages into `gather` (in order) and, unless the dirty
+/// log is trusted as-is, into the reference.
+#[cfg(feature = "qpl")]
+pub(crate) fn gather_pages(
+    src: &Mapping,
+    refm: &Mapping,
+    gather: &Buffer,
+    changed: &[usize],
+    options: DiffOptions,
+    stats: &mut DiffStats,
+) -> Result<(), Error> {
+    if options.compare == DiffCompare::Dsa {
+        return gather_dsa(src, refm, gather, changed, options, stats);
+    }
+    let update_reference = options.compare != DiffCompare::None;
+    for (i, &p) in changed.iter().enumerate() {
+        // SAFETY: page-aligned pages inside three distinct live mappings.
+        unsafe {
+            copy_two(
+                refm.mut_ptr(p, PAGE)?,
+                gather.page(i),
+                src.ptr(p, PAGE)?,
+                update_reference,
+            );
+        }
+    }
+    Ok(())
 }

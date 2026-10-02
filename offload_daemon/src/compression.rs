@@ -484,31 +484,9 @@ fn compress_file_qpl_async(
     workers: usize,
     accel: AccelOptions,
 ) -> Result<CompressionStats, Error> {
-    let started = Instant::now();
-    let output = OpenOptions::new()
-        .create(true)
-        .truncate(true)
-        .read(true)
-        .write(true)
-        .open(data_path)
-        .map_err(Error::Write)?;
-    let chunk_count = source_size.div_ceil(chunk_size as u64) as usize;
-
-    // The slot memfd is mapped, not read: the engines (and the CPU fallback)
-    // work on the guest memory in place. Only data extents are ever touched:
-    // a chunk wholly inside a hole is recorded as zero without a read, and
-    // page-table entries are created up front for the data extents alone
-    // (that is what keeps DSA from taking one page-request fault per page).
-    // Touching a hole through the mapping would allocate it in the memfd.
     let mapping =
         Mapping::map_file(source, source_offset, source_size, false).map_err(Error::Read)?;
     let extents = data_extents(source, source_offset, source_size).map_err(Error::Read)?;
-    let mut chunk_has_data = vec![false; chunk_count];
-    for &(start, end) in &extents {
-        chunk_has_data[start / chunk_size..end.div_ceil(chunk_size).min(chunk_count)].fill(true);
-    }
-    let hole_chunks = chunk_has_data.iter().filter(|has| !**has).count();
-    let data_bytes: usize = extents.iter().map(|(start, end)| end - start).sum();
     let prefault = if accel.prefault {
         let started = Instant::now();
         for &(start, end) in &extents {
@@ -521,8 +499,57 @@ fn compress_file_qpl_async(
         None
     };
 
-    let mut classifier = Classifier::new(accel, chunk_size)?;
     let mut pool = QplJobPool::new(ExecutionPath::Hardware, huffman_mode, workers)?;
+    compress_mapped(
+        &mapping,
+        &extents,
+        prefault,
+        &mut pool,
+        source_size,
+        data_path,
+        manifest_path,
+        codec,
+        chunk_size,
+        chunk_size_u32,
+        accel,
+    )
+}
+
+/// The full-checkpoint pipeline on a slot that is already mapped, with its
+/// data extents known (and populated, if `prefault` says so), using the
+/// caller's IAA job pool: lets a resident daemon keep both across slots and
+/// checkpoints.
+#[cfg(feature = "qpl")]
+#[expect(clippy::too_many_arguments)]
+pub(crate) fn compress_mapped(
+    mapping: &Mapping,
+    extents: &[(usize, usize)],
+    prefault: Option<Duration>,
+    pool: &mut QplJobPool,
+    source_size: u64,
+    data_path: &Path,
+    manifest_path: &Path,
+    codec: Codec,
+    chunk_size: usize,
+    chunk_size_u32: u32,
+    accel: AccelOptions,
+) -> Result<CompressionStats, Error> {
+    let started = Instant::now();
+    let output = OpenOptions::new()
+        .create(true)
+        .truncate(true)
+        .read(true)
+        .write(true)
+        .open(data_path)
+        .map_err(Error::Write)?;
+    let chunk_count = source_size.div_ceil(chunk_size as u64) as usize;
+    let mut chunk_has_data = vec![false; chunk_count];
+    for &(start, end) in extents {
+        chunk_has_data[start / chunk_size..end.div_ceil(chunk_size).min(chunk_count)].fill(true);
+    }
+    let hole_chunks = chunk_has_data.iter().filter(|has| !**has).count();
+    let data_bytes: usize = extents.iter().map(|(start, end)| end - start).sum();
+    let mut classifier = Classifier::new(accel, chunk_size)?;
     let mut records = Vec::with_capacity(chunk_count);
     let mut output_offset = 0_u64;
 
@@ -553,7 +580,7 @@ fn compress_file_qpl_async(
                 made_progress = true;
                 continue;
             }
-            if !classifier.push(&mapping, offset, length)? {
+            if !classifier.push(mapping, offset, length)? {
                 break;
             }
             next_chunk += 1;
@@ -561,7 +588,7 @@ fn compress_file_qpl_async(
         }
 
         let before = ready.len();
-        classifier.drain(&mapping, &mut ready)?;
+        classifier.drain(mapping, &mut ready)?;
         made_progress |= ready.len() != before;
 
         for (slot, entry) in active.iter_mut().enumerate() {

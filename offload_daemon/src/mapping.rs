@@ -147,6 +147,12 @@ impl Mapping {
         Ok(started.elapsed())
     }
 
+    /// Backing page size (2 MiB etc. on hugetlbfs, else 4 KiB).
+    #[cfg(feature = "qpl")]
+    pub(crate) fn page_size(&self) -> usize {
+        self.page
+    }
+
     pub(crate) fn populate_range(
         &self,
         offset: usize,

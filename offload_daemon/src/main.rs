@@ -25,6 +25,8 @@ mod dto;
 mod mapping;
 #[cfg(feature = "qpl")]
 mod qpl;
+#[cfg(feature = "qpl")]
+mod resident;
 
 use std::ffi::{CString, NulError};
 use std::fs::{self, File, OpenOptions};
@@ -40,7 +42,7 @@ use std::time::Instant;
 use std::{result, thread};
 
 use clap::{Parser, Subcommand};
-use log::{debug, info};
+use log::{debug, error, info};
 use thiserror::Error;
 use vm_memory::mmap::{MmapRegion, MmapRegionError};
 use vm_memory::{
@@ -143,6 +145,9 @@ enum Error {
     Diff(#[from] diff::Error),
     #[error("Diff checkpoints need an async QPL codec")]
     DiffCodec,
+    #[cfg(feature = "qpl")]
+    #[error("Resident checkpoint")]
+    Resident(#[from] resident::Error),
 }
 
 type Result<T> = result::Result<T, Error>;
@@ -214,6 +219,45 @@ enum Mode {
         /// DSA batch descriptors in flight.
         #[arg(long, default_value_t = 8)]
         diff_depth: usize,
+    },
+    /// Stay resident: every connection from CH (send-migration with
+    /// memory_mode=memfds,preserve_source=on) is one checkpoint, written to
+    /// <output-root>/ckpt-NNNNNN. Mappings, page tables, the diff reference,
+    /// DTO and one IAA job pool shared by all slots persist between
+    /// checkpoints; with --reference-dir and a dirty log from CH each
+    /// checkpoint after the first is a diff against the previous one.
+    Serve {
+        #[arg(long)]
+        socket: PathBuf,
+        #[arg(long)]
+        output_root: PathBuf,
+        /// An async QPL codec.
+        #[arg(long)]
+        compression: Codec,
+        #[arg(long, default_value_t = 1 << 20)]
+        chunk_size: usize,
+        /// IAA jobs in flight, shared by all slots.
+        #[arg(long, default_value_t = default_workers())]
+        workers: usize,
+        #[arg(long, default_value_t = default_classify())]
+        classify: Classify,
+        #[arg(long, default_value_t = 32)]
+        dsa_depth: usize,
+        #[arg(long)]
+        crc: bool,
+        /// Keep a reference here and write dirty-log diffs.
+        #[arg(long)]
+        reference_dir: Option<PathBuf>,
+        #[arg(long, default_value = "cpu")]
+        diff_compare: DiffCompare,
+        #[arg(long, default_value_t = 256)]
+        diff_batch: usize,
+        #[arg(long, default_value_t = 8)]
+        diff_depth: usize,
+        /// Delete each checkpoint once the next one is written (full
+        /// checkpoints only; a diff chain needs its parents).
+        #[arg(long)]
+        keep_only_last: bool,
     },
     /// Read a snapshot from disk and stream it to a listening CH instance.
     Restore {
@@ -328,6 +372,42 @@ fn main() -> Result<()> {
             });
             run_snapshot(&socket, &output_dir, compression.as_ref())
         }
+        Mode::Serve {
+            socket,
+            output_root,
+            compression,
+            chunk_size,
+            workers,
+            classify,
+            dsa_depth,
+            crc,
+            reference_dir,
+            diff_compare,
+            diff_batch,
+            diff_depth,
+            keep_only_last,
+        } => run_serve(
+            &socket,
+            &output_root,
+            ServeOptions {
+                codec: compression,
+                chunk_size,
+                workers,
+                accel: AccelOptions {
+                    classify,
+                    dsa_depth,
+                    crc,
+                    prefault: true,
+                },
+                reference_dir,
+                diff: DiffOptions {
+                    compare: diff_compare,
+                    batch: diff_batch,
+                    depth: diff_depth,
+                },
+                keep_only_last,
+            },
+        ),
         Mode::Restore {
             socket,
             input_dir,
@@ -413,10 +493,35 @@ fn run_snapshot(
     let (mut stream, _) = listener.accept().map_err(Error::Accept)?;
     info!("CH connected; starting snapshot receive");
 
-    expect_command(&mut stream, Command::Start, "Start")?;
+    let received = receive_checkpoint(&mut stream, output_dir)?;
+    // Invariant: drain + fsync every memory fd BEFORE ACKing —
+    // CH may exit right after and these fds are our only copy.
+    dump_memory_slots(
+        &received.slots,
+        &received.config,
+        output_dir,
+        compression,
+        received.dirty.as_deref(),
+    )?;
     Response::ok()
         .write_to(&mut stream)
         .map_err(Error::Protocol)?;
+    info!("Snapshot persisted to {output_dir:?}");
+    Ok(())
+}
+
+/// What one migration connection delivered, up to (not including the ACK
+/// of) its final Complete/CompletePaused. Config and state are written into
+/// `output_dir` as they arrive.
+struct Received {
+    slots: Vec<(u32, File)>,
+    config: VmMigrationConfig,
+    dirty: Option<Vec<(u64, u64)>>,
+}
+
+fn receive_checkpoint(stream: &mut UnixStream, output_dir: &Path) -> Result<Received> {
+    expect_command(stream, Command::Start, "Start")?;
+    Response::ok().write_to(stream).map_err(Error::Protocol)?;
 
     let mut memory_slots: Vec<(u32, File)> = Vec::new();
     let mut dirty: Option<Vec<(u64, u64)>> = None;
@@ -424,16 +529,14 @@ fn run_snapshot(
     let mut state_bytes: Option<Vec<u8>> = None;
 
     loop {
-        let req = Request::read_from(&mut stream).map_err(Error::Protocol)?;
+        let req = Request::read_from(stream).map_err(Error::Protocol)?;
         debug!("snapshot: received command {:?}", req.command());
         match req.command() {
             Command::MemoryFd => {
-                let (slot, file) = recv_memory_fd(&stream)?;
+                let (slot, file) = recv_memory_fd(stream)?;
                 debug!("snapshot: received memory fd for slot {slot}");
                 memory_slots.push((slot, file));
-                Response::ok()
-                    .write_to(&mut stream)
-                    .map_err(Error::Protocol)?;
+                Response::ok().write_to(stream).map_err(Error::Protocol)?;
             }
             Command::Config => {
                 let mut buf = vec![0u8; req.length() as usize];
@@ -441,60 +544,47 @@ fn run_snapshot(
                 migration_config = Some(serde_json::from_slice(&buf)?);
                 fs::write(output_dir.join(MIGRATION_CONFIG_FILENAME), &buf)
                     .map_err(Error::WriteFile)?;
-                Response::ok()
-                    .write_to(&mut stream)
-                    .map_err(Error::Protocol)?;
+                Response::ok().write_to(stream).map_err(Error::Protocol)?;
             }
             Command::DirtyLog => {
-                let table = MemoryRangeTable::read_from(&mut stream, req.length())
-                    .map_err(Error::Protocol)?;
+                let table =
+                    MemoryRangeTable::read_from(stream, req.length()).map_err(Error::Protocol)?;
                 info!(
                     "dirty log: {} ranges, {} KiB",
                     table.regions().len(),
                     table.effective_size() >> 10
                 );
                 dirty = Some(table.regions().iter().map(|r| (r.gpa, r.length)).collect());
-                Response::ok()
-                    .write_to(&mut stream)
-                    .map_err(Error::Protocol)?;
+                Response::ok().write_to(stream).map_err(Error::Protocol)?;
             }
             Command::State => {
                 let mut buf = vec![0u8; req.length() as usize];
                 stream.read_exact(&mut buf).map_err(Error::ReadPayload)?;
                 fs::write(output_dir.join(SNAPSHOT_STATE_FILE), &buf).map_err(Error::WriteFile)?;
                 state_bytes = Some(buf);
-                Response::ok()
-                    .write_to(&mut stream)
-                    .map_err(Error::Protocol)?;
+                Response::ok().write_to(stream).map_err(Error::Protocol)?;
             }
             Command::CompletePaused | Command::Complete => {
                 // Invariant: drain + fsync every memory fd BEFORE ACKing —
                 // CH may exit right after and these fds are our only copy.
-                let mm = migration_config
-                    .as_ref()
-                    .ok_or(Error::PrematureCompletion("Config"))?;
-                let _ = state_bytes
-                    .as_ref()
-                    .ok_or(Error::PrematureCompletion("State"))?;
-                dump_memory_slots(&memory_slots, mm, output_dir, compression, dirty.as_deref())?;
-                Response::ok()
-                    .write_to(&mut stream)
-                    .map_err(Error::Protocol)?;
-                info!("Snapshot persisted to {output_dir:?}");
-                break;
+                let config = migration_config.ok_or(Error::PrematureCompletion("Config"))?;
+                let _ = state_bytes.ok_or(Error::PrematureCompletion("State"))?;
+                return Ok(Received {
+                    slots: memory_slots,
+                    config,
+                    dirty,
+                });
             }
             #[expect(deprecated)] // last sent in v52
             Command::Abandon => {
                 // ACK before bailing so CH's ok_or_fatal_error() read returns
                 // cleanly instead of hitting EOF.
-                Response::ok().write_to(&mut stream).ok();
+                Response::ok().write_to(stream).ok();
                 return Err(Error::Abandoned);
             }
             c => return Err(Error::UnexpectedCommand(c, "a snapshot command")),
         }
     }
-
-    Ok(())
 }
 
 fn expect_command(stream: &mut UnixStream, want: Command, name: &'static str) -> Result<Request> {
@@ -1211,5 +1301,80 @@ fn init_reference_slot(
     _: &Path,
     _: &CompressionOptions,
 ) -> Result<()> {
+    Err(Error::DiffCodec)
+}
+
+#[derive(Clone)]
+#[cfg_attr(not(feature = "qpl"), allow(dead_code))]
+struct ServeOptions {
+    codec: Codec,
+    chunk_size: usize,
+    workers: usize,
+    accel: AccelOptions,
+    reference_dir: Option<PathBuf>,
+    diff: DiffOptions,
+    keep_only_last: bool,
+}
+
+#[cfg(feature = "qpl")]
+fn run_serve(socket_path: &Path, output_root: &Path, options: ServeOptions) -> Result<()> {
+    use crate::resident::{Resident, ResidentConfig, SlotInput};
+
+    fs::create_dir_all(output_root).map_err(Error::CreateOutputDir)?;
+    let _lock = acquire_socket_lock(socket_path)?;
+    let _ = fs::remove_file(socket_path);
+    let listener = UnixListener::bind(socket_path).map_err(Error::BindSocket)?;
+    let mut resident = Resident::new(ResidentConfig {
+        codec: options.codec,
+        chunk_size: options.chunk_size,
+        workers: options.workers,
+        accel: options.accel,
+        reference_dir: options.reference_dir,
+        diff: options.diff,
+        keep_only_last: options.keep_only_last,
+    })?;
+    info!("Resident offload daemon listening at {socket_path:?}");
+    for seq in 0_u64.. {
+        let (mut stream, _) = listener.accept().map_err(Error::Accept)?;
+        let dir = output_root.join(format!("ckpt-{seq:06}"));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).map_err(Error::CreateOutputDir)?;
+        let result = (|| -> Result<String> {
+            let received = receive_checkpoint(&mut stream, &dir)?;
+            let info = slot_info(&received.config)?;
+            let mut slots = Vec::with_capacity(received.slots.len());
+            for (slot, file) in received.slots {
+                let &(_, gpa, size, file_offset) = info
+                    .iter()
+                    .find(|(s, ..)| *s == slot)
+                    .ok_or(Error::MissingSlot(slot))?;
+                slots.push(SlotInput {
+                    slot,
+                    gpa,
+                    size,
+                    file_offset,
+                    file,
+                });
+            }
+            let line = resident.checkpoint(slots, received.dirty.as_deref(), &dir)?;
+            Response::ok()
+                .write_to(&mut stream)
+                .map_err(Error::Protocol)?;
+            Ok(line)
+        })();
+        match result {
+            Ok(line) => info!("Checkpoint {seq} {dir:?}: {line}"),
+            Err(e) => {
+                error!("Checkpoint {seq} failed: {e:?}; the next checkpoint will be full");
+                resident.reset();
+                Response::error().write_to(&mut stream).ok();
+            }
+        }
+    }
+    Ok(())
+}
+
+#[cfg(not(feature = "qpl"))]
+fn run_serve(_: &Path, _: &Path, _: ServeOptions) -> Result<()> {
     Err(Error::DiffCodec)
 }
