@@ -427,10 +427,10 @@ MEMORY_PATTERN=$MEMORY_PATTERN \
 PAUSE_AFTER_PREPARE=1 \
     "$BENCHMARK_DIR/prepare-memory.sh"
 
-BENCHMARK_DATASET=$MEMORY_PATTERN
+BENCHMARK_DATASET=${DATASET_LABEL:-$MEMORY_PATTERN}
 export BENCHMARK_DATASET CODECS CHUNK_SIZES SOFTWARE_WORKER_COUNTS
 export QPL_ASYNC_SNAPSHOT_DEPTHS QPL_ASYNC_RESTORE_DEPTHS ITERATIONS WARMUPS WITH_QPL
-export CLASSIFY_MODES BASE_OFFLOAD_BIN RESTORE_HUGETLB DSA_DEPTH DTO_WQ_LIST DTO_IS_NUMA_AWARE
+export SKIP_RESTORE DATASET_LABEL HUGEPAGES CLASSIFY_MODES BASE_OFFLOAD_BIN RESTORE_HUGETLB DSA_DEPTH DTO_WQ_LIST DTO_IS_NUMA_AWARE
 
 benchmark_event "snapshot matrix starting"
 RESET_RESULTS=1 "$BENCHMARK_DIR/run-matrix.sh" snapshot
@@ -440,9 +440,11 @@ benchmark_event "stopping source VM before restore"
 "$BENCHMARK_DIR/source-vm.sh" stop
 source_vm_started=0
 
-benchmark_event "restore matrix starting"
-RESET_RESULTS=0 "$BENCHMARK_DIR/run-matrix.sh" restore
-benchmark_event "restore matrix complete"
+if [[ ${SKIP_RESTORE:-0} != 1 ]]; then
+    benchmark_event "restore matrix starting"
+    RESET_RESULTS=0 "$BENCHMARK_DIR/run-matrix.sh" restore
+    benchmark_event "restore matrix complete"
+fi
 
 echo "==> Key performance indicators"
 "$BENCHMARK_DIR/report.py" "$RESULTS_CSV" "$REPORT_CSV"

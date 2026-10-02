@@ -77,7 +77,7 @@ start_vm() {
     "${VM_PREFIX[@]}" "$CH_BIN" \
         --api-socket "$SOURCE_API_SOCKET" \
         --cpus "boot=${VCPUS:-2}" \
-        --memory "size=${MEMORY_SIZE:-1G},shared=on" \
+        --memory "size=${MEMORY_SIZE:-1G},shared=on${HUGEPAGES:+,hugepages=on,hugepage_size=2M}" \
         --kernel "$KERNEL_PATH" \
         --cmdline "${KERNEL_CMDLINE:-root=/dev/vda1 console=hvc0 rw}" \
         "${disk_args[@]}" \
