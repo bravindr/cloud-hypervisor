@@ -18,6 +18,50 @@ use std::time::{Duration, Instant};
 const MADV_POPULATE_READ: libc::c_int = 22;
 const MADV_POPULATE_WRITE: libc::c_int = 23;
 
+/// Data extents of `file` within `[offset, offset + length)`, relative to
+/// `offset`, found with `SEEK_DATA`/`SEEK_HOLE`. Holes in a shmem memfd are
+/// guest pages that were never written: they read as zero, and touching them
+/// through a mapping makes shmem allocate a zeroed page for each, which
+/// inflates the guest's host memory to its full size. Filesystems without
+/// hole support (hugetlbfs) report the whole range as data.
+#[cfg(feature = "qpl")]
+pub(crate) fn data_extents(
+    file: &File,
+    offset: u64,
+    length: u64,
+) -> io::Result<Vec<(usize, usize)>> {
+    let end = offset + length;
+    let fd = file.as_raw_fd();
+    let mut extents = Vec::new();
+    let mut position = offset;
+    while position < end {
+        let start =
+            libc::off_t::try_from(position).map_err(|_| io::Error::other("offset too large"))?;
+        // SAFETY: lseek on an owned fd; the result is checked.
+        let data = unsafe { libc::lseek(fd, start, libc::SEEK_DATA) };
+        if data < 0 {
+            let error = io::Error::last_os_error();
+            if error.raw_os_error() == Some(libc::ENXIO) {
+                break; // no data past `position`
+            }
+            return Err(error);
+        }
+        let data = data as u64;
+        if data >= end {
+            break;
+        }
+        // SAFETY: as above.
+        let hole = unsafe { libc::lseek(fd, data as libc::off_t, libc::SEEK_HOLE) };
+        if hole < 0 {
+            return Err(io::Error::last_os_error());
+        }
+        let hole = (hole as u64).min(end);
+        extents.push(((data - offset) as usize, (hole - offset) as usize));
+        position = hole;
+    }
+    Ok(extents)
+}
+
 pub(crate) struct Mapping {
     address: NonNull<u8>,
     length: usize,

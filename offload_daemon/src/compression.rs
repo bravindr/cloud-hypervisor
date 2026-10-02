@@ -28,6 +28,8 @@ use crate::crc::{crc32c, is_zero};
 use crate::dto::{Op as DtoOp, Poll as DtoPoll, Stats as DtoStats, Submit as DtoSubmit};
 use crate::mapping::Mapping;
 #[cfg(feature = "qpl")]
+use crate::mapping::data_extents;
+#[cfg(feature = "qpl")]
 use crate::qpl::{
     Error as QplError, ExecutionPath, HuffmanMode, Job as QplJob, JobPool as QplJobPool,
 };
@@ -489,12 +491,28 @@ fn compress_file_qpl_async(
     let chunk_count = source_size.div_ceil(chunk_size as u64) as usize;
 
     // The slot memfd is mapped, not read: the engines (and the CPU fallback)
-    // work on the guest memory in place. Creating the page-table entries up
-    // front is what keeps DSA from taking one page-request fault per page.
+    // work on the guest memory in place. Only data extents are ever touched:
+    // a chunk wholly inside a hole is recorded as zero without a read, and
+    // page-table entries are created up front for the data extents alone
+    // (that is what keeps DSA from taking one page-request fault per page).
+    // Touching a hole through the mapping would allocate it in the memfd.
     let mapping =
         Mapping::map_file(source, source_offset, source_size, false).map_err(Error::Read)?;
+    let extents = data_extents(source, source_offset, source_size).map_err(Error::Read)?;
+    let mut chunk_has_data = vec![false; chunk_count];
+    for &(start, end) in &extents {
+        chunk_has_data[start / chunk_size..end.div_ceil(chunk_size).min(chunk_count)].fill(true);
+    }
+    let hole_chunks = chunk_has_data.iter().filter(|has| !**has).count();
+    let data_bytes: usize = extents.iter().map(|(start, end)| end - start).sum();
     let prefault = if accel.prefault {
-        Some(mapping.populate(false).map_err(Error::Read)?)
+        let started = Instant::now();
+        for &(start, end) in &extents {
+            mapping
+                .populate_range(start, end - start, false)
+                .map_err(Error::Read)?;
+        }
+        Some(started.elapsed())
     } else {
         None
     };
@@ -520,6 +538,17 @@ fn compress_file_qpl_async(
         while next_chunk < chunk_count && ready.len() < ready_limit {
             let offset = next_chunk * chunk_size;
             let length = (source_size as usize - offset).min(chunk_size);
+            if !chunk_has_data[next_chunk] {
+                ready.push_back(Verdict {
+                    offset,
+                    length,
+                    zero: true,
+                    crc32c: None,
+                });
+                next_chunk += 1;
+                made_progress = true;
+                continue;
+            }
             if !classifier.push(&mapping, offset, length)? {
                 break;
             }
@@ -610,12 +639,13 @@ fn compress_file_qpl_async(
 
     let report = classifier.report();
     log::info!(
-        "classify={} prefault={} zero_chunks={zero_chunks}/{chunk_count} dsa submitted={} fallback={} failed={} cpu_scans={} crc={}",
+        "classify={} prefault={} zero_chunks={zero_chunks}/{chunk_count} hole_chunks={hole_chunks} data_mib={} dsa submitted={} fallback={} failed={} cpu_scans={} crc={}",
         accel.classify,
         prefault.map_or_else(
             || "off".to_owned(),
             |elapsed| format!("{:.1}ms", elapsed.as_secs_f64() * 1e3)
         ),
+        data_bytes >> 20,
         report.dsa_submitted,
         report.dsa_fallback,
         report.dsa_failed,
@@ -736,8 +766,8 @@ pub(crate) fn decompress_file(
     // into a mapping of the destination there. On 4 KiB-backed memfds pwrite
     // stays: writing through a fresh mapping takes one page fault per page,
     // which measured 2x slower than letting the kernel allocate per write.
-    let destination = Destination::open(destination, destination_offset, expected_size)
-        .map_err(Error::Write)?;
+    let destination =
+        Destination::open(destination, destination_offset, expected_size).map_err(Error::Write)?;
     #[cfg(feature = "qpl")]
     if let Some(huffman_mode) = codec.async_huffman_mode() {
         return decompress_file_qpl_async(
