@@ -1,0 +1,15 @@
+pages session                  diffs MiB  w/ dedup  saved dedup MiB raw
+2m circuit-fibsqrt_30b              43.2      23.7    45%          37.7
+2m circuit-fibsqrt_7b               31.6      12.3    61%          37.1
+2m path-tracing_30b                 82.9      67.2    19%          30.7
+2m polyglot-rust-c_30b              86.4      36.1    58%         104.2
+2m regex-chess_30b                  70.7      56.1    21%          32.6
+2m winning-avg-corewars_30b         36.0      35.1     3%           2.1
+2m write-compressor_30b              8.2       7.5     9%           1.5
+4k circuit-fibsqrt_30b              43.3      23.8    45%          37.7
+4k circuit-fibsqrt_7b               32.1      12.8    60%          37.1
+4k path-tracing_30b                 84.1      68.5    19%          30.7
+4k polyglot-rust-c_30b              86.6      36.3    58%         104.2
+4k regex-chess_30b                  70.4      55.7    21%          32.6
+4k winning-avg-corewars_30b         35.9      34.9     3%           2.1
+4k write-compressor_30b              8.2       7.4     9%           1.5

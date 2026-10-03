@@ -1,0 +1,45 @@
+checkpoints 1416 (0 failed), restores 56
+
+=== 2m: per-turn checkpoint, median over 170 turns ===
+variant            wall ms   p95  cpu ms    p95  KiB out prep ms cmp ms gath ms comp ms populate dedup pg dedup ms
+diff-cpu-res            11    38     5.7   32.9      613     1.5    0.8     2.0     0.8        2        0      0.0
+diff-dsa-res            10    24     4.5   17.0      613     1.5    0.4     1.3     0.8        2        0      0.0
+diff-cpu-res-dedup      12    48     6.8   42.8      609     1.4    0.8     1.8     0.8        2        1      1.4
+diff-dsa-res-dedup      11    27     4.9   21.6      609     1.4    0.4     1.1     0.8        2        1      0.6
+
+=== 2m: all checkpoints of all sessions ===
+variant             wall s   cpu s stored MiB dedup pages
+diff-cpu-res          6.89    7.49       1703           0
+diff-dsa-res          3.55    3.84       1703           0
+diff-cpu-res-dedup    4.89    5.51       1582       62934
+diff-dsa-res-dedup    3.65    3.93       1582       62934
+
+  base (first, full) checkpoint median wall: diff-cpu-res 643 ms, diff-dsa-res 215 ms, diff-cpu-res-dedup 318 ms, diff-dsa-res-dedup 211 ms
+
+=== 2m: restores ===
+  diff-cpu-res       median   257 ms, chain up to 60 diffs, guest ok 7/7
+  diff-dsa-res       median   246 ms, chain up to 60 diffs, guest ok 7/7
+  diff-cpu-res-dedup median   249 ms, chain up to 60 diffs, guest ok 7/7
+  diff-dsa-res-dedup median   244 ms, chain up to 60 diffs, guest ok 7/7
+
+=== 4k: per-turn checkpoint, median over 170 turns ===
+variant            wall ms   p95  cpu ms    p95  KiB out prep ms cmp ms gath ms comp ms populate dedup pg dedup ms
+diff-cpu-res            11    40     4.9   33.6      610     0.1    0.8     2.5     0.8        1        0      0.0
+diff-dsa-res             9    22     3.7   16.8      610     0.1    0.4     1.7     0.8        0        0      0.0
+diff-cpu-res-dedup      12    52     6.4   45.0      608     0.1    0.8     2.0     0.8        0        1      2.1
+diff-dsa-res-dedup      10    24     4.5   18.6      608     0.1    0.4     1.8     0.8        0        1      0.7
+
+=== 4k: all checkpoints of all sessions ===
+variant             wall s   cpu s stored MiB dedup pages
+diff-cpu-res          4.12    3.77       1708           0
+diff-dsa-res          3.37    3.01       1708           0
+diff-cpu-res-dedup    4.54    4.08       1587       62932
+diff-dsa-res-dedup    3.57    3.05       1587       62932
+
+  base (first, full) checkpoint median wall: diff-cpu-res 245 ms, diff-dsa-res 206 ms, diff-cpu-res-dedup 253 ms, diff-dsa-res-dedup 203 ms
+
+=== 4k: restores ===
+  diff-cpu-res       median   266 ms, chain up to 60 diffs, guest ok 7/7
+  diff-dsa-res       median   263 ms, chain up to 60 diffs, guest ok 7/7
+  diff-cpu-res-dedup median   255 ms, chain up to 60 diffs, guest ok 7/7
+  diff-dsa-res-dedup median   244 ms, chain up to 60 diffs, guest ok 7/7

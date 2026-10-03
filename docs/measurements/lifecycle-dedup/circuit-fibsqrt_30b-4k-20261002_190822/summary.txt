@@ -1,0 +1,12 @@
+19:08:23 resident lifecycle circuit-fibsqrt_30b pages=4k turns=24 variants=diff-cpu-res diff-dsa-res diff-cpu-res-dedup diff-dsa-res-dedup
+19:09:11   turn 10/24
+19:09:52   turn 20/24
+19:10:13 restore diff-cpu-res (chain of 24 diffs): rc=0 261 ms, guest ok=1
+19:10:19 restore diff-dsa-res (chain of 24 diffs): rc=0 259 ms, guest ok=1
+19:10:24 restore diff-cpu-res-dedup (chain of 24 diffs): rc=0 248 ms, guest ok=1
+19:10:29 restore diff-dsa-res-dedup (chain of 24 diffs): rc=0 242 ms, guest ok=1
+733	diff-cpu-res/
+713	diff-cpu-res-dedup/
+733	diff-dsa-res/
+713	diff-dsa-res-dedup/
+19:10:30 DONE -> /home/byrnedan/chlogs/lifecycle-dedup/circuit-fibsqrt_30b-4k-20261002_190822

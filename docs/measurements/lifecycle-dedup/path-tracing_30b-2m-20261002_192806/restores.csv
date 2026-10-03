@@ -1,0 +1,5 @@
+session,pages,variant,chain,restore_ms,guest_ok,rc
+path-tracing_30b,2m,diff-cpu-res,23,334,1,0
+path-tracing_30b,2m,diff-dsa-res,23,322,1,0
+path-tracing_30b,2m,diff-cpu-res-dedup,23,324,1,0
+path-tracing_30b,2m,diff-dsa-res-dedup,23,317,1,0

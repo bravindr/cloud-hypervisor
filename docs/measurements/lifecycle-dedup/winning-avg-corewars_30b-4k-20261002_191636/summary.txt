@@ -1,0 +1,16 @@
+19:16:36 resident lifecycle winning-avg-corewars_30b pages=4k turns=60 variants=diff-cpu-res diff-dsa-res diff-cpu-res-dedup diff-dsa-res-dedup
+19:17:26   turn 10/60
+19:18:06   turn 20/60
+19:18:46   turn 30/60
+19:19:27   turn 40/60
+19:20:07   turn 50/60
+19:20:47   turn 60/60
+19:20:54 restore diff-cpu-res (chain of 60 diffs): rc=0 266 ms, guest ok=1
+19:21:01 restore diff-dsa-res (chain of 60 diffs): rc=0 263 ms, guest ok=1
+19:21:07 restore diff-cpu-res-dedup (chain of 60 diffs): rc=0 255 ms, guest ok=1
+19:21:14 restore diff-dsa-res-dedup (chain of 60 diffs): rc=0 244 ms, guest ok=1
+679	diff-cpu-res/
+679	diff-cpu-res-dedup/
+679	diff-dsa-res/
+679	diff-dsa-res-dedup/
+19:21:14 DONE -> /home/byrnedan/chlogs/lifecycle-dedup/winning-avg-corewars_30b-4k-20261002_191636

@@ -1,0 +1,5 @@
+session,pages,variant,chain,restore_ms,guest_ok,rc
+write-compressor_30b,2m,diff-cpu-res,13,164,1,0
+write-compressor_30b,2m,diff-dsa-res,13,158,1,0
+write-compressor_30b,2m,diff-cpu-res-dedup,13,165,1,0
+write-compressor_30b,2m,diff-dsa-res-dedup,13,158,1,0

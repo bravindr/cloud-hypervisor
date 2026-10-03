@@ -1,0 +1,11 @@
+19:05:45 resident lifecycle write-compressor_30b pages=4k turns=13 variants=diff-cpu-res diff-dsa-res diff-cpu-res-dedup diff-dsa-res-dedup
+19:06:34   turn 10/13
+19:06:52 restore diff-cpu-res (chain of 13 diffs): rc=0 200 ms, guest ok=1
+19:06:58 restore diff-dsa-res (chain of 13 diffs): rc=0 194 ms, guest ok=1
+19:07:05 restore diff-cpu-res-dedup (chain of 13 diffs): rc=0 198 ms, guest ok=1
+19:07:11 restore diff-dsa-res-dedup (chain of 13 diffs): rc=0 197 ms, guest ok=1
+641	diff-cpu-res/
+640	diff-cpu-res-dedup/
+641	diff-dsa-res/
+640	diff-dsa-res-dedup/
+19:07:12 DONE -> /home/byrnedan/chlogs/lifecycle-dedup/write-compressor_30b-4k-20261002_190544

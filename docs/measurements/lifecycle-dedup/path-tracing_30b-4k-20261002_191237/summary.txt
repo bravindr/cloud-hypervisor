@@ -1,0 +1,12 @@
+19:12:38 resident lifecycle path-tracing_30b pages=4k turns=23 variants=diff-cpu-res diff-dsa-res diff-cpu-res-dedup diff-dsa-res-dedup
+19:13:29   turn 10/23
+19:14:10   turn 20/23
+19:14:30 restore diff-cpu-res (chain of 23 diffs): rc=0 382 ms, guest ok=1
+19:14:37 restore diff-dsa-res (chain of 23 diffs): rc=0 372 ms, guest ok=1
+19:14:45 restore diff-cpu-res-dedup (chain of 23 diffs): rc=0 365 ms, guest ok=1
+19:14:53 restore diff-dsa-res-dedup (chain of 23 diffs): rc=0 369 ms, guest ok=1
+834	diff-cpu-res/
+818	diff-cpu-res-dedup/
+834	diff-dsa-res/
+818	diff-dsa-res-dedup/
+19:14:54 DONE -> /home/byrnedan/chlogs/lifecycle-dedup/path-tracing_30b-4k-20261002_191237

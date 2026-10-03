@@ -793,6 +793,68 @@ Reading:
   threads, which misses the slot threads of a full checkpoint once they
   exit; the daemon now reports its own `getrusage` per checkpoint.
 
+### 7c.2h Disk-block deduplication with a DSA CRC index
+
+Pages an agent's guest reads from its root filesystem sit in the guest page
+cache as byte-identical copies of 4 KiB disk blocks (§ dedup measurement:
+8-22 % of a session's final data). `serve --dedup-image <template>`
+(d2d5c36a3) indexes the immutable task image: one CRC32C per non-zero
+block (batched DSA CRC generation, `dto_batch_add_crc`, or SSE4.2), sorted.
+At each diff checkpoint the changed pages get a CRC in one batched pass;
+index hits are confirmed with a batched DSA COMPARE against the image block
+(memcmp on the CPU), so a CRC collision can never change a snapshot. Matches
+are stored as (page, image block, CRC) runs and skip IAA; restore reads them
+from the image and re-checks every CRC, refusing a changed image. Base
+(full) checkpoints are not deduplicated: at the base only 2-6 % of data
+matches the disk, the toolchain page cache arrives in diffs.
+
+Verified on 4 KiB and 2 MiB guests (path-tracing, a diff spanning the
+`gcc -static` turn): chains restore identical to a raw dump of the source
+except the one page a plain raw restore rewrites. Lifecycle
+(`VARIANTS="diff-cpu-res diff-dsa-res diff-cpu-res-dedup diff-dsa-res-dedup"
+run_all_resident.sh 4k 2m`): 1416 checkpoints, 0 failures, 56/56 restores
+(chains up to 60 diffs) resumed; results in
+`docs/measurements/lifecycle-dedup/`.
+
+Diff storage per session (all turns, DSA; 4 KiB, 2 MiB within 1 %):
+
+| session | diffs | with dedup | saved | served from image |
+|---|---|---|---|---|
+| circuit-fibsqrt 7B | 32.1 MiB | 12.8 MiB | 60 % | 37 MiB |
+| polyglot-rust-c (rustc, g++) | 86.6 MiB | 36.3 MiB | 58 % | 104 MiB |
+| circuit-fibsqrt 30B | 43.3 MiB | 23.8 MiB | 45 % | 38 MiB |
+| regex-chess (python, pip) | 70.4 MiB | 55.7 MiB | 21 % | 33 MiB |
+| path-tracing (gcc) | 84.1 MiB | 68.5 MiB | 19 % | 31 MiB |
+| write-compressor | 8.2 MiB | 7.4 MiB | 9 % | 1.5 MiB |
+| winning-avg-corewars | 35.9 MiB | 34.9 MiB | 3 % | 2.1 MiB |
+| **all seven** | **361 MiB** | **239 MiB** | **34 %** | **246 MiB** |
+
+Per-turn cost, median (p95):
+
+| variant | 4K pause | 4K CPU | 2M pause | 2M CPU | dedup step |
+|---|---|---|---|---|---|
+| diff, DSA | 9 ms (22) | 3.7 ms | 10 ms (24) | 4.5 ms | |
+| diff, DSA + dedup | 10 ms (24) | 4.5 ms | 11 ms (27) | 4.9 ms | 0.6-0.7 ms |
+| diff, CPU | 11 ms (40) | 4.9 ms | 11 ms (38) | 5.7 ms | |
+| diff, CPU + dedup | 12 ms (52) | 6.4 ms | 12 ms (48) | 6.8 ms | 1.4-2.1 ms |
+
+Index build, once per daemon (1.5-2 GB template images, 190-280 k
+indexed blocks): DSA 40-215 ms, CPU 187-700 ms.
+
+Reading:
+
+- **Dedup removes a third of all diff storage, and up to 60 % per session**
+  where the agent ran compilers or interpreters; sessions that only probed
+  files gain little. It is content-based, so it catches whatever the guest
+  read from disk without guest cooperation.
+- **With DSA it is nearly free**: 0.6-0.7 ms and under 1 ms of CPU per turn
+  at the median. The CPU path costs 2-3x as much per turn and far more on the
+  turns that matter (after a compiler run, CPU dedup took 42-50 ms vs 9 ms
+  on DSA), which is where its p95 grows from 40 to 52 ms.
+- The base checkpoint (~1.4 GB of the 1.6 GB per session set) is unchanged
+  here; deduplicating full checkpoints would need 4 KiB-granular records
+  inside the 1 MiB chunks and would save only 2-6 % there.
+
 ### 7c.3 IOMMU first touch: measured, and the fix
 
 `dto-async-test` (fresh process, 2 GiB memfd filled by another mapping, then

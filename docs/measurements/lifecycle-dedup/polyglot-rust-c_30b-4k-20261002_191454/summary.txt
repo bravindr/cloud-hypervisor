@@ -1,0 +1,11 @@
+19:14:54 resident lifecycle polyglot-rust-c_30b pages=4k turns=16 variants=diff-cpu-res diff-dsa-res diff-cpu-res-dedup diff-dsa-res-dedup
+19:15:44   turn 10/16
+19:16:16 restore diff-cpu-res (chain of 16 diffs): rc=0 357 ms, guest ok=1
+19:16:22 restore diff-dsa-res (chain of 16 diffs): rc=0 350 ms, guest ok=1
+19:16:29 restore diff-cpu-res-dedup (chain of 16 diffs): rc=0 326 ms, guest ok=1
+19:16:35 restore diff-dsa-res-dedup (chain of 16 diffs): rc=0 333 ms, guest ok=1
+890	diff-cpu-res/
+840	diff-cpu-res-dedup/
+890	diff-dsa-res/
+840	diff-dsa-res-dedup/
+19:16:36 DONE -> /home/byrnedan/chlogs/lifecycle-dedup/polyglot-rust-c_30b-4k-20261002_191454
