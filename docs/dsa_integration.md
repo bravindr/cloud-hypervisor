@@ -1075,7 +1075,7 @@ Attribution:
   workload (IAA and the NVMe write are).
 - **DSA's contribution is integrity for free.** With per-chunk CRC32C,
   DSA keeps the snapshot at the no-CRC time (dsacrc − dsa ≤ 12 ms) while
-  the CPU pays 90-175 ms (12-22 % of wall) and 0.14-0.20 core-s (26-30 %
+  the CPU pays 90-175 ms (12-22 % of wall) and 0.14-0.20 core-s (26-32 %
   of the daemon's CPU). On restore DSA verification costs 7-9 ms against
   126-134 ms on the CPU, and 0.01 against 0.13 core-s (14 % less wall,
   14 % less CPU).
