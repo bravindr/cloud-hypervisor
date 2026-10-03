@@ -855,6 +855,60 @@ Reading:
   here; deduplicating full checkpoints would need 4 KiB-granular records
   inside the 1 MiB chunks and would save only 2-6 % there.
 
+### 7c.2i The iaa-integration benchmark on its original configuration
+
+`benchmark/benchmark.sh` with `benchmark/benchmark_original_dsa.env`: the
+branch's own `benchmark.env` unchanged (Silesia 1536 MiB working set in a
+4 GiB, 4 KiB-page guest; codecs raw / lz4 / zstd / QPL static and dynamic
+async; 1 MiB chunks; IAA depth 8 for snapshot and 32 for restore; daemon
+pinned to one core by `AUTO_CPU_AFFINITY`; warm page cache), plus the four
+daemon variants of the async QPL codecs and 20 measured iterations per cell
+(1 warm-up) so p95 is meaningful. 231 snapshots and 231 restores, no
+failures. Results: `docs/measurements/harness-original/`.
+
+What is measured:
+- **snapshot**: from `ch-remote send-migration` until the daemon process has
+  written, fsynced and acknowledged every slot (`snapshot.sh`). The VM is
+  paused for all of it. CPU % is the daemon's (`/usr/bin/time %P`).
+- **restore**: from starting the restore daemon until CH's `receive-migration`
+  returns with the VM resumed (`restore.sh`): read, decompress into memfds,
+  hand them to CH. It ends when the VMM resumes the VM, not when the guest
+  is responsive.
+
+What DSA does here: on snapshot, the zero-chunk check of every 1 MiB chunk
+(COMPARE against a zero buffer, ahead of IAA) and, for `dsacrc`, a CRC32C
+per compressed chunk; on restore, only `dsacrc` uses DSA (CRC verification
+of each decompressed chunk). Compression and decompression are IAA in every
+QPL variant.
+
+| snapshot | median | p95 | daemon CPU |
+|---|---|---|---|
+| QPL static, base daemon | 2771 ms | 3021 ms | 41.5 % (1.15 core-s) |
+| QPL static, cpu classify | 2561 ms | 3078 ms | 15 % |
+| QPL static, dsa classify | 2547 ms | 2999 ms | 15 % (0.38 core-s) |
+| QPL static, dsa + crc | 2555 ms | 2787 ms | 14 % |
+| QPL dynamic, base daemon | 2664 ms | 3345 ms | 45.5 % (1.21 core-s) |
+| QPL dynamic, cpu classify | 2682 ms | 3009 ms | 21 % |
+| QPL dynamic, dsa classify | 2581 ms | 2725 ms | 21 % (0.54 core-s) |
+| QPL dynamic, dsa + crc | 2576 ms | 2862 ms | 21 % |
+| raw / lz4 / zstd | 6156 / 8748 / 11390 ms | 6644 / 9016 / 11751 ms | 16 / 75 / 89 % |
+
+| restore | median | p95 |
+|---|---|---|
+| QPL static: base / cpu / dsa / dsa + verify | 785 / 792 / 791 / 795 ms | 793 / 799 / 796 / 799 ms |
+| QPL dynamic: base / cpu / dsa / dsa + verify | 766 / 767 / 772 / 776 ms | 776 / 775 / 777 / 781 ms |
+| raw / lz4 / zstd | 1080 / 2304 / 3139 ms | 1086 / 2314 / 3147 ms |
+
+Reading: on this workload the snapshot is IAA-bound (2.5 GiB of
+compressible Silesia data, 39 % zero chunks), so the classifier is not on
+the critical path. Against the unmodified daemon, median snapshot time drops
+3-8 % and daemon CPU 55-67 %; DSA against CPU classification inside our
+daemon is 0.5-3.8 % on the median and 3-9 % on p95. Restore is unchanged
+(within 1 %, the CRC verification included). The 10-20 % wall figure in
+§7c.2c came from a run that mixed IAA depths between cells and is
+superseded. DSA's larger effects are on mostly-zero guests (§7c.1, 9x) and
+on dirty-log diff checkpoints (§7c.2f-h).
+
 ### 7c.3 IOMMU first touch: measured, and the fix
 
 `dto-async-test` (fresh process, 2 GiB memfd filled by another mapping, then
