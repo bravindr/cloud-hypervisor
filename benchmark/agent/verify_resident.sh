@@ -8,14 +8,15 @@ K=$HOME/vmbench/guest-kernel; T=$HOME/cloud-hypervisor/benchmark/agent/traj/$S.t
 OUT=$HOME/chlogs/verifyres/$S-$PAGES; rm -rf -- "${OUT:?}"; mkdir -p $OUT
 SNAP=/mnt/chsnap/verifyres/$S-$PAGES; rm -rf -- "${SNAP:?}"; mkdir -p $SNAP
 export DTO_WQ_LIST="wq0.0;wq2.0;wq4.0;wq6.0" DTO_IS_NUMA_AWARE=1 DTO_LOG_LEVEL=1 RUST_LOG=info
-VARIANTS="cpu dsa"
+VARIANTS=${VARIANTS:-"cpu dsa"}; STEP_A=${STEP_A:-3}; STEP_B=${STEP_B:-6}
 cp --sparse=always $HOME/vmbench/rootfs_traj_$S.ext4 $OUT/disk.ext4
 STEPS=$(python3 -c "import json;t=json.load(open('$T'));print(','.join('traj-$S:%d'%x['turn'] for x in t['turns']))")
 MEM="size=4G,shared=on"; [ $PAGES = 2m ] && MEM="$MEM,hugepages=on,hugepage_size=2M"
 declare -A DPID
 for v in $VARIANTS; do
+  cmp=${v%dedup}; extra=""; [ "$cmp" != "$v" ] && extra="--dedup-image $HOME/vmbench/rootfs_traj_$S.ext4"
   $OD serve --socket $OUT/$v.sock --output-root $SNAP/$v --compression qpl-hardware-static-async --workers 8 --classify dsa \
-    --reference-dir $SNAP/$v/ref --diff-compare $v > $OUT/daemon_$v.log 2>&1 &
+    --reference-dir $SNAP/$v/ref --diff-compare $cmp $extra > $OUT/daemon_$v.log 2>&1 &
   DPID[$v]=$!
 done
 for v in $VARIANTS; do until [ -S $OUT/$v.sock ]; do sleep 0.05; done; done
@@ -27,13 +28,14 @@ waitm() { until grep -aq "$1" $OUT/console.log 2>/dev/null; do kill -0 $CH || { 
 ckpt() {
   $B/ch-remote --api-socket $OUT/api.sock pause
   local n=0
-  for v in $VARIANTS; do n=$((n+1)); local dl=keep; [ $n -eq 2 ] && dl=consume
+  local nv; nv=$(echo $VARIANTS | wc -w)
+  for v in $VARIANTS; do n=$((n+1)); local dl=keep; [ $n -eq $nv ] && dl=consume
     python3 $HOME/cloud-hypervisor/benchmark/agent/ckpt_send.py $B/ch-remote $OUT/api.sock $OUT/$v.sock $dl $OUT/daemon_$v.log ${DPID[$v]} | sed -E "s/^([0-9.]+) ([0-9.]+) ([0-9]+) Checkpoint ([0-9]+) [^:]*: /  $v ckpt \4 (wall \1 ms, cpu \2 s, rc \3): /" | cut -c1-260
   done
 }
 waitm AGENT_BASE_POINT; ckpt; $B/ch-remote --api-socket $OUT/api.sock resume
-waitm "AGENT_STEP_DONE 3 "; ckpt; $B/ch-remote --api-socket $OUT/api.sock resume
-waitm "AGENT_STEP_DONE 6 "; ckpt
+waitm "AGENT_STEP_DONE $STEP_A "; ckpt; $B/ch-remote --api-socket $OUT/api.sock resume
+waitm "AGENT_STEP_DONE $STEP_B "; ckpt
 rm -f $OUT/off.sock; $RAW snapshot --socket $OUT/off.sock --output-dir $SNAP/truth > $OUT/truth.log 2>&1 & TD=$!
 until [ -S $OUT/off.sock ]; do sleep 0.05; done
 $B/ch-remote --api-socket $OUT/api.sock send-migration "destination_url=unix:$OUT/off.sock,memory_mode=memfds,preserve_source=on" >/dev/null; wait $TD

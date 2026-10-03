@@ -11,6 +11,8 @@
 #   diff-cpu-res   resident, diff, CPU
 #   diff-dsa-res   resident, diff, batched DSA
 #
+#   *-res-dedup    resident diff + disk-block dedup against the task image
+#
 # Wall = send-migration duration (the VM stays paused for it). CPU = daemon
 # CPU for that checkpoint: rusage of the one-shot process (us resolution), or
 # the delta of every resident thread's run time from schedstat (ns).
@@ -48,16 +50,17 @@ PY
 )
 NSTEPS=$(python3 -c "import json;print(len(json.load(open('$TRAJ'))['turns']))")
 MEM="size=4G,shared=on"; [ "$PAGES" = 2m ] && MEM="$MEM,hugepages=on,hugepage_size=2M"
-echo "session,pages,checkpoint,turn,variant,order,wall_ms,cpu_s,out_bytes,dirty_pages,changed_pages,prepare_ms,compare_ms,gather_ms,compress_ms,populate_calls,dsa_ops,dsa_redo,rc" > "$OUT/checkpoints.csv"
+echo "session,pages,checkpoint,turn,variant,order,wall_ms,cpu_s,out_bytes,dirty_pages,changed_pages,prepare_ms,compare_ms,gather_ms,compress_ms,populate_calls,dsa_ops,dsa_redo,dedup_pages,dedup_ms,rc" > "$OUT/checkpoints.csv"
 echo "session,pages,variant,chain,restore_ms,guest_ok,rc" > "$OUT/restores.csv"
 
-is_res() { [[ $1 == *-res ]]; }
+is_res() { [[ $1 == *-res || $1 == *-res-dedup ]]; }
 is_diff() { [[ $1 == diff-* ]]; }
 cmp_of() { case $1 in diff-cpu-*) echo cpu ;; diff-dsa-*) echo dsa ;; esac; }
 common_args() { # variant
 	local v=$1
 	if is_diff "$v"; then
-		echo "--classify $(cmp_of "$v" | sed 's/cpu/cpu/') --reference-dir $SNAP/$v/ref --diff-compare $(cmp_of "$v") --diff-batch $DIFF_BATCH --diff-depth $DIFF_DEPTH"
+		local dd=""; [[ $v == *-dedup ]] && dd=" --dedup-image $ROOTFS_TEMPLATE"
+		echo "--classify $(cmp_of "$v") --reference-dir $SNAP/$v/ref --diff-compare $(cmp_of "$v") --diff-batch $DIFF_BATCH --diff-depth $DIFF_DEPTH$dd"
 	else
 		echo "--classify dsa"
 	fi
@@ -88,7 +91,7 @@ wait_marker() {
 parse_stats() { # log text on stdin -> dirty,changed,prepare,compare,gather,compress,populate,dsa_ops,redo
 	python3 -c "
 import sys, re
-k = ['dirty_pages','changed_pages','prepare_ms','compare_ms','gather_ms','compress_ms','populate_calls','dsa_ops','dsa_cpu_redo']
+k = ['dirty_pages','changed_pages','prepare_ms','compare_ms','gather_ms','compress_ms','populate_calls','dsa_ops','dsa_cpu_redo','dedup_pages','dedup_ms']
 t = dict.fromkeys(k, 0.0); seen = set()
 for line in sys.stdin:
     for key in k:
