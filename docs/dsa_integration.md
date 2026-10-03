@@ -546,8 +546,9 @@ Raw (sparse copy) for reference: 5618 ms / 0.89 core-s on 4 KiB, 8887 ms /
 
 Reading:
 
-- **Wall is IAA-bound and the classifier does not move it** on this
-  workload: CPU and DSA classify are within run-to-run noise (2 MiB static
+- **Wall is set by the root disk, not by IAA or the classifier** on this
+  workload (§7c.2j: snapshots are written to the root RAID volume at
+  ~430 MB/s with fsync): CPU and DSA classify are within run-to-run noise (2 MiB static
   spans 2419-2975 ms across iterations). The one wall difference is CRC:
   generating CRC32C on the CPU adds ~190 ms (4 KiB), on DSA it adds nothing.
 - **CPU cost, classify only:** DSA saves 0.06-0.12 core-s per snapshot
@@ -560,7 +561,7 @@ Reading:
   1.16-1.78 (about half) at equal or lower wall, and adds per-chunk CRC.
 - **2 MiB pages:** prefault drops from ~46 ms to ~1 ms per slot and CPU per
   snapshot falls a further 10-20 % in every variant; wall is unchanged
-  because IAA sets it.
+  because the disk write sets it.
 - Dynamic Huffman costs more host CPU than static in every variant (QPL
   builds the Huffman table on the CPU), so the classifier savings are a
   smaller fraction there.
@@ -899,8 +900,9 @@ QPL variant.
 | QPL dynamic: base / cpu / dsa / dsa + verify | 766 / 767 / 772 / 776 ms | 776 / 775 / 777 / 781 ms |
 | raw / lz4 / zstd | 1080 / 2304 / 3139 ms | 1086 / 2314 / 3147 ms |
 
-Reading: on this workload the snapshot is IAA-bound (2.5 GiB of
-compressible Silesia data, 39 % zero chunks), so the classifier is not on
+Reading: on this workload the snapshot is bound by writing ~1 GiB of
+output to the root disk (~430 MB/s with fsync, §7c.2j), not by IAA (the
+compress phase is 0.3-0.4 s of the 2.6 s), so the classifier is not on
 the critical path. Against the unmodified daemon, median snapshot time drops
 3-8 % and daemon CPU 55-67 %; DSA against CPU classification inside our
 daemon is 0.5-3.8 % on the median and 3-9 % on p95. Restore is unchanged
@@ -908,6 +910,100 @@ daemon is 0.5-3.8 % on the median and 3-9 % on p95. Restore is unchanged
 §7c.2c came from a run that mixed IAA depths between cells and is
 superseded. DSA's larger effects are on mostly-zero guests (§7c.1, 9x) and
 on dirty-log diff checkpoints (§7c.2f-h).
+
+### 7c.2j One ready queue for all slots, IAA depth 8/16/32
+
+`compress_slots` (default `--pipeline shared`) runs one DSA classifier per
+memory slot and feeds every slot's verdicts into a single ready queue that
+drains into one shared IAA job pool of `--workers` jobs. The classifiers
+are fed round-robin, so IAA always has kept chunks from whichever slot is
+ahead. `--pipeline per-slot` keeps the earlier layout, one thread and one
+pool per slot with `--workers` split evenly, so both layouts keep the same
+number of IAA jobs in flight. Harness variants `+cpuslot` / `+dsaslot` are
+the per-slot layout.
+
+The first sweep showed the shared layout slower. The cause was the disk,
+not the queue: the harness writes snapshots to the root RAID volume
+(Broadcom 9660-16i, `dd` 1 GiB with fsync = 2.4 s, ~430 MB/s), and the
+shared path issued one large fsync per slot after compression ended. The
+daemon now starts writeback every 64 MiB of output
+(`sync_file_range(SYNC_FILE_RANGE_WRITE)`) and fsyncs all slots
+concurrently; the completion log splits `compress_ms` from `sync_ms`.
+
+Configuration: the original harness (§7c.2i: Silesia, 4 GiB 4 KiB-page
+guest, 1 MiB chunks, daemon pinned to one core), 20 measured iterations per
+cell, restore depth 32. `benchmark_pipeline_disk.env` writes to the root
+disk at depth 8; `benchmark_pipeline_tmpfs.env` writes to tmpfs
+(`SNAPSHOT_ROOT=/mnt/chsnap/harness`) at depths 8, 16 and 32 so that the
+engines, not the disk, set the time. Results:
+`docs/measurements/harness-pipeline-{disk,tmpfs}/`.
+
+**Root disk, depth 8 (snapshot):**
+
+| codec | base daemon | cpu shared | cpu per-slot | dsa shared | dsa per-slot |
+|---|---|---|---|---|---|
+| static, median | 2735 | 2383 | 2394 | 2387 | 2394 |
+| static, p95 | 2805 | 2675 | 2800 | 2704 | 2678 |
+| dynamic, median | 2504 | 2081 | 2106 | 2089 | 2103 |
+| dynamic, p95 | 2927 | 2405 | 2269 | 2221 | 2365 |
+
+The compress phase is 1.27-1.70 s and the tail fsync 0.63-1.14 s (shared
+0.63-0.70, per-slot 1.00-1.14), yet wall is equal across layouts: the disk
+drains ~1 GiB at its own rate either way. Against the unmodified daemon
+our daemon is 13-17 % faster, from early writeback and mapped input; CPU vs
+DSA classify is within 0.5 %.
+
+**tmpfs (snapshot median / p95 ms):**
+
+| codec, depth | base | cpu shared | cpu per-slot | dsa shared | dsa per-slot |
+|---|---|---|---|---|---|
+| static, 8 | 1236 / 1248 | 401 / 403 | 419 / 421 | **395 / 397** | 414 / 420 |
+| static, 16 | 1243 / 1247 | 398 / 400 | 398 / 401 | **390 / 393** | 393 / 397 |
+| static, 32 | 1264 / 1270 | 407 / 410 | 407 / 410 | 401 / 404 | 402 / 407 |
+| dynamic, 8 | 1288 / 1341 | 545 / 548 | 589 / 593 | **539 / 542** | 579 / 584 |
+| dynamic, 16 | 1223 / 1279 | 443 / 447 | 419 / 423 | 431 / 440 | **412 / 415** |
+| dynamic, 32 | 1233 / 1238 | 408 / 417 | 389 / 392 | 401 / 408 | **381 / 384** |
+
+Compress phase alone (median ms, from the daemon log):
+
+| codec, depth | cpu shared | cpu per-slot | dsa shared | dsa per-slot |
+|---|---|---|---|---|
+| static, 8 / 16 / 32 | 274 / 269 / 276 | 306 / 283 / 290 | 268 / 262 / 270 | 300 / 279 / 286 |
+| dynamic, 8 / 16 / 32 | 417 / 313 / 275 | 476 / 305 / 272 | 410 / 302 / 270 | 468 / 298 / 265 |
+
+Restore (both sweeps): 760-811 ms median, p95 within 10 ms of the median,
+identical across all layouts and the base daemon.
+
+Reading:
+
+- **The compress phase is max(DSA, IAA).** Swapping the CPU classifier
+  for DSA changes the compress phase by 2-7 ms at every depth, while the
+  IAA depth changes it by up to 150 ms. Classification is hidden behind
+  IAA.
+- **Static Huffman is saturated at depth 8.** 2.5 GiB of kept data
+  compresses in ~265 ms (~9.5 GiB/s); depth 16 and 32 add nothing. Here
+  the shared queue wins at depth 8 (395 vs 414 ms) because one pool keeps
+  all 8 jobs busy while a 4+4 split idles the jobs of the slot that ran out
+  of work first (slot 0 has 1.5 GiB kept, slot 1 1 GiB).
+- **Dynamic Huffman wants depth.** 8 → 32 cuts the compress phase 410 →
+  270 ms and the snapshot 539 → 401 ms. At 16 and 32 the per-slot layout
+  is 4-5 % faster. QPL builds the dynamic Huffman table on the submitting
+  thread, and the shared layout has one submitter while per-slot has two,
+  so the CPU half of dynamic compression is serialized. Two submitter
+  threads draining the shared queue would combine both advantages.
+- **~130 ms of each tmpfs snapshot is outside compression** (migration
+  handshake, memfd transfer, populate, manifest). That is the next floor.
+- **Against the unmodified daemon on tmpfs** our daemon is 3.1× faster on
+  wall (static 1236 → 395 ms; dynamic 1233 → 381 ms at depth 32).
+
+**Host trap found on the way.** A first run of both sweeps on the same
+boot showed restore at 1110-1240 ms for every variant, the base daemon and
+raw included (the earlier §7c.2i run had 766-795 ms). Node 0 had 2 GB free
+under 84 GB of page cache, so every restore's 4 GiB memfd had to reclaim
+first. After `drop_caches` restore is back to 760-811 ms and tmpfs
+snapshots are ~30 % faster. That run is discarded. The sweep script now
+drops caches before each sweep and logs per-node free memory (node 0 stayed
+above 50 GB).
 
 ### 7c.3 IOMMU first touch: measured, and the fix
 
@@ -937,6 +1033,10 @@ slower first cell in each sweep (`cpu` 492 vs 331 ms, `dsa` w8 473 vs 214 ms).
 
 ### 7c.4 Follow-ups
 
+- Two submitter threads draining the shared ready queue, so dynamic
+  Huffman table builds run in parallel (§7c.2j: per-slot is 4-5 % faster
+  at depth 16/32 for that reason).
+- The ~130 ms of a tmpfs snapshot spent outside compression (§7c.2j).
 - Rebalance `--workers` across slots by kept-chunk count (slot 0 had 109
   kept chunks and 4 jobs; slot 1 had 997 and 4 jobs).
 - Auto-select `--hugetlb` from the migration config's memory zones.
