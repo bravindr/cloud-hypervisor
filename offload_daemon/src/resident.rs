@@ -237,8 +237,9 @@ impl Resident {
             self.slots.clear();
         }
         let (mut out_bytes, mut calls, mut zero, mut chunks) = (0_u64, 0_u64, 0_usize, 0_usize);
-        let (mut prepare, mut compress, mut reference) =
-            (Duration::ZERO, Duration::ZERO, Duration::ZERO);
+        let started = Instant::now();
+        // 1. per slot, sequentially: state, data extents, page tables
+        let mut work: Vec<SlotWork> = Vec::new();
         for input in slots {
             let t = Instant::now();
             if !same {
@@ -255,11 +256,12 @@ impl Resident {
                     _file: input.file,
                 });
             }
-            let state = self
+            let index = self
                 .slots
-                .iter_mut()
-                .find(|s| s.slot == input.slot)
+                .iter()
+                .position(|s| s.slot == input.slot)
                 .expect("slot state exists");
+            let state = &mut self.slots[index];
             let extents = data_extents(&state._file, state.file_offset, state.size)?;
             let prefault = if self.config.accel.prefault {
                 calls += populate_unmapped(state, &extents)?;
@@ -267,52 +269,105 @@ impl Resident {
             } else {
                 None
             };
-            prepare += t.elapsed();
-            let t = Instant::now();
-            let data_path = dir.join(format!("memory-{}.compressed", state.slot));
-            let manifest_path = dir.join(format!("memory-{}.index.json", state.slot));
-            let stats = compress_mapped(
-                &state.src,
-                &extents,
-                prefault,
-                &mut self.pool,
-                state.size,
-                &data_path,
-                &manifest_path,
-                self.config.codec,
-                self.config.chunk_size,
-                self.chunk_size_u32,
-                self.config.accel,
-            )?;
-            compress += t.elapsed();
-            out_bytes += stats.output_bytes;
-            chunks += stats.chunks;
-            let manifest: SlotManifest = serde_json::from_slice(&fs::read(&manifest_path)?)?;
-            zero += manifest.chunks.iter().filter(|c| c.zero).count();
-            if let Some(reference_dir) = &self.config.reference_dir {
-                let t = Instant::now();
-                let nonzero: Vec<(usize, usize)> = manifest
-                    .chunks
-                    .iter()
-                    .filter(|c| !c.zero)
-                    .map(|c| {
-                        (
-                            c.uncompressed_offset as usize,
-                            c.uncompressed_length as usize,
-                        )
+            work.push((index, extents, prefault));
+        }
+        let prepare = started.elapsed();
+
+        // 2. slots concurrently, each with its share of the one job pool:
+        //    classify + compress, then the reference copy when diffs are on
+        let t = Instant::now();
+        let parts = self.pool.split(&shares(self.pool.capacity(), work.len()));
+        let (codec, chunk_size, chunk_size_u32, accel) = (
+            self.config.codec,
+            self.config.chunk_size,
+            self.chunk_size_u32,
+            self.config.accel,
+        );
+        let reference_dir = self.config.reference_dir.as_deref();
+        let use_dsa = self.config.diff.compare == DiffCompare::Dsa;
+        let slots = &self.slots;
+        type SlotResult = Result<(u64, usize, usize, Option<Reference>), Error>;
+        let outcomes: Vec<(usize, JobPool, SlotResult)> = thread::scope(|scope| {
+            let handles: Vec<_> = work
+                .iter()
+                .zip(parts)
+                .map(|((index, extents, prefault), mut part)| {
+                    let state = &slots[*index];
+                    scope.spawn(move || {
+                        let result = (|| -> SlotResult {
+                            let data_path = dir.join(format!("memory-{}.compressed", state.slot));
+                            let manifest_path =
+                                dir.join(format!("memory-{}.index.json", state.slot));
+                            let stats = compress_mapped(
+                                &state.src,
+                                extents,
+                                *prefault,
+                                &mut part,
+                                state.size,
+                                &data_path,
+                                &manifest_path,
+                                codec,
+                                chunk_size,
+                                chunk_size_u32,
+                                accel,
+                            )?;
+                            let manifest: SlotManifest =
+                                serde_json::from_slice(&fs::read(&manifest_path)?)?;
+                            let zero = manifest.chunks.iter().filter(|c| c.zero).count();
+                            let reference = match reference_dir {
+                                Some(reference_dir) => {
+                                    let nonzero: Vec<(usize, usize)> = manifest
+                                        .chunks
+                                        .iter()
+                                        .filter(|c| !c.zero)
+                                        .map(|c| {
+                                            (
+                                                c.uncompressed_offset as usize,
+                                                c.uncompressed_length as usize,
+                                            )
+                                        })
+                                        .collect();
+                                    fs::create_dir_all(reference_dir)?;
+                                    Some(init_reference(state, reference_dir, &nonzero, use_dsa)?)
+                                }
+                                None => None,
+                            };
+                            Ok((stats.output_bytes, stats.chunks, zero, reference))
+                        })();
+                        (*index, part, result)
                     })
-                    .collect();
-                fs::create_dir_all(reference_dir)?;
-                let use_dsa = self.config.diff.compare == DiffCompare::Dsa;
-                state.reference = Some(init_reference(state, reference_dir, &nonzero, use_dsa)?);
-                reference += t.elapsed();
+                })
+                .collect();
+            handles
+                .into_iter()
+                .map(|h| h.join().expect("slot checkpoint thread panicked"))
+                .collect()
+        });
+        // the jobs always come back to the pool, whatever happened
+        let mut first_error = None;
+        for (index, part, result) in outcomes {
+            self.pool.absorb(part);
+            match result {
+                Ok((bytes, n, z, reference)) => {
+                    out_bytes += bytes;
+                    chunks += n;
+                    zero += z;
+                    if reference.is_some() {
+                        self.slots[index].reference = reference;
+                    }
+                }
+                Err(e) => {
+                    first_error.get_or_insert(e);
+                }
             }
         }
+        if let Some(e) = first_error {
+            return Err(e);
+        }
         Ok(format!(
-            "kind=full chunks={chunks} zero_chunks={zero} output_bytes={out_bytes} populate_calls={calls} prepare_ms={:.1} compress_ms={:.1} reference_ms={:.1}",
+            "kind=full chunks={chunks} zero_chunks={zero} output_bytes={out_bytes} populate_calls={calls} prepare_ms={:.1} compress_ms={:.1}",
             ms(prepare),
-            ms(compress),
-            ms(reference)
+            ms(t.elapsed())
         ))
     }
 
@@ -414,6 +469,17 @@ impl Resident {
             stats.dsa_cpu_redo
         ))
     }
+}
+
+/// A slot ready for a full checkpoint: index, data extents, prefault time.
+type SlotWork = (usize, Vec<(usize, usize)>, Option<Duration>);
+
+/// Split `capacity` jobs between `parts` users as evenly as possible.
+fn shares(capacity: usize, parts: usize) -> Vec<usize> {
+    let parts = parts.max(1);
+    (0..parts)
+        .map(|i| capacity / parts + usize::from(i < capacity % parts))
+        .collect()
 }
 
 fn ms(d: Duration) -> f64 {
@@ -617,6 +683,13 @@ mod tests {
         let mapped = |p: usize| matches!(p / PAGE, 3 | 4);
         let runs = bridged_runs(&pages, |p| !mapped(p), mapped);
         assert_eq!(runs, vec![(0, 7 * PAGE), (9 * PAGE, 10 * PAGE)]);
+    }
+
+    #[test]
+    fn shares_cover_capacity() {
+        assert_eq!(shares(8, 2), vec![4, 4]);
+        assert_eq!(shares(9, 2), vec![5, 4]);
+        assert_eq!(shares(8, 3).iter().sum::<usize>(), 8);
     }
 
     #[test]

@@ -31,6 +31,8 @@ mod resident;
 use std::ffi::{CString, NulError};
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Read, Write};
+#[cfg(feature = "qpl")]
+use std::mem;
 use std::os::fd::{AsRawFd, FromRawFd};
 use std::os::unix::fs::FileExt;
 use std::os::unix::net::{UnixListener, UnixStream};
@@ -1339,6 +1341,7 @@ fn run_serve(socket_path: &Path, output_root: &Path, options: ServeOptions) -> R
         let dir = output_root.join(format!("ckpt-{seq:06}"));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).map_err(Error::CreateOutputDir)?;
+        let cpu_before = process_cpu();
         let result = (|| -> Result<String> {
             let received = receive_checkpoint(&mut stream, &dir)?;
             let info = slot_info(&received.config)?;
@@ -1363,7 +1366,10 @@ fn run_serve(socket_path: &Path, output_root: &Path, options: ServeOptions) -> R
             Ok(line)
         })();
         match result {
-            Ok(line) => info!("Checkpoint {seq} {dir:?}: {line}"),
+            Ok(line) => info!(
+                "Checkpoint {seq} {dir:?}: {line} cpu_ms={:.2}",
+                (process_cpu() - cpu_before).as_secs_f64() * 1e3
+            ),
             Err(e) => {
                 error!("Checkpoint {seq} failed: {e:?}; the next checkpoint will be full");
                 resident.reset();
@@ -1372,6 +1378,18 @@ fn run_serve(socket_path: &Path, output_root: &Path, options: ServeOptions) -> R
         }
     }
     Ok(())
+}
+
+/// User + system CPU of the whole process so far, including threads that
+/// have exited (the slot threads of a full checkpoint do).
+#[cfg(feature = "qpl")]
+fn process_cpu() -> Duration {
+    // SAFETY: zeroed rusage filled by the kernel.
+    let mut usage: libc::rusage = unsafe { mem::zeroed() };
+    // SAFETY: valid out pointer.
+    unsafe { libc::getrusage(libc::RUSAGE_SELF, &mut usage) };
+    let tv = |t: libc::timeval| Duration::new(t.tv_sec as u64, t.tv_usec as u32 * 1000);
+    tv(usage.ru_utime) + tv(usage.ru_stime)
 }
 
 #[cfg(not(feature = "qpl"))]
