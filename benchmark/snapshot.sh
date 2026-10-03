@@ -62,6 +62,8 @@ case "$variant" in
     +cpu) daemon_args+=(--classify cpu) ;;
     +dsa) daemon_args+=(--classify dsa --dsa-depth "${DSA_DEPTH:-32}") ;;
     +cpucrc) daemon_args+=(--classify cpu --crc) ;;
+    +cpuslot) daemon_args+=(--classify cpu --pipeline per-slot) ;;
+    +dsaslot) daemon_args+=(--classify dsa --dsa-depth "${DSA_DEPTH:-32}" --pipeline per-slot) ;;
     +dsacrc) daemon_args+=(--classify dsa --dsa-depth "${DSA_DEPTH:-32}" --crc) ;;
     *) echo "Unknown codec variant $variant" >&2; exit 2 ;;
 esac
