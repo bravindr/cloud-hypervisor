@@ -1,0 +1,7 @@
+session,pages,variant,chain,restore_ms,guest_ok,rc
+circuit-fibsqrt_7b,2m,full-proc,0,145,1,0
+circuit-fibsqrt_7b,2m,full-res,0,143,1,0
+circuit-fibsqrt_7b,2m,diff-cpu-proc,10,201,1,0
+circuit-fibsqrt_7b,2m,diff-dsa-proc,10,201,1,0
+circuit-fibsqrt_7b,2m,diff-cpu-res,10,201,1,0
+circuit-fibsqrt_7b,2m,diff-dsa-res,10,207,1,0

@@ -714,6 +714,85 @@ Reading:
   the second-level page tables, which costs the guest on 2 MiB guests; guest
   time is tiny in these sessions (§7c.2e) so it does not show here.
 
+### 7c.2g Resident daemon, shared IAA pool, minimal populate
+
+What §7c.2f left in a 33 ms diff checkpoint was not compare or copy but
+per-process fixed cost: process start, DTO and QPL initialisation, one IAA
+job pool per slot thread, mapping the slots and the reference again, and one
+`madvise` per dirty run. `offload_daemon serve` (df4599a42) keeps all of it:
+
+- **resident**: one daemon per VM; each `send-migration` connection is a
+  checkpoint in `<output-root>/ckpt-NNNNNN`, full first, then diffs chained
+  to the previous one. Slot mappings, the reference mapping and its page
+  bitmap, DTO's work queues and the job pool live across checkpoints.
+- **one IAA job pool for all slots**: diff checkpoints compress every slot's
+  gather buffer through the whole pool; full checkpoints split the pool's
+  idle jobs between concurrent slot threads and take them back afterwards
+  (the jobs are created once; a first version ran the slots one after
+  another on the shared pool and lost 30 % on 2 MiB full checkpoints).
+- **minimal populate**: a bitmap records which pages already have page-table
+  entries in the persistent mapping, so a checkpoint only populates pages
+  the guest allocated since: one call over the dirty span on hugetlbfs, and
+  on shmem one call per run of unmapped pages, bridged across pages already
+  mapped (bridging over a hole would allocate it). Median: 1-2 calls per
+  checkpoint.
+
+Verified as before on 4 KiB and 2 MiB guests (resident chains restore
+identical to a raw dump except the one page a plain restore rewrites).
+Lifecycle: `benchmark/agent/run_all_resident.sh 4k 2m`, the seven sessions,
+six variants per checkpoint from the same paused image (one-shot vs
+resident; full DSA, diff CPU, diff batched DSA), 2124 checkpoints, 0
+failures, 84/84 restores resumed. Wall is the `send-migration` time until
+the daemon has written the checkpoint (`ckpt_send.py`; `send-migration`
+returns before completion); CPU is the daemon's own `getrusage` per
+checkpoint (resident) or its rusage at exit (one-shot), both microsecond.
+
+Per-turn checkpoint, median over 170 turns (p95 in brackets):
+
+| variant | 4K pause | 4K CPU | 2M pause | 2M CPU |
+|---|---|---|---|---|
+| full, one-shot | 108 ms (136) | 145 ms | 153 ms (164) | 227 ms |
+| full, resident | 80 ms (106) | 106 ms | 148 ms (157) | 223 ms |
+| diff CPU, one-shot | 41 ms (78) | 39 ms | 42 ms (73) | 41 ms |
+| diff DSA, one-shot | 40 ms (60) | 37 ms | 39 ms (51) | 36 ms |
+| diff CPU, resident | 10 ms (38) | 4.9 ms | 11 ms (36) | 5.8 ms |
+| diff DSA, resident | **9 ms (22)** | **3.7 ms** | **10 ms (22)** | **4.6 ms** |
+
+Diff checkpoint phases, one-shot -> resident: prepare 8.6-10.2 -> 0.1 (4K)
+/ 1.3-1.4 ms (2M); compress 15.6-16.2 -> 0.7-0.8 ms (job setup was the
+cost, not compression of ~3.6 MiB); compare 0.4-0.8 ms and copy 1.2-2.6 ms
+unchanged.
+
+All checkpoints of the seven sessions:
+
+| variant | 4K wall | 4K CPU | 2M wall | 2M CPU | stored |
+|---|---|---|---|---|---|
+| full, one-shot | 19.8 s | 26.2 s | 28.7 s | 42.1 s | 36.2 GB |
+| full, resident | 15.0 s | 19.5 s | 25.6 s | 39.3 s | 36.2 GB |
+| diff DSA, one-shot | 8.9 s | 9.2 s | 8.8 s | 9.5 s | 1.7 GB |
+| diff DSA, resident | 3.3 s | 3.0 s | 3.5 s | 3.8 s | 1.7 GB |
+
+Reading:
+
+- **A resident diff checkpoint pauses the guest 9-10 ms and costs 4-5 ms of
+  CPU**: 4x shorter and 7-10x cheaper than the one-shot daemon, and 10-16x
+  shorter than a one-shot full checkpoint, for the same 600 KiB per turn.
+- **CPU vs DSA, resident**: DSA uses 20-25 % less CPU (3.7 vs 4.9 ms, 4.6 vs
+  5.8 ms) and has a much tighter tail (p95 22 ms vs 36-38 ms): the turns that
+  dirty the most pages are where memcmp + two memcpy show, and where batched
+  COMPARE + DUALCAST does not.
+- **Full checkpoints gain less**: resident saves 26 % of the pause and 27 %
+  of the CPU on 4 KiB guests; on 2 MiB guests, where every byte of the
+  guest is classified (no holes), the work itself dominates and resident is
+  at parity (148 vs 153 ms). The first checkpoint is where resident helps
+  most on 2 MiB (130 vs 474 ms median), because populating the guest's
+  reserved huge pages happens once.
+- **Restore is unchanged**: 145-178 ms full, 232-266 ms for chains of up to
+  60 diffs; restore is a separate one-shot process in both cases.
+- Measurement note: a first pass summed the run time of the daemon's live
+  threads, which misses the slot threads of a full checkpoint once they
+  exit; the daemon now reports its own `getrusage` per checkpoint.
+
 ### 7c.3 IOMMU first touch: measured, and the fix
 
 `dto-async-test` (fresh process, 2 GiB memfd filled by another mapping, then

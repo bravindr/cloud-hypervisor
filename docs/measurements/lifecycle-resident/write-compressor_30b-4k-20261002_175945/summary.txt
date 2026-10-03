@@ -1,0 +1,15 @@
+17:59:45 resident lifecycle write-compressor_30b pages=4k turns=13 variants=full-proc full-res diff-cpu-proc diff-dsa-proc diff-cpu-res diff-dsa-res
+18:00:35   turn 10/13
+18:00:53 restore full-proc (chain of 0 diffs): rc=0 147 ms, guest ok=1
+18:01:00 restore full-res (chain of 0 diffs): rc=0 146 ms, guest ok=1
+18:01:06 restore diff-cpu-proc (chain of 13 diffs): rc=0 167 ms, guest ok=1
+18:01:12 restore diff-dsa-proc (chain of 13 diffs): rc=0 167 ms, guest ok=1
+18:01:17 restore diff-cpu-res (chain of 13 diffs): rc=0 170 ms, guest ok=1
+18:01:24 restore diff-dsa-res (chain of 13 diffs): rc=0 174 ms, guest ok=1
+644	diff-cpu-proc/
+644	diff-cpu-res/
+644	diff-dsa-proc/
+644	diff-dsa-res/
+387	full-proc/
+194	full-res/
+18:01:24 DONE -> /home/byrnedan/chlogs/lifecycle-res/write-compressor_30b-4k-20261002_175945
