@@ -10,7 +10,7 @@ use std::os::fd::AsRawFd;
 use std::os::unix::fs::FileExt;
 use std::path::Path;
 use std::str::FromStr;
-use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use std::{fmt, io, thread};
@@ -1186,6 +1186,14 @@ enum Verify {
     },
 }
 
+/// Restore-side CRC verification on the CPU even when DSA is available, so
+/// a CPU baseline can be measured with the same binary.
+static VERIFY_ON_CPU: AtomicBool = AtomicBool::new(false);
+
+pub(crate) fn set_verify_on_cpu(cpu: bool) {
+    VERIFY_ON_CPU.store(cpu, Ordering::Relaxed);
+}
+
 #[cfg(feature = "qpl")]
 struct ChunkVerifier {
     enabled: bool,
@@ -1222,7 +1230,7 @@ impl ChunkVerifier {
         self.expected[slot] = expected;
         self.checked += 1;
         #[cfg(feature = "dto")]
-        {
+        if !VERIFY_ON_CPU.load(Ordering::Relaxed) {
             // SAFETY: the pool output buffer is not resized or reused until
             // this slot is cleared, and the op lives in `self.ops`.
             if unsafe { self.ops[slot].submit_crc(data.as_ptr(), data.len(), &self.stats) }

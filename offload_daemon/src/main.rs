@@ -295,6 +295,9 @@ enum Mode {
         /// with the dto feature, software otherwise).
         #[arg(long)]
         verify_crc: bool,
+        /// Engine for `--verify-crc`: `dsa` (default) or `cpu`.
+        #[arg(long, default_value_t = Classify::Dsa)]
+        verify_engine: Classify,
         /// Populate the all-zero chunks of the restored memory instead of
         /// leaving holes: `none`, `cpu` (MADV_POPULATE_WRITE) or `dsa` (MEMFILL).
         #[arg(long, default_value_t = Populate::None)]
@@ -441,10 +444,13 @@ fn main() -> Result<()> {
             ondemand,
             workers,
             verify_crc,
+            verify_engine,
             populate,
             dsa_depth,
             hugetlb,
-        } => run_restore(
+        } => {
+            compression::set_verify_on_cpu(verify_engine == Classify::Cpu);
+            run_restore(
             &socket,
             &input_dir,
             resume,
@@ -456,7 +462,8 @@ fn main() -> Result<()> {
                 dsa_depth,
                 hugetlb,
             },
-        ),
+        )
+        }
     }
 }
 
