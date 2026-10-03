@@ -540,7 +540,15 @@ struct SlotRun {
     hole_chunks: usize,
     data_bytes: usize,
     staged: VecDeque<Verdict>,
+    /// Output bytes already handed to writeback.
+    flushed: u64,
 }
+
+/// Start writeback of a slot's compressed output once this much is pending,
+/// so the disk works while IAA is still compressing and the final fsync
+/// has little left to do.
+#[cfg(feature = "qpl")]
+const WRITEBACK_STEP: u64 = 64 << 20;
 
 /// The full-checkpoint pipeline for any number of slots sharing one IAA job
 /// pool. Every slot has its own classifier (DSA COMPARE ring or CPU scan),
@@ -584,6 +592,7 @@ pub(crate) fn compress_slots(
             records: Vec::with_capacity(chunk_count),
             output_offset: 0,
             staged: VecDeque::new(),
+            flushed: 0,
         });
     }
 
@@ -655,6 +664,19 @@ pub(crate) fn compress_slots(
                     crc32c: verdict.crc32c,
                 });
                 run.output_offset += output_size as u64;
+                if run.output_offset - run.flushed >= WRITEBACK_STEP {
+                    // SAFETY: plain syscall on an owned fd; only starts
+                    // writeback (the fsync before the ACK is unchanged).
+                    unsafe {
+                        libc::sync_file_range(
+                            run.output.as_raw_fd(),
+                            run.flushed as libc::off64_t,
+                            (run.output_offset - run.flushed) as libc::off64_t,
+                            libc::SYNC_FILE_RANGE_WRITE,
+                        );
+                    }
+                    run.flushed = run.output_offset;
+                }
                 *entry = None;
                 active_count -= 1;
                 made_progress = true;
@@ -703,9 +725,22 @@ pub(crate) fn compress_slots(
     }
 
     let elapsed = started.elapsed();
+    // Make every slot durable before the caller ACKs, concurrently: one
+    // fsync per file in its own thread lets the device work on all of them.
+    let synced = Instant::now();
+    thread::scope(|scope| {
+        let handles: Vec<_> = runs
+            .iter()
+            .map(|run| scope.spawn(|| run.output.sync_all()))
+            .collect();
+        handles
+            .into_iter()
+            .try_for_each(|h| h.join().expect("fsync thread panicked"))
+    })
+    .map_err(Error::Write)?;
+    let sync_ms = synced.elapsed().as_secs_f64() * 1e3;
     let mut stats = Vec::with_capacity(runs.len());
     for (job, run) in jobs.iter().zip(runs) {
-        run.output.sync_all().map_err(Error::Write)?;
         let mut records = run.records;
         records.sort_unstable_by_key(|record| record.uncompressed_offset);
         let zero_chunks = records.iter().filter(|record| record.zero).count();
@@ -720,7 +755,7 @@ pub(crate) fn compress_slots(
         fs::write(job.manifest_path, manifest_bytes).map_err(Error::Write)?;
         let report = run.classifier.report();
         log::info!(
-            "classify={} prefault={} zero_chunks={zero_chunks}/{} hole_chunks={} data_mib={} dsa submitted={} fallback={} failed={} cpu_scans={} crc={} slots_sharing_pool={}",
+            "classify={} prefault={} zero_chunks={zero_chunks}/{} hole_chunks={} data_mib={} dsa submitted={} fallback={} failed={} cpu_scans={} crc={} slots_sharing_pool={} compress_ms={:.1} sync_ms={sync_ms:.1}",
             accel.classify,
             job.prefault.map_or_else(
                 || "off".to_owned(),
@@ -735,6 +770,7 @@ pub(crate) fn compress_slots(
             report.cpu_scans,
             accel.crc,
             jobs.len(),
+            elapsed.as_secs_f64() * 1e3,
         );
         stats.push(CompressionStats {
             input_bytes: job.source_size,
