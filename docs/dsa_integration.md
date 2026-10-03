@@ -1005,6 +1005,89 @@ snapshots are ~30 % faster. That run is discarded. The sweep script now
 drops caches before each sweep and logs per-node free memory (node 0 stayed
 above 50 GB).
 
+### 7c.2k NVMe output and CPU baselines: what DSA itself contributes
+
+The root disk hides the engines (§7c.2j), so these runs write snapshots to
+the local NVMe drive (KCD6XLUL3T84, ext4 on `/dev/nvme0n1` mounted at
+`/mnt/nvme`, `dd` 1 GiB with fsync = 1.4 GB/s). Same harness and guest as
+§7c.2i/j, 20 iterations per cell, caches dropped before each sweep, node 0
+never below 48 GB free. The harness now records the daemon's user + system
+seconds (`%U %S`) next to `%P`. Results:
+`docs/measurements/harness-attrib-nvme{,-crc3}/` and
+`docs/measurements/harness-pipeline-nvme/`.
+
+To attribute, each cell runs a ladder in which exactly one thing changes
+per step:
+
+- **base**: the unmodified `iaa-integration` daemon (byte-loop zero scan,
+  pread input).
+- **cpu**: our daemon with no DSA (mapped input, word-wide CPU zero scan,
+  shared IAA queue, early writeback).
+- **dsa**: the same with the zero check on DSA COMPARE.
+- **cpucrc / dsacrc**: per-chunk CRC32C added, generated on snapshot and
+  verified on restore, by the CPU or by DSA. Restore of `cpucrc` uses the
+  new `--verify-engine cpu`, so only the engine differs.
+
+The CPU CRC is a three-lane SSE4.2 implementation (24.7 GB/s on one core;
+the earlier single chain did 8.4 GB/s and made CPU CRC look 2-3x worse
+than it needs to be: first attribution run, `harness-attrib-nvme`, kept
+for reference).
+
+**Snapshot, static Huffman (median / p95 ms, daemon CPU seconds):**
+
+| step | depth 8 | CPU s | depth 32 | CPU s |
+|---|---|---|---|---|
+| base | 1517 / 1631 | 1.22 | 1542 / 1551 | 1.25 |
+| cpu | 625 / 641 | 0.39 | 639 / 648 | 0.39 |
+| dsa | 633 / 642 | 0.38 | 639 / 648 | 0.38 |
+| cpucrc | 725 / 759 | 0.54 | 795 / 806 | 0.59 |
+| dsacrc | 637 / 651 | 0.40 | 651 / 663 | 0.40 |
+
+**Snapshot, dynamic Huffman:**
+
+| step | depth 8 | CPU s | depth 32 | CPU s |
+|---|---|---|---|---|
+| base | 1522 / 1533 | 1.27 | 1469 / 1485 | 1.22 |
+| cpu | 573 / 591 | 0.53 | 572 / 583 | 0.40 |
+| dsa | 592 / 602 | 0.53 | 575 / 589 | 0.39 |
+| cpucrc | 772 / 788 | 0.73 | 690 / 705 | 0.55 |
+| dsacrc | 599 / 605 | 0.53 | 585 / 596 | 0.39 |
+
+**Restore, depth 32 (median / p95 ms, CPU s):**
+
+| step | static | CPU s | dynamic | CPU s |
+|---|---|---|---|---|
+| base | 788 / 798 | 0.75 | 768 / 773 | 0.73 |
+| cpu, dsa (no CRC) | 792-794 / 798 | 0.75 | 771-772 / 777-779 | 0.73 |
+| cpucrc (verify on CPU) | 922 / 933 | 0.88 | 904 / 909 | 0.86 |
+| dsacrc (verify on DSA) | 801 / 808 | 0.76 | 778 / 788 | 0.74 |
+
+Attribution:
+
+- **Software changes, not DSA, give the big snapshot win.** base → cpu is
+  2.4-2.6x faster on wall and uses 3-4x less CPU (1.22-1.27 → 0.39-0.53
+  core-s). That comes from mapping the memfd instead of pread, a word-wide
+  zero scan instead of the byte loop, the shared IAA queue and early
+  writeback.
+- **The DSA zero check adds nothing measurable** once the CPU scan is
+  word-wide: cpu vs dsa is within 1.5 % on wall and 0.01 core-s on CPU at
+  every depth. The zero check is not on the critical path of this
+  workload (IAA and the NVMe write are).
+- **DSA's contribution is integrity for free.** With per-chunk CRC32C,
+  DSA keeps the snapshot at the no-CRC time (dsacrc − dsa ≤ 12 ms) while
+  the CPU pays 90-175 ms (12-22 % of wall) and 0.14-0.20 core-s (26-30 %
+  of the daemon's CPU). On restore DSA verification costs 7-9 ms against
+  126-134 ms on the CPU, and 0.01 against 0.13 core-s (14 % less wall,
+  14 % less CPU).
+- **The CPU CRC sits on the critical path** because the daemon is pinned
+  to one core and the CRC runs on the thread that feeds IAA; DSA moves it
+  off that thread entirely.
+- Restore without CRC is identical across all variants including base:
+  DSA is not used on restore unless verification is on.
+- On NVMe the compress phase stays at ~420 ms across IAA depths 8/16/32
+  (265 ms on tmpfs): the drive's write rate now paces it, and the shared
+  queue and per-slot layouts finish within 3 % of each other.
+
 ### 7c.3 IOMMU first touch: measured, and the fix
 
 `dto-async-test` (fresh process, 2 GiB memfd filled by another mapping, then
@@ -1037,6 +1120,8 @@ slower first cell in each sweep (`cpu` 492 vs 331 ms, `dsa` w8 473 vs 214 ms).
   Huffman table builds run in parallel (§7c.2j: per-slot is 4-5 % faster
   at depth 16/32 for that reason).
 - The ~130 ms of a tmpfs snapshot spent outside compression (§7c.2j).
+- Mount the NVMe drive at boot (`/dev/nvme0n1` is not in fstab; it was
+  mounted by hand for §7c.2k).
 - Rebalance `--workers` across slots by kept-chunk count (slot 0 had 109
   kept chunks and 4 jobs; slot 1 had 997 and 4 jobs).
 - Auto-select `--hugetlb` from the migration config's memory zones.

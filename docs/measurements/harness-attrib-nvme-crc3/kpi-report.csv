@@ -1,0 +1,13 @@
+dataset,phase,codec,chunk_size,workers,runs,mean_ms,median_ms,p95_ms,median_cpu_util_pct,stored_mib,compression_ratio,space_saving_pct,speedup_vs_raw
+silesia,restore,qpl-hardware-dynamic-async+dsacrc,1048576,32,20,778.18,778.20,787.58,96.50,947.33,nan,nan,nan
+silesia,restore,qpl-hardware-static-async+dsacrc,1048576,32,20,800.93,800.47,808.21,96.00,1109.37,nan,nan,nan
+silesia,restore,qpl-hardware-dynamic-async+cpucrc,1048576,32,20,904.18,904.03,909.27,96.00,947.33,nan,nan,nan
+silesia,restore,qpl-hardware-static-async+cpucrc,1048576,32,20,922.79,921.85,932.59,96.50,1109.37,nan,nan,nan
+silesia,snapshot,qpl-hardware-dynamic-async+dsacrc,1048576,32,20,585.86,584.76,595.86,57.00,947.33,nan,nan,nan
+silesia,snapshot,qpl-hardware-dynamic-async+dsacrc,1048576,8,20,597.36,599.33,605.28,76.50,947.33,nan,nan,nan
+silesia,snapshot,qpl-hardware-static-async+dsacrc,1048576,8,20,639.03,637.25,651.47,55.00,1109.37,nan,nan,nan
+silesia,snapshot,qpl-hardware-static-async+dsacrc,1048576,32,20,652.27,651.38,663.30,54.00,1109.37,nan,nan,nan
+silesia,snapshot,qpl-hardware-dynamic-async+cpucrc,1048576,32,20,689.90,689.68,704.48,70.00,947.33,nan,nan,nan
+silesia,snapshot,qpl-hardware-static-async+cpucrc,1048576,8,20,730.81,725.39,758.94,66.00,1109.37,nan,nan,nan
+silesia,snapshot,qpl-hardware-dynamic-async+cpucrc,1048576,8,20,756.30,772.04,788.48,84.00,947.33,nan,nan,nan
+silesia,snapshot,qpl-hardware-static-async+cpucrc,1048576,32,20,781.39,794.62,806.00,66.00,1109.37,nan,nan,nan

@@ -1,0 +1,13 @@
+phase    codec                                    w   n   med ms   p95 ms cpu s med cpu s p95
+restore  qpl-hardware-dynamic-async+cpucrc       32  20    904.0    909.1     0.860     0.870
+restore  qpl-hardware-dynamic-async+dsacrc       32  20    778.2    787.5     0.740     0.740
+restore  qpl-hardware-static-async+cpucrc        32  20    921.9    932.5     0.880     0.890
+restore  qpl-hardware-static-async+dsacrc        32  20    800.5    808.0     0.760     0.760
+snapshot qpl-hardware-dynamic-async+cpucrc        8  20    772.0    788.3     0.730     0.740
+snapshot qpl-hardware-dynamic-async+cpucrc       32  20    689.7    704.5     0.550     0.560
+snapshot qpl-hardware-dynamic-async+dsacrc        8  20    599.3    605.3     0.530     0.530
+snapshot qpl-hardware-dynamic-async+dsacrc       32  20    584.8    595.9     0.385     0.400
+snapshot qpl-hardware-static-async+cpucrc         8  20    725.4    758.7     0.540     0.540
+snapshot qpl-hardware-static-async+cpucrc        32  20    794.6    805.9     0.590     0.600
+snapshot qpl-hardware-static-async+dsacrc         8  20    637.3    651.4     0.400     0.400
+snapshot qpl-hardware-static-async+dsacrc        32  20    651.4    663.2     0.400     0.410
