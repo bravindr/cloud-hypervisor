@@ -279,6 +279,8 @@ unsafe extern "C" {
         n: usize,
         cache_control: c_int,
     ) -> c_int;
+    fn dto_batch_add_crc(batch: *mut RawBatch, src: *const c_void, n: usize) -> c_int;
+    fn dto_batch_crc(batch: *const RawBatch, i: c_int) -> u32;
     fn dto_batch_submit(batch: *mut RawBatch) -> c_int;
     fn dto_batch_poll(batch: *mut RawBatch) -> c_int;
     fn dto_batch_status(batch: *const RawBatch, i: c_int) -> c_int;
@@ -357,6 +359,21 @@ impl Batch {
                 0,
             ) >= 0
         }
+    }
+
+    /// CRC32C (DSA convention) of `n` bytes at `src`.
+    ///
+    /// # Safety
+    /// `src` must stay mapped and unchanged until the batch completes.
+    pub(crate) unsafe fn add_crc(&mut self, src: *const u8, n: usize) -> bool {
+        // SAFETY: forwarded under the caller's guarantees.
+        unsafe { dto_batch_add_crc(self.raw.as_ptr(), src.cast(), n) >= 0 }
+    }
+
+    /// CRC of operation `i` after completion.
+    pub(crate) fn crc(&self, i: usize) -> u32 {
+        // SAFETY: valid batch and index below the operation count.
+        unsafe { dto_batch_crc(self.raw.as_ptr(), i as c_int) }
     }
 
     pub(crate) fn submit(&mut self) -> Submit {

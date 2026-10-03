@@ -19,6 +19,7 @@
 mod classify;
 mod compression;
 mod crc;
+mod dedup;
 mod diff;
 #[cfg(feature = "dto")]
 mod dto;
@@ -260,6 +261,11 @@ enum Mode {
         /// checkpoints only; a diff chain needs its parents).
         #[arg(long)]
         keep_only_last: bool,
+        /// Store diff pages that equal a 4 KiB block of this disk image as
+        /// references to it. Must be immutable (the template, not the
+        /// guest's writable copy) and present at restore.
+        #[arg(long)]
+        dedup_image: Option<PathBuf>,
     },
     /// Read a snapshot from disk and stream it to a listening CH instance.
     Restore {
@@ -388,6 +394,7 @@ fn main() -> Result<()> {
             diff_batch,
             diff_depth,
             keep_only_last,
+            dedup_image,
         } => run_serve(
             &socket,
             &output_root,
@@ -408,6 +415,7 @@ fn main() -> Result<()> {
                     depth: diff_depth,
                 },
                 keep_only_last,
+                dedup_image,
             },
         ),
         Mode::Restore {
@@ -1316,6 +1324,7 @@ struct ServeOptions {
     reference_dir: Option<PathBuf>,
     diff: DiffOptions,
     keep_only_last: bool,
+    dedup_image: Option<PathBuf>,
 }
 
 #[cfg(feature = "qpl")]
@@ -1334,6 +1343,7 @@ fn run_serve(socket_path: &Path, output_root: &Path, options: ServeOptions) -> R
         reference_dir: options.reference_dir,
         diff: options.diff,
         keep_only_last: options.keep_only_last,
+        dedup_image: options.dedup_image,
     })?;
     info!("Resident offload daemon listening at {socket_path:?}");
     for seq in 0_u64.. {

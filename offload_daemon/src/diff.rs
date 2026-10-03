@@ -49,6 +49,7 @@ use thiserror::Error;
 use crate::compression::{ChunkRecord, Codec, CodecWorker, Destination, Error as CompressionError};
 #[cfg(feature = "qpl")]
 use crate::crc::is_zero;
+use crate::dedup::{self, DedupImage, DedupRun};
 #[cfg(feature = "dto")]
 use crate::dto::{Batch, BatchPoll, Submit, ZeroBuffer};
 #[cfg(feature = "qpl")]
@@ -141,6 +142,11 @@ pub(crate) struct DiffManifest {
     pub chunks: Vec<ChunkRecord>,
     pub dirty_pages: u64,
     pub changed_pages: u64,
+    /// Changed pages stored as references to blocks of a disk image.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub dedup: Vec<DedupRun>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dedup_image: Option<DedupImage>,
 }
 
 pub(crate) fn marker_path(dir: &Path) -> PathBuf {
@@ -237,6 +243,8 @@ pub(crate) struct DiffStats {
     pub dsa_ops: u64,
     pub dsa_cpu_redo: u64,
     pub populate_calls: u64,
+    pub dedup_pages: u64,
+    pub dedup: Duration,
 }
 
 /// Anonymous, populated, page-aligned buffer.
@@ -485,6 +493,8 @@ pub(crate) fn diff_snapshot_slot(
         chunks,
         dirty_pages: stats.dirty_pages,
         changed_pages: stats.changed_pages,
+        dedup: Vec::new(),
+        dedup_image: None,
     };
     fs::write(manifest_path(out_dir, slot), serde_json::to_vec(&manifest)?)?;
     stats.compress = t.elapsed();
@@ -754,8 +764,12 @@ pub(crate) fn apply_diff(
         )));
     }
     let total: usize = manifest.runs.iter().map(|&(_, n)| n as usize * PAGE).sum();
+    let destination = Destination::open(destination, destination_offset, size)?;
+    if let Some(image) = &manifest.dedup_image {
+        dedup::apply(image, &manifest.dedup, &destination)?;
+    }
     if total == 0 {
-        return Ok(0);
+        return Ok(manifest.changed_pages);
     }
     let data = fs::read(data_path(dir, slot))?;
     let mut gather = vec![0_u8; total];
@@ -773,7 +787,6 @@ pub(crate) fn apply_diff(
             .ok_or_else(|| Error::Invalid("chunk beyond gather".to_owned()))?
             .copy_from_slice(out);
     }
-    let destination = Destination::open(destination, destination_offset, size)?;
     let mut at = 0_usize;
     for &(offset, pages) in &manifest.runs {
         let length = pages as usize * PAGE;

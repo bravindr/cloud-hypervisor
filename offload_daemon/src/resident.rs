@@ -33,6 +33,7 @@ use crate::compression::{
     ChunkRecord, Codec, Error as CompressionError, SlotManifest, compress_mapped,
     validate_chunk_size,
 };
+use crate::dedup::{self, DedupRun, Index};
 use crate::diff::{
     self, Buffer, DIFF_VERSION, DiffCompare, DiffManifest, DiffMarker, DiffOptions, DiffStats, PAGE,
 };
@@ -68,6 +69,9 @@ pub(crate) struct ResidentConfig {
     pub diff: DiffOptions,
     /// Full checkpoints only: delete the previous one once the next exists.
     pub keep_only_last: bool,
+    /// Deduplicate diff pages against the 4 KiB blocks of this (immutable)
+    /// disk image.
+    pub dedup_image: Option<PathBuf>,
 }
 
 /// A slot as received for one checkpoint.
@@ -123,6 +127,19 @@ pub(crate) struct Resident {
     pool: JobPool,
     slots: Vec<SlotState>,
     last_dir: Option<PathBuf>,
+    index: Option<Index>,
+}
+
+/// One slot's share of a diff checkpoint.
+struct DiffItem {
+    slot: u32,
+    size: u64,
+    /// Changed pages stored in the gather buffer.
+    kept: Vec<usize>,
+    gather: Buffer,
+    dirty_pages: u64,
+    changed_pages: u64,
+    dedup: Vec<DedupRun>,
 }
 
 /// Runs of `pages` (sorted page offsets) that `need` selects, merged across
@@ -168,12 +185,28 @@ impl Resident {
                 "off".to_owned()
             }
         );
+        let index = match &config.dedup_image {
+            Some(path) => {
+                let use_dsa = config.diff.compare == DiffCompare::Dsa;
+                let (index, stats) = Index::build(path, use_dsa)?;
+                info!(
+                    "dedup index: {path:?}: {} blocks, {} indexed, built in {:.1} ms ({})",
+                    stats.blocks,
+                    stats.indexed,
+                    ms(stats.build),
+                    if use_dsa { "DSA CRC" } else { "CPU CRC" }
+                );
+                Some(index)
+            }
+            None => None,
+        };
         Ok(Self {
             config,
             chunk_size_u32,
             pool,
             slots: Vec::new(),
             last_dir: None,
+            index,
         })
     }
 
@@ -374,7 +407,8 @@ impl Resident {
     fn diff(&mut self, dirty: &[(u64, u64)], dir: &Path) -> Result<String, Error> {
         let options = self.config.diff;
         let mut stats = DiffStats::default();
-        let mut items: Vec<(u32, u64, Vec<usize>, u64, Buffer)> = Vec::new();
+        let mut items: Vec<DiffItem> = Vec::new();
+        let use_dsa = options.compare == DiffCompare::Dsa;
         for state in &mut self.slots {
             let t = Instant::now();
             let ranges = diff::slot_dirty_ranges(dirty, state.gpa, state.size);
@@ -413,38 +447,67 @@ impl Resident {
                 }
                 stats.populate_calls += runs.len() as u64;
             }
-            let gather = Buffer::new(changed.len() * PAGE)?;
+            stats.gather += t.elapsed();
+            // pages equal to a disk-image block are stored as references
+            let (hits, kept) = match &self.index {
+                Some(index) => {
+                    dedup::dedup_pages(&state.src, index, &changed, use_dsa, &mut stats)?
+                }
+                None => (Vec::new(), changed.clone()),
+            };
+            let t = Instant::now();
+            let gather = Buffer::new(kept.len() * PAGE)?;
             diff::gather_pages(
                 &state.src,
                 &reference.map,
                 &gather,
-                &changed,
+                &kept,
                 options,
                 &mut stats,
             )?;
+            if options.compare != DiffCompare::None {
+                // deduplicated pages still belong in the reference
+                for &(p, _, _) in &hits {
+                    reference.map.write(p, state.src.slice(p, PAGE)?)?;
+                }
+            }
             stats.gather += t.elapsed();
             stats.dirty_pages += pages.len() as u64;
             stats.changed_pages += changed.len() as u64;
-            items.push((state.slot, state.size, changed, pages.len() as u64, gather));
+            items.push(DiffItem {
+                slot: state.slot,
+                size: state.size,
+                kept,
+                gather,
+                dirty_pages: pages.len() as u64,
+                changed_pages: changed.len() as u64,
+                dedup: dedup::runs(&hits),
+            });
         }
 
         let t = Instant::now();
         let compressed = compress_gathers(&mut self.pool, &items, dir, self.config.chunk_size)?;
-        for ((slot, size, changed, dirty_pages, _), (chunks, bytes)) in items.iter().zip(compressed)
-        {
+        let dedup_image = self.index.as_ref().map(|i| i.image.clone());
+        for (item, (chunks, bytes)) in items.iter().zip(compressed) {
             stats.output_bytes += bytes;
             let manifest = DiffManifest {
                 version: DIFF_VERSION,
                 codec: self.config.codec,
                 chunk_size: self.chunk_size_u32,
-                slot_size: *size,
-                runs: diff::runs_of(changed),
+                slot_size: item.size,
+                runs: diff::runs_of(&item.kept),
                 chunks,
-                dirty_pages: *dirty_pages,
-                changed_pages: changed.len() as u64,
+                dirty_pages: item.dirty_pages,
+                changed_pages: item.changed_pages,
+                dedup: item.dedup.clone(),
+                dedup_image: if item.dedup.is_empty() {
+                    None
+                } else {
+                    dedup_image.clone()
+                },
             };
             fs::write(
-                diff::manifest_path(dir, *slot),
+                diff::manifest_path(dir, item.slot),
                 serde_json::to_vec(&manifest)?,
             )?;
         }
@@ -455,15 +518,17 @@ impl Resident {
         )?;
         stats.compress = t.elapsed();
         Ok(format!(
-            "kind=diff compare={} dirty_pages={} changed_pages={} output_bytes={} populate_calls={} prepare_ms={:.1} compare_ms={:.1} gather_ms={:.1} compress_ms={:.1} dsa_ops={} dsa_cpu_redo={}",
+            "kind=diff compare={} dirty_pages={} changed_pages={} dedup_pages={} output_bytes={} populate_calls={} prepare_ms={:.1} compare_ms={:.1} gather_ms={:.1} dedup_ms={:.1} compress_ms={:.1} dsa_ops={} dsa_cpu_redo={}",
             options.compare,
             stats.dirty_pages,
             stats.changed_pages,
+            stats.dedup_pages,
             stats.output_bytes,
             stats.populate_calls,
             ms(stats.prepare),
             ms(stats.compare),
             ms(stats.gather),
+            ms(stats.dedup),
             ms(stats.compress),
             stats.dsa_ops,
             stats.dsa_cpu_redo
@@ -603,12 +668,12 @@ fn init_reference(
 /// Returns per slot (chunk records, compressed bytes).
 fn compress_gathers(
     pool: &mut JobPool,
-    items: &[(u32, u64, Vec<usize>, u64, Buffer)],
+    items: &[DiffItem],
     dir: &Path,
     chunk_size: usize,
 ) -> Result<Vec<(Vec<ChunkRecord>, u64)>, Error> {
     let mut outputs = Vec::with_capacity(items.len());
-    for (slot, ..) in items {
+    for DiffItem { slot, .. } in items {
         outputs.push(
             OpenOptions::new()
                 .create(true)
@@ -618,8 +683,8 @@ fn compress_gathers(
         );
     }
     let mut work: Vec<(usize, usize, usize)> = Vec::new();
-    for (i, (_, _, changed, _, _)) in items.iter().enumerate() {
-        let total = changed.len() * PAGE;
+    for (i, item) in items.iter().enumerate() {
+        let total = item.kept.len() * PAGE;
         for offset in (0..total).step_by(chunk_size) {
             work.push((i, offset, (total - offset).min(chunk_size)));
         }
@@ -649,7 +714,7 @@ fn compress_gathers(
             }
             if entry.is_none() && next < work.len() {
                 let (item, offset, length) = work[next];
-                let src = items[item].4.page(offset / PAGE);
+                let src = items[item].gather.page(offset / PAGE);
                 // SAFETY: the gather buffers outlive the pool's use of them
                 // and are not written while jobs run.
                 unsafe { pool.submit_compress_from(index, src, length)? };
