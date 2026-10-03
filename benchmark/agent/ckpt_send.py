@@ -55,7 +55,12 @@ with open(logf) as f:
                 sys.exit(0)
             time.sleep(0.0005)
 t1 = time.monotonic()
-time.sleep(0.005)
-cpu = (thread_ns() - c0) / 1e9
+m = re.search(r"cpu_ms=([0-9.]+)", line)
+if m:
+    # the daemon's own getrusage: includes threads that have exited
+    cpu = float(m.group(1)) / 1e3
+else:
+    time.sleep(0.005)
+    cpu = (thread_ns() - c0) / 1e9
 rc = 1 if "failed" in line else 0
 print(f"{(t1 - t0) * 1e3:.1f} {cpu:.4f} {rc} {line}")
