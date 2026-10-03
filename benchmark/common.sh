@@ -264,7 +264,8 @@ record_result() {
 
 read_cpu_utilization() {
     local time_file=$1
-    tr -d '%[:space:]' <"$time_file"
+    # First field is %P; %U %S (CPU seconds) follow when recorded.
+    awk '{print $1; exit}' "$time_file" | tr -d '%[:space:]'
 }
 
 drop_page_cache() {

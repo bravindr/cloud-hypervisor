@@ -80,7 +80,7 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
-"$TIME_BIN" --format='%P' --output="$cpu_time_file" \
+"$TIME_BIN" --format='%P %U %S' --output="$cpu_time_file" \
     env RUST_LOG=${RUST_LOG:-info} "${OFFLOAD_PREFIX[@]}" \
     "$OFFLOAD_BIN" "${daemon_args[@]}" \
     >"$daemon_log" 2>&1 &

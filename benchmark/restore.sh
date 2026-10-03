@@ -73,13 +73,14 @@ if [[ ${RESUME_VM:-1} == 1 ]]; then
     restore_args+=(--resume)
 fi
 if [[ -n "$variant" ]]; then
-    [[ "$variant" == +dsacrc ]] && restore_args+=(--verify-crc)
+    [[ "$variant" == +dsacrc ]] && restore_args+=(--verify-crc --verify-engine dsa)
+    [[ "$variant" == +cpucrc ]] && restore_args+=(--verify-crc --verify-engine cpu)
     [[ ${RESTORE_HUGETLB:-0} == 1 ]] && restore_args+=(--hugetlb)
     restore_args+=(--dsa-depth "${DSA_DEPTH:-32}")
 fi
 
 start_ns=$(date +%s%N)
-"$TIME_BIN" --format='%P' --output="$cpu_time_file" \
+"$TIME_BIN" --format='%P %U %S' --output="$cpu_time_file" \
     env RUST_LOG=${RUST_LOG:-info} "${OFFLOAD_PREFIX[@]}" \
     "$OFFLOAD_BIN" "${restore_args[@]}" \
     >"$daemon_log" 2>&1
