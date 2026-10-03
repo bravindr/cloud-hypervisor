@@ -515,10 +515,267 @@ fn compress_file_qpl_async(
     )
 }
 
-/// The full-checkpoint pipeline on a slot that is already mapped, with its
-/// data extents known (and populated, if `prefault` says so), using the
-/// caller's IAA job pool: lets a resident daemon keep both across slots and
-/// checkpoints.
+/// One slot's input to the shared full-checkpoint pipeline: already mapped,
+/// data extents known (and populated, if `prefault` says so).
+#[cfg(feature = "qpl")]
+pub(crate) struct SlotJob<'a> {
+    pub mapping: &'a Mapping,
+    pub extents: &'a [(usize, usize)],
+    pub prefault: Option<Duration>,
+    pub source_size: u64,
+    pub data_path: &'a Path,
+    pub manifest_path: &'a Path,
+}
+
+/// Per-slot state inside `compress_slots`.
+#[cfg(feature = "qpl")]
+struct SlotRun {
+    output: File,
+    chunk_has_data: Vec<bool>,
+    chunk_count: usize,
+    next_chunk: usize,
+    classifier: Classifier,
+    records: Vec<ChunkRecord>,
+    output_offset: u64,
+    hole_chunks: usize,
+    data_bytes: usize,
+    staged: VecDeque<Verdict>,
+}
+
+/// The full-checkpoint pipeline for any number of slots sharing one IAA job
+/// pool. Every slot has its own classifier (DSA COMPARE ring or CPU scan),
+/// running ahead of compression; their verdicts go into one ready queue that
+/// drains into whichever IAA job is free, so no job idles while any slot
+/// still has chunks to compress (with a pool split per slot, the slot with
+/// less to compress finishes early and strands its share of the jobs).
+#[cfg(feature = "qpl")]
+pub(crate) fn compress_slots(
+    jobs: &[SlotJob<'_>],
+    pool: &mut QplJobPool,
+    codec: Codec,
+    chunk_size: usize,
+    chunk_size_u32: u32,
+    accel: AccelOptions,
+) -> Result<Vec<CompressionStats>, Error> {
+    let started = Instant::now();
+    let mut runs: Vec<SlotRun> = Vec::with_capacity(jobs.len());
+    for job in jobs {
+        let output = OpenOptions::new()
+            .create(true)
+            .truncate(true)
+            .read(true)
+            .write(true)
+            .open(job.data_path)
+            .map_err(Error::Write)?;
+        let chunk_count = job.source_size.div_ceil(chunk_size as u64) as usize;
+        let mut chunk_has_data = vec![false; chunk_count];
+        for &(start, end) in job.extents {
+            chunk_has_data[start / chunk_size..end.div_ceil(chunk_size).min(chunk_count)]
+                .fill(true);
+        }
+        runs.push(SlotRun {
+            output,
+            hole_chunks: chunk_has_data.iter().filter(|has| !**has).count(),
+            data_bytes: job.extents.iter().map(|(start, end)| end - start).sum(),
+            chunk_has_data,
+            chunk_count,
+            next_chunk: 0,
+            classifier: Classifier::new(accel, chunk_size)?,
+            records: Vec::with_capacity(chunk_count),
+            output_offset: 0,
+            staged: VecDeque::new(),
+        });
+    }
+
+    // (slot, verdict) waiting for a free IAA job, from every slot.
+    let mut ready: VecDeque<(usize, Verdict)> = VecDeque::new();
+    let mut active: Vec<Option<(usize, Verdict)>> = (0..pool.capacity()).map(|_| None).collect();
+    let mut active_count = 0_usize;
+    // Bound how far classification may run ahead of the pool.
+    let ready_limit = pool.capacity().max(accel.dsa_depth) * 2;
+    let mut turn = 0_usize;
+
+    loop {
+        let mut made_progress = false;
+
+        // 1. classify: slots take turns so all of them keep the queue fed
+        for k in 0..runs.len() {
+            let s = (turn + k) % runs.len();
+            let job = &jobs[s];
+            let run = &mut runs[s];
+            while run.next_chunk < run.chunk_count && ready.len() < ready_limit {
+                let offset = run.next_chunk * chunk_size;
+                let length = (job.source_size as usize - offset).min(chunk_size);
+                if !run.chunk_has_data[run.next_chunk] {
+                    ready.push_back((
+                        s,
+                        Verdict {
+                            offset,
+                            length,
+                            zero: true,
+                            crc32c: None,
+                        },
+                    ));
+                    run.next_chunk += 1;
+                    made_progress = true;
+                    continue;
+                }
+                if !run.classifier.push(job.mapping, offset, length)? {
+                    break;
+                }
+                run.next_chunk += 1;
+                made_progress = true;
+            }
+            run.classifier.drain(job.mapping, &mut run.staged)?;
+            while let Some(verdict) = run.staged.pop_front() {
+                ready.push_back((s, verdict));
+                made_progress = true;
+            }
+        }
+        turn = turn.wrapping_add(1);
+
+        // 2. compress: one pool for every slot
+        for (index, entry) in active.iter_mut().enumerate() {
+            if let Some((s, verdict)) = entry.as_ref() {
+                let Some(output_size) = pool.poll(index)? else {
+                    continue;
+                };
+                let run = &mut runs[*s];
+                let compressed_length =
+                    u32::try_from(output_size).map_err(|_| Error::ChunkTooLarge)?;
+                run.output
+                    .write_all_at(pool.output(index, output_size), run.output_offset)
+                    .map_err(Error::Write)?;
+                run.records.push(ChunkRecord {
+                    uncompressed_offset: verdict.offset as u64,
+                    uncompressed_length: verdict.length as u32,
+                    compressed_offset: run.output_offset,
+                    compressed_length,
+                    zero: false,
+                    crc32c: verdict.crc32c,
+                });
+                run.output_offset += output_size as u64;
+                *entry = None;
+                active_count -= 1;
+                made_progress = true;
+            }
+            if entry.is_none() {
+                while let Some((s, verdict)) = ready.pop_front() {
+                    if verdict.zero {
+                        runs[s].records.push(ChunkRecord {
+                            uncompressed_offset: verdict.offset as u64,
+                            uncompressed_length: verdict.length as u32,
+                            compressed_offset: 0,
+                            compressed_length: 0,
+                            zero: true,
+                            crc32c: None,
+                        });
+                        made_progress = true;
+                        continue;
+                    }
+                    let input = jobs[s]
+                        .mapping
+                        .ptr(verdict.offset, verdict.length)
+                        .map_err(Error::Read)?;
+                    // SAFETY: the mappings outlive the pool and the VM is
+                    // paused for the whole snapshot, so the input is stable
+                    // until the job completes.
+                    unsafe { pool.submit_compress_from(index, input, verdict.length)? };
+                    *entry = Some((s, verdict));
+                    active_count += 1;
+                    made_progress = true;
+                    break;
+                }
+            }
+        }
+
+        if active_count == 0
+            && ready.is_empty()
+            && runs
+                .iter()
+                .all(|r| r.next_chunk == r.chunk_count && r.classifier.is_idle())
+        {
+            break;
+        }
+        if !made_progress {
+            thread::yield_now();
+        }
+    }
+
+    let elapsed = started.elapsed();
+    let mut stats = Vec::with_capacity(runs.len());
+    for (job, run) in jobs.iter().zip(runs) {
+        run.output.sync_all().map_err(Error::Write)?;
+        let mut records = run.records;
+        records.sort_unstable_by_key(|record| record.uncompressed_offset);
+        let zero_chunks = records.iter().filter(|record| record.zero).count();
+        let manifest = SlotManifest {
+            version: FORMAT_VERSION,
+            codec,
+            chunk_size: chunk_size_u32,
+            uncompressed_size: job.source_size,
+            chunks: records,
+        };
+        let manifest_bytes = serde_json::to_vec_pretty(&manifest).map_err(Error::WriteManifest)?;
+        fs::write(job.manifest_path, manifest_bytes).map_err(Error::Write)?;
+        let report = run.classifier.report();
+        log::info!(
+            "classify={} prefault={} zero_chunks={zero_chunks}/{} hole_chunks={} data_mib={} dsa submitted={} fallback={} failed={} cpu_scans={} crc={} slots_sharing_pool={}",
+            accel.classify,
+            job.prefault.map_or_else(
+                || "off".to_owned(),
+                |elapsed| format!("{:.1}ms", elapsed.as_secs_f64() * 1e3)
+            ),
+            run.chunk_count,
+            run.hole_chunks,
+            run.data_bytes >> 20,
+            report.dsa_submitted,
+            report.dsa_fallback,
+            report.dsa_failed,
+            report.cpu_scans,
+            accel.crc,
+            jobs.len(),
+        );
+        stats.push(CompressionStats {
+            input_bytes: job.source_size,
+            output_bytes: run.output_offset,
+            chunks: run.chunk_count,
+            elapsed,
+        });
+    }
+    Ok(stats)
+}
+
+/// A mapped slot, its data extents and the time spent populating them.
+#[cfg(feature = "qpl")]
+pub(crate) type MappedSlot = (Mapping, Vec<(usize, usize)>, Option<Duration>);
+
+/// Map a slot and find its data extents, populating them when asked.
+#[cfg(feature = "qpl")]
+pub(crate) fn map_slot(
+    source: &File,
+    source_offset: u64,
+    source_size: u64,
+    prefault: bool,
+) -> Result<MappedSlot, Error> {
+    let started = Instant::now();
+    let mapping =
+        Mapping::map_file(source, source_offset, source_size, false).map_err(Error::Read)?;
+    let extents = data_extents(source, source_offset, source_size).map_err(Error::Read)?;
+    let prefault = if prefault {
+        for &(start, end) in &extents {
+            mapping
+                .populate_range(start, end - start, false)
+                .map_err(Error::Read)?;
+        }
+        Some(started.elapsed())
+    } else {
+        None
+    };
+    Ok((mapping, extents, prefault))
+}
+
+/// The full-checkpoint pipeline for one slot (see [`compress_slots`]).
 #[cfg(feature = "qpl")]
 #[expect(clippy::too_many_arguments)]
 pub(crate) fn compress_mapped(
@@ -534,162 +791,16 @@ pub(crate) fn compress_mapped(
     chunk_size_u32: u32,
     accel: AccelOptions,
 ) -> Result<CompressionStats, Error> {
-    let started = Instant::now();
-    let output = OpenOptions::new()
-        .create(true)
-        .truncate(true)
-        .read(true)
-        .write(true)
-        .open(data_path)
-        .map_err(Error::Write)?;
-    let chunk_count = source_size.div_ceil(chunk_size as u64) as usize;
-    let mut chunk_has_data = vec![false; chunk_count];
-    for &(start, end) in extents {
-        chunk_has_data[start / chunk_size..end.div_ceil(chunk_size).min(chunk_count)].fill(true);
-    }
-    let hole_chunks = chunk_has_data.iter().filter(|has| !**has).count();
-    let data_bytes: usize = extents.iter().map(|(start, end)| end - start).sum();
-    let mut classifier = Classifier::new(accel, chunk_size)?;
-    let mut records = Vec::with_capacity(chunk_count);
-    let mut output_offset = 0_u64;
-
-    // Stage one (classify) runs ahead of stage two (compress) by up to the
-    // classifier's depth; verdicts wait in `ready` for a free IAA slot.
-    let mut ready: VecDeque<Verdict> = VecDeque::new();
-    let mut active: Vec<Option<Verdict>> = (0..pool.capacity()).map(|_| None).collect();
-    let mut active_count = 0_usize;
-    let mut next_chunk = 0_usize;
-    // Bound how far classification may run ahead of a stalled IAA pool so the
-    // CPU classifier does not scan the whole slot before compressing starts.
-    let ready_limit = pool.capacity().max(accel.dsa_depth) * 2;
-
-    loop {
-        let mut made_progress = false;
-
-        while next_chunk < chunk_count && ready.len() < ready_limit {
-            let offset = next_chunk * chunk_size;
-            let length = (source_size as usize - offset).min(chunk_size);
-            if !chunk_has_data[next_chunk] {
-                ready.push_back(Verdict {
-                    offset,
-                    length,
-                    zero: true,
-                    crc32c: None,
-                });
-                next_chunk += 1;
-                made_progress = true;
-                continue;
-            }
-            if !classifier.push(mapping, offset, length)? {
-                break;
-            }
-            next_chunk += 1;
-            made_progress = true;
-        }
-
-        let before = ready.len();
-        classifier.drain(mapping, &mut ready)?;
-        made_progress |= ready.len() != before;
-
-        for (slot, entry) in active.iter_mut().enumerate() {
-            if let Some(verdict) = entry.as_ref() {
-                let Some(output_size) = pool.poll(slot)? else {
-                    continue;
-                };
-                let compressed_length =
-                    u32::try_from(output_size).map_err(|_| Error::ChunkTooLarge)?;
-                output
-                    .write_all_at(pool.output(slot, output_size), output_offset)
-                    .map_err(Error::Write)?;
-                records.push(ChunkRecord {
-                    uncompressed_offset: verdict.offset as u64,
-                    uncompressed_length: verdict.length as u32,
-                    compressed_offset: output_offset,
-                    compressed_length,
-                    zero: false,
-                    crc32c: verdict.crc32c,
-                });
-                output_offset += output_size as u64;
-                *entry = None;
-                active_count -= 1;
-                made_progress = true;
-            }
-            if entry.is_none() {
-                while let Some(verdict) = ready.pop_front() {
-                    if verdict.zero {
-                        records.push(ChunkRecord {
-                            uncompressed_offset: verdict.offset as u64,
-                            uncompressed_length: verdict.length as u32,
-                            compressed_offset: 0,
-                            compressed_length: 0,
-                            zero: true,
-                            crc32c: None,
-                        });
-                        made_progress = true;
-                        continue;
-                    }
-                    let input = mapping
-                        .ptr(verdict.offset, verdict.length)
-                        .map_err(Error::Read)?;
-                    // SAFETY: the mapping outlives the pool and the VM is
-                    // paused for the whole snapshot, so the input is stable
-                    // until the job completes.
-                    unsafe { pool.submit_compress_from(slot, input, verdict.length)? };
-                    *entry = Some(verdict);
-                    active_count += 1;
-                    made_progress = true;
-                    break;
-                }
-            }
-        }
-
-        if next_chunk == chunk_count
-            && classifier.is_idle()
-            && ready.is_empty()
-            && active_count == 0
-        {
-            break;
-        }
-        if !made_progress {
-            thread::yield_now();
-        }
-    }
-
-    output.sync_all().map_err(Error::Write)?;
-    records.sort_unstable_by_key(|record| record.uncompressed_offset);
-    let zero_chunks = records.iter().filter(|record| record.zero).count();
-    let manifest = SlotManifest {
-        version: FORMAT_VERSION,
-        codec,
-        chunk_size: chunk_size_u32,
-        uncompressed_size: source_size,
-        chunks: records,
+    let job = SlotJob {
+        mapping,
+        extents,
+        prefault,
+        source_size,
+        data_path,
+        manifest_path,
     };
-    let manifest_bytes = serde_json::to_vec_pretty(&manifest).map_err(Error::WriteManifest)?;
-    fs::write(manifest_path, manifest_bytes).map_err(Error::Write)?;
-
-    let report = classifier.report();
-    log::info!(
-        "classify={} prefault={} zero_chunks={zero_chunks}/{chunk_count} hole_chunks={hole_chunks} data_mib={} dsa submitted={} fallback={} failed={} cpu_scans={} crc={}",
-        accel.classify,
-        prefault.map_or_else(
-            || "off".to_owned(),
-            |elapsed| format!("{:.1}ms", elapsed.as_secs_f64() * 1e3)
-        ),
-        data_bytes >> 20,
-        report.dsa_submitted,
-        report.dsa_fallback,
-        report.dsa_failed,
-        report.cpu_scans,
-        accel.crc,
-    );
-
-    Ok(CompressionStats {
-        input_bytes: source_size,
-        output_bytes: output_offset,
-        chunks: chunk_count,
-        elapsed: started.elapsed(),
-    })
+    let mut stats = compress_slots(&[job], pool, codec, chunk_size, chunk_size_u32, accel)?;
+    Ok(stats.remove(0))
 }
 
 /// Where decompressed chunks go: pwrite into the file, or a memcpy into a

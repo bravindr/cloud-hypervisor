@@ -185,11 +185,6 @@ impl Job {
     }
 }
 
-// SAFETY: a QPL job is a heap-allocated context with no thread affinity; the
-// pool gives each job to exactly one owner at a time, so it may move between
-// threads.
-unsafe impl Send for Job {}
-
 impl Drop for Job {
     fn drop(&mut self) {
         // SAFETY: this Job uniquely owns the context and drops it exactly once.
@@ -231,27 +226,6 @@ impl JobPool {
 
     pub(crate) fn capacity(&self) -> usize {
         self.slots.len()
-    }
-
-    /// Move idle jobs out into sub-pools of the given sizes (each at least
-    /// one job while jobs remain), so several threads can use one set of
-    /// long-lived jobs concurrently. Give them back with [`JobPool::absorb`].
-    pub(crate) fn split(&mut self, sizes: &[usize]) -> Vec<JobPool> {
-        debug_assert!(self.slots.iter().all(|slot| !slot.submitted));
-        sizes
-            .iter()
-            .map(|&n| {
-                let take = n.max(1).min(self.slots.len());
-                JobPool {
-                    slots: self.slots.drain(..take).collect(),
-                }
-            })
-            .collect()
-    }
-
-    pub(crate) fn absorb(&mut self, mut other: JobPool) {
-        debug_assert!(other.slots.iter().all(|slot| !slot.submitted));
-        self.slots.append(&mut other.slots);
     }
 
     pub(crate) fn input_mut(&mut self, index: usize, size: usize) -> &mut [u8] {

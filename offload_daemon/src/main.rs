@@ -222,6 +222,12 @@ enum Mode {
         /// DSA batch descriptors in flight.
         #[arg(long, default_value_t = 8)]
         diff_depth: usize,
+        /// Async QPL codecs: `shared` feeds every slot's classified chunks
+        /// into one queue and one IAA job pool of --workers jobs;
+        /// `per-slot` gives each slot its own thread and an even share of
+        /// the jobs (the original layout).
+        #[arg(long, default_value = "shared")]
+        pipeline: Pipeline,
     },
     /// Stay resident: every connection from CH (send-migration with
     /// memory_mode=memfds,preserve_source=on) is one checkpoint, written to
@@ -303,6 +309,12 @@ enum Mode {
     },
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq, clap::ValueEnum)]
+enum Pipeline {
+    Shared,
+    PerSlot,
+}
+
 fn default_classify() -> Classify {
     if cfg!(feature = "dto") {
         Classify::Dsa
@@ -322,6 +334,8 @@ struct CompressionOptions {
     parent: Option<PathBuf>,
     #[cfg_attr(not(feature = "qpl"), allow(dead_code))]
     diff: DiffOptions,
+    #[cfg_attr(not(feature = "qpl"), allow(dead_code))]
+    pipeline: Pipeline,
 }
 
 #[derive(Clone, Copy)]
@@ -358,6 +372,7 @@ fn main() -> Result<()> {
             diff_compare,
             diff_batch,
             diff_depth,
+            pipeline,
         } => {
             let compression = compression.map(|codec| CompressionOptions {
                 codec,
@@ -377,6 +392,7 @@ fn main() -> Result<()> {
                     batch: diff_batch,
                     depth: diff_depth,
                 },
+                pipeline,
             });
             run_snapshot(&socket, &output_dir, compression.as_ref())
         }
@@ -626,6 +642,13 @@ fn dump_memory_slots(
         }
     }
     if let Some(options) = compression {
+        #[cfg(feature = "qpl")]
+        if options.pipeline == Pipeline::Shared
+            && options.parent.is_none()
+            && let Some(huffman) = options.codec.async_huffman_mode()
+        {
+            return dump_shared(slots, config, output_dir, options, huffman);
+        }
         let workers_per_slot = options.workers.div_ceil(slots.len().max(1)).max(1);
         let info = slot_info(config)?;
         let diff_parent = match (&options.parent, dirty, &options.reference_dir) {
@@ -1405,4 +1428,85 @@ fn process_cpu() -> Duration {
 #[cfg(not(feature = "qpl"))]
 fn run_serve(_: &Path, _: &Path, _: ServeOptions) -> Result<()> {
     Err(Error::DiffCodec)
+}
+
+/// Full checkpoint of every slot through one shared IAA pipeline.
+#[cfg(feature = "qpl")]
+fn dump_shared(
+    slots: &[(u32, File)],
+    config: &VmMigrationConfig,
+    output_dir: &Path,
+    options: &CompressionOptions,
+    huffman: qpl::HuffmanMode,
+) -> Result<()> {
+    let info = slot_info(config)?;
+    let mut mapped = Vec::with_capacity(slots.len());
+    for (slot, file) in slots {
+        let &(_, _, size, file_offset) = info
+            .iter()
+            .find(|(s, ..)| s == slot)
+            .ok_or(Error::MissingSlot(*slot))?;
+        let (mapping, extents, prefault) =
+            compression::map_slot(file, file_offset, size, options.accel.prefault)?;
+        mapped.push((
+            *slot,
+            size,
+            file_offset,
+            mapping,
+            extents,
+            prefault,
+            output_dir.join(format!("memory-{slot}.compressed")),
+            output_dir.join(format!("memory-{slot}.index.json")),
+        ));
+    }
+    let jobs: Vec<compression::SlotJob<'_>> = mapped
+        .iter()
+        .map(
+            |(_, size, _, mapping, extents, prefault, data, manifest)| compression::SlotJob {
+                mapping,
+                extents,
+                prefault: *prefault,
+                source_size: *size,
+                data_path: data,
+                manifest_path: manifest,
+            },
+        )
+        .collect();
+    let chunk_size_u32 = compression::validate_chunk_size(options.chunk_size)?;
+    let mut pool = qpl::JobPool::new(qpl::ExecutionPath::Hardware, huffman, options.workers)
+        .map_err(compression::Error::from)?;
+    let stats = compression::compress_slots(
+        &jobs,
+        &mut pool,
+        options.codec,
+        options.chunk_size,
+        chunk_size_u32,
+        options.accel,
+    )?;
+    for ((slot, ..), stats) in mapped.iter().zip(&stats) {
+        info!(
+            "Compressed slot {slot}: codec={}, chunks={}, input={} bytes, output={} bytes, ratio={:.3}, throughput={:.3} GiB/s",
+            options.codec,
+            stats.chunks,
+            stats.input_bytes,
+            stats.output_bytes,
+            stats.ratio(),
+            stats.throughput_gib_per_second(),
+        );
+    }
+    if let Some(reference_dir) = &options.reference_dir {
+        for ((slot, size, file_offset, _, _, _, _, manifest), (_, file)) in mapped.iter().zip(slots)
+        {
+            init_reference_slot(
+                file,
+                *slot,
+                *size,
+                *file_offset,
+                manifest,
+                reference_dir,
+                options,
+            )?;
+        }
+    }
+    Ok(())
 }
