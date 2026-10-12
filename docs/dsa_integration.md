@@ -1154,12 +1154,12 @@ Reading:
 - **hugetlb restore is 18 % faster and uses 19 % less CPU** than the 4 KiB
   restore of §7c.2l (cpu 786 → 648 ms, 0.75 → 0.61 core-s): 2048 huge page
   faults instead of ~1M small ones. It is software, not DSA (cpu = dsa).
-- **CRC verification on DSA stays free** (1-7 ms, ≤0.01 core-s); on the
+- **CRC verification on DSA stays free** (2-5 ms, ≤0.01 core-s); on the
   CPU it adds 117-124 ms and 0.12 core-s. With hugetlb the restore is
   shorter, so the CPU verification is now 16 % of it.
 - End to end on a 2 MiB guest with integrity, dsacrc against the unmodified
   daemon: snapshot 1428-1609 → 475-543 ms, restore 770-791 → 633-655 ms,
-  daemon CPU 1.14-1.35 → 0.29-0.45 core-s per snapshot.
+  daemon CPU 1.14-1.35 → 0.31-0.45 core-s per snapshot.
 
 ### 7c.3 IOMMU first touch: measured, and the fix
 
