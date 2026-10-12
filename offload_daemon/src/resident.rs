@@ -665,6 +665,7 @@ fn compress_gathers(
                     compressed_offset: *bytes,
                     compressed_length: size as u32,
                     zero: false,
+                    fill: None,
                     crc32c: None,
                 });
                 *bytes += size as u64;

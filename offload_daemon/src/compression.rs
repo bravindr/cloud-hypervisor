@@ -23,7 +23,7 @@ use zstd::bulk::{compress as zstd_compress, decompress as zstd_decompress};
 use crate::classify::{AccelOptions, Error as ClassifyError};
 #[cfg(feature = "qpl")]
 use crate::classify::{Classifier, Verdict};
-use crate::crc::{crc32c, is_zero};
+use crate::crc::{crc32c, fill_pattern};
 #[cfg(feature = "dto")]
 use crate::dto::{Op as DtoOp, Poll as DtoPoll, Stats as DtoStats, Submit as DtoSubmit};
 use crate::mapping::Mapping;
@@ -106,6 +106,11 @@ pub(crate) struct ChunkRecord {
     pub compressed_length: u32,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub zero: bool,
+    /// The chunk is this 8-byte pattern repeated and stores no data (like a
+    /// zero chunk; a zero chunk is `zero`, never `fill: Some(0)`). Linux
+    /// poisons freed initramfs and init memory with 0xCC, ~90 MiB per guest.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fill: Option<u64>,
     /// CRC32C (seed 0, no final xor: the DSA CRC generation convention) of the
     /// uncompressed chunk, when the snapshot was taken with `--crc`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -398,13 +403,14 @@ pub(crate) fn compress_file(
                         source
                             .read_exact_at(&mut input, source_offset + uncompressed_offset)
                             .map_err(Error::Read)?;
-                        if is_zero(&input) {
+                        if let Some(pattern) = fill_pattern(&input) {
                             records.lock().unwrap().push(ChunkRecord {
                                 uncompressed_offset,
                                 uncompressed_length: uncompressed_length as u32,
                                 compressed_offset: 0,
                                 compressed_length: 0,
-                                zero: true,
+                                zero: pattern == 0,
+                                fill: (pattern != 0).then_some(pattern),
                                 crc32c: None,
                             });
                             return Ok(());
@@ -424,6 +430,7 @@ pub(crate) fn compress_file(
                             compressed_offset,
                             compressed_length,
                             zero: false,
+                            fill: None,
                             crc32c: crc,
                         });
                         Ok(())
@@ -622,6 +629,7 @@ pub(crate) fn compress_slots(
                             offset,
                             length,
                             zero: true,
+                            fill: None,
                             crc32c: None,
                         },
                     ));
@@ -661,6 +669,7 @@ pub(crate) fn compress_slots(
                     compressed_offset: run.output_offset,
                     compressed_length,
                     zero: false,
+                    fill: None,
                     crc32c: verdict.crc32c,
                 });
                 run.output_offset += output_size as u64;
@@ -683,13 +692,14 @@ pub(crate) fn compress_slots(
             }
             if entry.is_none() {
                 while let Some((s, verdict)) = ready.pop_front() {
-                    if verdict.zero {
+                    if verdict.zero || verdict.fill.is_some() {
                         runs[s].records.push(ChunkRecord {
                             uncompressed_offset: verdict.offset as u64,
                             uncompressed_length: verdict.length as u32,
                             compressed_offset: 0,
                             compressed_length: 0,
-                            zero: true,
+                            zero: verdict.zero,
+                            fill: verdict.fill,
                             crc32c: None,
                         });
                         made_progress = true;
@@ -744,6 +754,10 @@ pub(crate) fn compress_slots(
         let mut records = run.records;
         records.sort_unstable_by_key(|record| record.uncompressed_offset);
         let zero_chunks = records.iter().filter(|record| record.zero).count();
+        let fill_chunks = records
+            .iter()
+            .filter(|record| record.fill.is_some())
+            .count();
         let manifest = SlotManifest {
             version: FORMAT_VERSION,
             codec,
@@ -755,7 +769,7 @@ pub(crate) fn compress_slots(
         fs::write(job.manifest_path, manifest_bytes).map_err(Error::Write)?;
         let report = run.classifier.report();
         log::info!(
-            "classify={} prefault={} zero_chunks={zero_chunks}/{} hole_chunks={} data_mib={} dsa submitted={} fallback={} failed={} cpu_scans={} crc={} slots_sharing_pool={} compress_ms={:.1} sync_ms={sync_ms:.1}",
+            "classify={} prefault={} zero_chunks={zero_chunks}/{} fill_chunks={fill_chunks} hole_chunks={} data_mib={} dsa submitted={} fallback={} failed={} cpu_scans={} crc={} slots_sharing_pool={} compress_ms={:.1} sync_ms={sync_ms:.1}",
             accel.classify,
             job.prefault.map_or_else(
                 || "off".to_owned(),
@@ -914,12 +928,21 @@ pub(crate) fn decompress_file(
                 "compressed range ends at {compressed_end}, file length is {compressed_size}"
             )));
         }
-        if record.zero && record.compressed_length != 0 {
+        if (record.zero || record.fill.is_some()) && record.compressed_length != 0 {
             return Err(Error::InvalidManifest(
-                "zero chunk has compressed data".to_owned(),
+                "zero or fill chunk has compressed data".to_owned(),
             ));
         }
-        if !record.zero && record.uncompressed_length != 0 && record.compressed_length == 0 {
+        if record.zero && record.fill.is_some() {
+            return Err(Error::InvalidManifest(
+                "chunk is both zero and fill".to_owned(),
+            ));
+        }
+        if !record.zero
+            && record.fill.is_none()
+            && record.uncompressed_length != 0
+            && record.compressed_length == 0
+        {
             return Err(Error::InvalidManifest(
                 "non-zero chunk has no compressed data".to_owned(),
             ));
@@ -946,6 +969,7 @@ pub(crate) fn decompress_file(
     // which measured 2x slower than letting the kernel allocate per write.
     let destination =
         Destination::open(destination, destination_offset, expected_size).map_err(Error::Write)?;
+    write_fill_chunks(&destination, &records)?;
     #[cfg(feature = "qpl")]
     if let Some(huffman_mode) = codec.async_huffman_mode() {
         return decompress_file_qpl_async(
@@ -991,7 +1015,7 @@ pub(crate) fn decompress_file(
                         return;
                     }
                     let result = (|| {
-                        if record.zero {
+                        if record.zero || record.fill.is_some() {
                             return Ok(());
                         }
                         compressed.resize(record.compressed_length as usize, 0);
@@ -1157,7 +1181,7 @@ fn submit_next_decompression_chunk(
     while let Some(record) = records.get(*next_chunk) {
         let record_index = *next_chunk;
         *next_chunk += 1;
-        if record.zero {
+        if record.zero || record.fill.is_some() {
             continue;
         }
         input
@@ -1283,6 +1307,29 @@ impl ChunkVerifier {
     fn report(&self) -> (u64, u64, u64) {
         (0, 0, 0)
     }
+}
+
+/// Constant-filled chunks are written from a pattern buffer on the CPU. At
+/// ~90 MiB per 4 GiB guest that is a few milliseconds of pwrite; a DSA
+/// MEMFILL through a fresh 4 KiB-page mapping would fault once per page
+/// (the reason restore writes with pwrite, see `Destination::open`).
+fn write_fill_chunks(destination: &Destination<'_>, records: &[ChunkRecord]) -> Result<(), Error> {
+    let mut buffer: Vec<u8> = Vec::new();
+    for record in records {
+        let Some(pattern) = record.fill else {
+            continue;
+        };
+        let bytes = pattern.to_ne_bytes();
+        let length = record.uncompressed_length as usize;
+        if buffer.len() != length || buffer[..8] != bytes {
+            buffer.clear();
+            buffer.extend(bytes.iter().cycle().take(length));
+        }
+        destination
+            .write(record.uncompressed_offset as usize, &buffer)
+            .map_err(Error::Write)?;
+    }
+    Ok(())
 }
 
 /// Restore-side population of the all-zero chunks: eager restore leaves them

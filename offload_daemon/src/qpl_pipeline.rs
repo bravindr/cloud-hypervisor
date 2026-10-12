@@ -207,6 +207,7 @@ pub(crate) fn compress_files(
             compressed_offset,
             compressed_length,
             zero: false,
+            fill: None,
         });
         active_count -= 1;
         active[job_index] = submit_compression_job(
@@ -281,6 +282,7 @@ fn submit_compression_job(
                     compressed_offset: 0,
                     compressed_length: 0,
                     zero: true,
+                    fill: None,
                 });
                 continue;
             }
@@ -558,6 +560,7 @@ mod tests {
                 compressed_offset: 128,
                 compressed_length: 64,
                 zero: false,
+                fill: None,
             }],
         };
 

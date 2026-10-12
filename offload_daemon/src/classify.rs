@@ -17,7 +17,7 @@ use std::str::FromStr;
 use thiserror::Error;
 
 #[cfg(feature = "qpl")]
-use crate::crc::{crc32c, is_zero};
+use crate::crc::{crc32c, fill_pattern};
 #[cfg(feature = "qpl")]
 use crate::mapping::Mapping;
 
@@ -82,9 +82,6 @@ pub(crate) enum Error {
     #[cfg_attr(feature = "dto", allow(dead_code))]
     #[error("DSA classification requires the dto feature")]
     DsaUnavailable,
-    #[error("Allocating the zero reference buffer")]
-    #[cfg_attr(not(feature = "dto"), allow(dead_code))]
-    ZeroBuffer(#[source] io::Error),
     #[error("Source mapping")]
     Mapping(#[source] io::Error),
 }
@@ -95,6 +92,8 @@ pub(crate) struct Verdict {
     pub offset: usize,
     pub length: usize,
     pub zero: bool,
+    /// The chunk is this 8-byte pattern repeated (never 0: that is `zero`).
+    pub fill: Option<u64>,
     pub crc32c: Option<u32>,
 }
 
@@ -155,12 +154,13 @@ impl Classifier {
             } => {
                 let data = mapping.slice(offset, length).map_err(Error::Mapping)?;
                 report.cpu_scans += 1;
-                let zero = is_zero(data);
+                let fill = fill_pattern(data);
                 done.push_back(Verdict {
                     offset,
                     length,
-                    zero,
-                    crc32c: (*want_crc && !zero).then(|| crc32c(data)),
+                    zero: fill == Some(0),
+                    fill: fill.filter(|pattern| *pattern != 0),
+                    crc32c: (*want_crc && fill.is_none()).then(|| crc32c(data)),
                 });
                 Ok(true)
             }
@@ -208,8 +208,8 @@ mod dsa {
     use std::collections::VecDeque;
 
     use super::{AccelOptions, Error, Report, Verdict};
-    use crate::crc::{crc32c, is_zero};
-    use crate::dto::{Op, Poll, Stats, Submit, ZeroBuffer};
+    use crate::crc::{crc32c, fill_pattern};
+    use crate::dto::{Op, Poll, Stats, Submit};
     use crate::mapping::Mapping;
 
     enum Pending<T> {
@@ -224,13 +224,20 @@ mod dsa {
         offset: usize,
         length: usize,
         live: bool,
-        differs: Pending<bool>,
+        /// The chunk's first qword, the Compare Pattern operand.
+        pattern: u64,
+        /// `Some(pattern)` when the whole chunk is that pattern.
+        fill: Pending<Option<u64>>,
         checksum: Pending<Option<u32>>,
     }
 
+    /// One COMPVAL (Compare Pattern) per chunk against the chunk's own first
+    /// qword: a match means the chunk is constant-filled (zero when the qword
+    /// is 0), a mismatch means data. One operation classifies both zero and
+    /// poison-filled memory, where a COMPARE against a zero buffer only found
+    /// the former.
     pub(crate) struct Ring {
         slots: Vec<Slot>,
-        zero: ZeroBuffer,
         want_crc: bool,
         stats: Stats,
         live: usize,
@@ -238,8 +245,7 @@ mod dsa {
     }
 
     impl Ring {
-        pub(super) fn new(options: AccelOptions, chunk_size: usize) -> Result<Self, Error> {
-            let zero = ZeroBuffer::new(chunk_size).map_err(Error::ZeroBuffer)?;
+        pub(super) fn new(options: AccelOptions, _chunk_size: usize) -> Result<Self, Error> {
             let slots = (0..options.dsa_depth.max(1))
                 .map(|_| Slot {
                     compare: Op::default(),
@@ -247,13 +253,13 @@ mod dsa {
                     offset: 0,
                     length: 0,
                     live: false,
-                    differs: Pending::Done(false),
+                    pattern: 0,
+                    fill: Pending::Done(None),
                     checksum: Pending::Done(None),
                 })
                 .collect();
             Ok(Self {
                 slots,
-                zero,
                 want_crc: options.crc,
                 stats: Stats::default(),
                 live: 0,
@@ -271,16 +277,18 @@ mod dsa {
                 return Ok(false);
             };
             let source = mapping.ptr(offset, length).map_err(Error::Mapping)?;
+            let head = mapping.slice(offset, 8).map_err(Error::Mapping)?;
             let slot = &mut self.slots[index];
             slot.offset = offset;
             slot.length = length;
             slot.live = true;
+            slot.pattern = u64::from_ne_bytes(head.try_into().unwrap());
             // SAFETY: the source mapping outlives the ring and is not written
-            // while the VM is paused; the zero buffer is immutable; the slot
-            // (and its ops) stay at a fixed address in `self.slots`.
-            slot.differs = match unsafe {
+            // while the VM is paused; the slot (and its ops) stay at a fixed
+            // address in `self.slots`.
+            slot.fill = match unsafe {
                 slot.compare
-                    .submit_compare(source, self.zero.as_ptr(), length, &self.stats)
+                    .submit_compval(source, slot.pattern, length, &self.stats)
             } {
                 Submit::Submitted => Pending::Device,
                 Submit::Fallback => Pending::Cpu,
@@ -307,11 +315,14 @@ mod dsa {
                 if !slot.live {
                     continue;
                 }
-                if let Pending::Device = slot.differs {
+                if let Pending::Device = slot.fill {
                     match slot.compare.poll(&self.stats) {
                         Poll::Pending => {}
-                        Poll::Done => slot.differs = Pending::Done(slot.compare.differs()),
-                        Poll::Failed { .. } => slot.differs = Pending::Cpu,
+                        Poll::Done => {
+                            slot.fill =
+                                Pending::Done((!slot.compare.differs()).then_some(slot.pattern));
+                        }
+                        Poll::Failed { .. } => slot.fill = Pending::Cpu,
                     }
                 }
                 if let Pending::Device = slot.checksum {
@@ -323,21 +334,22 @@ mod dsa {
                 }
                 // Software fallbacks run only once the device side has
                 // nothing more to say about this chunk.
-                let waiting = matches!(slot.differs, Pending::Device)
+                let waiting = matches!(slot.fill, Pending::Device)
                     || matches!(slot.checksum, Pending::Device);
                 if waiting {
                     continue;
                 }
-                if let Pending::Cpu = slot.differs {
+                if let Pending::Cpu = slot.fill {
                     let data = mapping
                         .slice(slot.offset, slot.length)
                         .map_err(Error::Mapping)?;
                     self.cpu_scans += 1;
-                    slot.differs = Pending::Done(!is_zero(data));
+                    slot.fill = Pending::Done(fill_pattern(data));
                 }
-                let Pending::Done(differs) = slot.differs else {
+                let Pending::Done(fill) = slot.fill else {
                     unreachable!()
                 };
+                let differs = fill.is_none();
                 if let Pending::Cpu = slot.checksum {
                     let checksum = if differs {
                         let data = mapping
@@ -355,7 +367,8 @@ mod dsa {
                 into.push_back(Verdict {
                     offset: slot.offset,
                     length: slot.length,
-                    zero: !differs,
+                    zero: fill == Some(0),
+                    fill: fill.filter(|pattern| *pattern != 0),
                     crc32c: if differs { checksum } else { None },
                 });
                 slot.live = false;

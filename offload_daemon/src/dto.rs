@@ -35,8 +35,6 @@ const DTO_ASYNC_PENDING: c_int = 0;
 const DTO_ASYNC_DONE: c_int = 1;
 
 unsafe extern "C" {
-    fn dto_submit_compare(op: *mut Op, src1: *const c_void, src2: *const c_void, n: usize)
-    -> c_int;
     fn dto_submit_memfill(
         op: *mut Op,
         dest: *mut c_void,
@@ -44,6 +42,7 @@ unsafe extern "C" {
         n: usize,
         cache_control: c_int,
     ) -> c_int;
+    fn dto_submit_compval(op: *mut Op, src: *const c_void, pattern: u64, n: usize) -> c_int;
     fn dto_submit_crc(op: *mut Op, src: *const c_void, n: usize) -> c_int;
     fn dto_async_poll(op: *mut Op) -> c_int;
     fn dto_async_result(op: *const Op) -> c_int;
@@ -176,21 +175,23 @@ fn submit_result(rc: c_int) -> Submit {
 }
 
 impl Op {
-    /// COMPARE `n` bytes at `src1` against `src2`.
+    /// Compare Pattern (DSA COMPVAL): `n` bytes at `src` against the repeating
+    /// 8-byte `pattern`. `differs()` is false when the whole range is the
+    /// pattern, so with the range's own first qword this classifies it as
+    /// constant-filled in one operation.
     ///
     /// # Safety
-    /// Both ranges must stay mapped and unchanged until the operation
-    /// completes, and `self` must not move while in flight.
-    pub(crate) unsafe fn submit_compare(
+    /// `src` must stay mapped and unchanged until the operation completes, and
+    /// `self` must not move while in flight.
+    pub(crate) unsafe fn submit_compval(
         &mut self,
-        src1: *const u8,
-        src2: *const u8,
+        src: *const u8,
+        pattern: u64,
         n: usize,
         stats: &Stats,
     ) -> Submit {
         // SAFETY: forwarded to DTO under the caller's guarantees.
-        let submit =
-            submit_result(unsafe { dto_submit_compare(self, src1.cast(), src2.cast(), n) });
+        let submit = submit_result(unsafe { dto_submit_compval(self, src.cast(), pattern, n) });
         stats.count(submit);
         submit
     }

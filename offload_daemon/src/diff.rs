@@ -457,6 +457,7 @@ pub(crate) fn diff_snapshot_slot(
                         compressed_offset: output_offset,
                         compressed_length: size_out as u32,
                         zero: false,
+                        fill: None,
                         crc32c: None,
                     });
                     output_offset += size_out as u64;

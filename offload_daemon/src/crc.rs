@@ -27,6 +27,7 @@ unsafe fn crc32c_sse42(data: &[u8]) -> u32 {
     // crc(A || B) = crc(A) * x^(8|B|) mod P  xor  crc(B).
     const LANES_FROM: usize = 3 * 1024;
     if data.len() < LANES_FROM {
+        // SAFETY: the caller checked SSE4.2 (same target_feature as this fn).
         return unsafe { crc32c_sse42_seeded(0, data) };
     }
     let lane = (data.len() / 3) & !7;
@@ -49,6 +50,7 @@ unsafe fn crc32c_sse42(data: &[u8]) -> u32 {
     let shift = xpow8n(lane);
     let mut crc = multmodp(shift, ca as u32) ^ cb as u32;
     crc = multmodp(shift, crc) ^ cc as u32;
+    // SAFETY: same target_feature as this fn; `tail` is a valid slice.
     unsafe { crc32c_sse42_seeded(crc, tail) }
 }
 
@@ -114,6 +116,29 @@ fn crc32c_table(data: &[u8]) -> u32 {
     crc
 }
 
+/// `Some(pattern)` when the whole buffer is the 8-byte `pattern` repeated
+/// (`Some(0)` is all-zero), `None` for data or a length that is not a
+/// multiple of 8. This is the CPU twin of the DSA Compare Pattern (COMPVAL)
+/// operation the classifier submits with the chunk's own first qword.
+pub(crate) fn fill_pattern(data: &[u8]) -> Option<u64> {
+    if data.len() < 8 || data.len() % 8 != 0 {
+        return None;
+    }
+    let pattern = u64::from_ne_bytes(data[..8].try_into().unwrap());
+    // SAFETY: u128 has no invalid bit patterns; align_to only splits the slice.
+    let (head, body, tail) = unsafe { data.align_to::<u128>() };
+    if head.len() % 8 == 0 {
+        let wide = u128::from(pattern) | (u128::from(pattern) << 64);
+        let bytes = pattern.to_ne_bytes();
+        let cyclic = |part: &[u8]| part.iter().zip(bytes.iter().cycle()).all(|(a, b)| a == b);
+        (cyclic(head) && body.iter().all(|&word| word == wide) && cyclic(tail)).then_some(pattern)
+    } else {
+        data.chunks_exact(8)
+            .all(|word| u64::from_ne_bytes(word.try_into().unwrap()) == pattern)
+            .then_some(pattern)
+    }
+}
+
 /// True when every byte is zero. Scans a machine word at a time; the byte
 /// iterator the original code used compiled to a one-byte-per-cycle loop
 /// under the workspace's `opt-level = "s"`.
@@ -142,7 +167,17 @@ mod tests {
         let data: Vec<u8> = (0..(3 << 20) + 77u32)
             .map(|i| (i.wrapping_mul(2_654_435_761) >> 11) as u8)
             .collect();
-        for len in [0, 1, 3071, 3072, 3079, 4096, 65_536 + 5, 1 << 20, data.len()] {
+        for len in [
+            0,
+            1,
+            3071,
+            3072,
+            3079,
+            4096,
+            65_536 + 5,
+            1 << 20,
+            data.len(),
+        ] {
             let single = unsafe { crc32c_sse42_seeded(0, &data[..len]) };
             assert_eq!(crc32c(&data[..len]), single, "len {len}");
         }
@@ -156,6 +191,35 @@ mod tests {
         // and a final inversion.
         assert_eq!(crc32c_table(b"123456789"), 0x58e3fa20);
         assert_eq!(crc32c(b"123456789"), 0x58e3fa20);
+    }
+
+    #[test]
+    fn fill_patterns() {
+        let zeros = vec![0_u8; 1 << 20];
+        assert_eq!(fill_pattern(&zeros), Some(0));
+        let poison = vec![0xcc_u8; 1 << 20];
+        assert_eq!(fill_pattern(&poison), Some(0xcccc_cccc_cccc_cccc));
+        assert_eq!(
+            fill_pattern(&poison[3..3 + 4096]),
+            Some(0xcccc_cccc_cccc_cccc)
+        );
+        let mut mixed = poison.clone();
+        mixed[(1 << 20) - 1] = 0xcd;
+        assert_eq!(fill_pattern(&mixed), None);
+        let mut stripes = vec![0_u8; 4096];
+        for (i, byte) in stripes.iter_mut().enumerate() {
+            *byte = (i % 8) as u8;
+        }
+        assert_eq!(
+            fill_pattern(&stripes),
+            Some(u64::from_ne_bytes([0, 1, 2, 3, 4, 5, 6, 7]))
+        );
+        // A phase-shifted repetition is still one repeating qword.
+        assert_eq!(
+            fill_pattern(&stripes[1..4089]),
+            Some(u64::from_ne_bytes([1, 2, 3, 4, 5, 6, 7, 0]))
+        );
+        assert_eq!(fill_pattern(&stripes[..12]), None);
     }
 
     #[test]
@@ -174,9 +238,14 @@ mod throughput {
     #[test]
     #[ignore = "timing only: cargo test -- --ignored --nocapture crc_rate"]
     fn crc_rate() {
-        let data: Vec<u8> = (0..1u32 << 20).map(|i| (i.wrapping_mul(2_654_435_761) >> 11) as u8).collect();
+        let data: Vec<u8> = (0..1u32 << 20)
+            .map(|i| (i.wrapping_mul(2_654_435_761) >> 11) as u8)
+            .collect();
         for (name, f) in [
-            ("one chain", (|d: &[u8]| unsafe { super::crc32c_sse42_seeded(0, d) }) as fn(&[u8]) -> u32),
+            (
+                "one chain",
+                (|d: &[u8]| unsafe { super::crc32c_sse42_seeded(0, d) }) as fn(&[u8]) -> u32,
+            ),
             ("three lanes", super::crc32c as fn(&[u8]) -> u32),
         ] {
             let started = std::time::Instant::now();
@@ -185,7 +254,10 @@ mod throughput {
                 acc ^= f(std::hint::black_box(&data));
             }
             let secs = started.elapsed().as_secs_f64();
-            println!("{name}: {:.1} GB/s ({acc:x})", 2048.0 * data.len() as f64 / secs / 1e9);
+            println!(
+                "{name}: {:.1} GB/s ({acc:x})",
+                2048.0 * data.len() as f64 / secs / 1e9
+            );
         }
     }
 }

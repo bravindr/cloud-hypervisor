@@ -451,18 +451,18 @@ fn main() -> Result<()> {
         } => {
             compression::set_verify_on_cpu(verify_engine == Classify::Cpu);
             run_restore(
-            &socket,
-            &input_dir,
-            resume,
-            ondemand,
-            RestoreOptions {
-                workers,
-                verify_crc,
-                populate,
-                dsa_depth,
-                hugetlb,
-            },
-        )
+                &socket,
+                &input_dir,
+                resume,
+                ondemand,
+                RestoreOptions {
+                    workers,
+                    verify_crc,
+                    populate,
+                    dsa_depth,
+                    hugetlb,
+                },
+            )
         }
     }
 }
