@@ -1,0 +1,10 @@
+08:30:31 session write-compressor_30b pages=4k turns=13 variants=cpu dsa workers=8 daemon_cpus=4,5
+08:30:37 boot to AGENT_BASE_POINT: 6643 ms
+08:31:00   checkpointed turn 5/13
+08:31:20   checkpointed turn 10/13
+08:31:33 session done; restoring
+08:31:39 restore last cpu: rc=0 167 ms, guest 'AGENT_DIFF_POINT' ok=1 after 3748 ms
+08:31:47 restore base cpu: rc=0 176 ms, guest 'AGENT_STEP_DONE 1 ' ok=1 after 5816 ms
+08:31:53 restore last dsa: rc=0 169 ms, guest 'AGENT_DIFF_POINT' ok=1 after 3952 ms
+08:32:01 restore base dsa: rc=0 169 ms, guest 'AGENT_STEP_DONE 1 ' ok=1 after 5618 ms
+08:32:02 DONE -> /home/byrnedan/chlogs/lifecycle-fill-shared/write-compressor_30b-4k-20261012_083030

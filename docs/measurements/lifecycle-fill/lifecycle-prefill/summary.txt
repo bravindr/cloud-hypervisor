@@ -1,0 +1,31 @@
+checkpoints: 44 (0 failed); restores: 8; guest turns: 20
+
+=== 2m pages: checkpoint cost per variant (all sessions) ===
+variant   base ms turn ms med    p95 turn cpu-s med    p95 total cpu-s MiB/turn med dsa fb
+cpu           538         257    260           0.35   0.36         4.2          199      0
+dsa           145         127    157           0.20   0.23         2.2          199      0
+
+=== 2m pages: per session  (turn checkpoint median ms / session daemon cpu-s) ===
+session                      turns            base             cpu             dsa          cpucrc          dsacrc
+circuit-fibsqrt_7b              10               -     257/   4.2s     127/   2.2s               -               -
+
+=== 2m pages: restores (median over sessions) ===
+  last cpu     restore     161 ms  daemon cpu  0.19 s  guest progressed 1/1
+  last dsa     restore     148 ms  daemon cpu  0.18 s  guest progressed 1/1
+  base cpu     restore     144 ms  daemon cpu  0.17 s  guest progressed 1/1
+  base dsa     restore     136 ms  daemon cpu  0.17 s  guest progressed 1/1
+
+=== 4k pages: checkpoint cost per variant (all sessions) ===
+variant   base ms turn ms med    p95 turn cpu-s med    p95 total cpu-s MiB/turn med dsa fb
+cpu           103          97    103           0.13   0.15         1.5          199      0
+dsa            96          98    104           0.13   0.14         1.4          199      0
+
+=== 4k pages: per session  (turn checkpoint median ms / session daemon cpu-s) ===
+session                      turns            base             cpu             dsa          cpucrc          dsacrc
+circuit-fibsqrt_7b              10               -      97/   1.5s      98/   1.4s               -               -
+
+=== 4k pages: restores (median over sessions) ===
+  last cpu     restore     586 ms  daemon cpu  0.23 s  guest progressed 1/1
+  last dsa     restore     172 ms  daemon cpu  0.22 s  guest progressed 1/1
+  base cpu     restore     154 ms  daemon cpu  0.20 s  guest progressed 1/1
+  base dsa     restore     154 ms  daemon cpu  0.20 s  guest progressed 1/1

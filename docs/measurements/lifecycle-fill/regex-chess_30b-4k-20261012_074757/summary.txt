@@ -1,0 +1,18 @@
+07:47:58 session regex-chess_30b pages=4k turns=24 variants=base cpu dsa cpucrc dsacrc workers=8 daemon_cpus=4,5
+07:48:03 boot to AGENT_BASE_POINT: 5401 ms
+07:48:28   checkpointed turn 5/24
+07:48:50   checkpointed turn 10/24
+07:49:10   checkpointed turn 15/24
+07:49:30   checkpointed turn 20/24
+07:49:47 session done; restoring
+07:49:51 restore last base: rc=0 175 ms, guest 'AGENT_DIFF_POINT' ok=1 after 3543 ms
+07:49:58 restore base base: rc=0 158 ms, guest 'AGENT_STEP_DONE 1 ' ok=1 after 5829 ms
+07:50:01 restore last cpu: rc=0 179 ms, guest 'AGENT_DIFF_POINT' ok=1 after 2295 ms
+07:50:07 restore base cpu: rc=0 157 ms, guest 'AGENT_STEP_DONE 1 ' ok=1 after 4584 ms
+07:50:10 restore last dsa: rc=0 181 ms, guest 'AGENT_DIFF_POINT' ok=1 after 2089 ms
+07:50:15 restore base dsa: rc=0 151 ms, guest 'AGENT_STEP_DONE 1 ' ok=1 after 4367 ms
+07:50:18 restore last cpucrc: rc=0 179 ms, guest 'AGENT_DIFF_POINT' ok=1 after 1666 ms
+07:50:23 restore base cpucrc: rc=0 153 ms, guest 'AGENT_STEP_DONE 1 ' ok=1 after 4155 ms
+07:50:28 restore last dsacrc: rc=0 183 ms, guest 'AGENT_DIFF_POINT' ok=1 after 3961 ms
+07:50:33 restore base dsacrc: rc=0 165 ms, guest 'AGENT_STEP_DONE 1 ' ok=1 after 3747 ms
+07:50:33 DONE -> /home/byrnedan/chlogs/lifecycle-fill/regex-chess_30b-4k-20261012_074757

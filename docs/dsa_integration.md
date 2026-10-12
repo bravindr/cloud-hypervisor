@@ -1161,6 +1161,95 @@ Reading:
   daemon: snapshot 1428-1609 → 475-543 ms, restore 770-791 → 633-655 ms,
   daemon CPU 1.14-1.35 → 0.31-0.45 core-s per snapshot.
 
+### 7c.2n What is in agent-guest memory, and constant chunks via DSA Compare Pattern
+
+Raw memory dumps of every turn of the seven recorded agent sessions
+(177 checkpoints, 4 GiB 4 KiB-page guests; `lifecycle.sh` with `CODEC=raw
+KEEP_ALL=1 SKIP_RESTORE=1`), scanned page by page
+(`docs/measurements/lifecycle-fill/agent_*.txt`, scripts alongside):
+
+| per checkpoint, mean over 177 | |
+|---|---|
+| never-touched holes | 86-87 % of the guest |
+| data extents the daemon classifies | 546 MiB |
+| of which allocated zero pages | 97 MiB |
+| non-zero data | 416-515 MiB |
+| of which constant-filled pages (all 0xCC) | 88 MiB, identical in every dump |
+| of which duplicates of another page | 55 MiB |
+| zero detection at 4 KiB instead of 1 MiB | 5.4-6.0 % less IAA input |
+
+The 0xCC pages are the kernel's `free_reserved_area` poison: Linux fills the
+freed initramfs (73 MiB here, ending exactly at the top of low memory and
+matching the 74 MiB initrd) and its init sections with 0xCC. With 3.9 GiB
+free the guest never reuses them, they are allocated (so not holes), and
+every full checkpoint compressed them. 90 % of them sit in whole 1 MiB
+chunks, so chunk granularity is fine (as for zeros, §3) and a chunk-level
+"constant" verdict catches them. They are never dirty, so diff checkpoints
+(§7c.2f) never carried them; only full checkpoints pay.
+
+**Implementation.** DSA Compare Pattern (COMPVAL, opcode 0x06) compares a
+range against a repeating 8-byte pattern. DTO `ch-async-ops` @ 64b7dc0c adds
+`dto_submit_compval` / `dto_batch_add_compval` (the pattern goes in the
+descriptor's second address slot, `comp_pattern`; the first aliases
+memfill's pattern and `src_addr`). The classifier now reads each chunk's
+first qword and submits one COMPVAL with it in place of the COMPARE against
+a zero buffer: a match means constant-filled (zero when the qword is 0),
+so zero and poison detection cost the same single operation. The CPU
+classifier does the same with `fill_pattern` (four u128 per branch: 36.9 vs
+37.7 GB/s for the plain zero scan from cache, 18.5 vs 19.2 GB/s from DRAM).
+A non-zero match becomes a manifest record with `fill: <pattern>` and no
+data; restore writes those chunks from a pattern buffer on the CPU, in a
+thread alongside the decompression. Verified byte-exact against a raw dump
+with both classifiers (82 fill chunks found by each).
+
+**Agent lifecycle, per-turn full checkpoint, all 7 sessions (170 turns),
+daemon on 2 cores, default (shared) pipeline, median wall / daemon CPU
+(`docs/measurements/lifecycle-fill/`):**
+
+| variant | 4 KiB guest | 2 MiB hugetlb guest |
+|---|---|---|
+| base (unmodified daemon) | 1154 ms / 1.49 s | 1507 ms / 1.91 s |
+| cpu (CPU zero+fill scan) | 132 ms / 0.12 s | 354 ms / 0.34 s |
+| dsa (COMPVAL) | 109 ms / 0.10 s | 101 ms / 0.09 s |
+| cpucrc | 159 ms / 0.14 s | 375 ms / 0.36 s |
+| dsacrc | 109 ms / 0.10 s | 114 ms / 0.10 s |
+
+DSA vs CPU: −17 % wall and −17 % CPU on 4 KiB, −71 % wall and −74 % CPU on
+2 MiB (hugetlb has no holes, so the CPU scans 3.6 GiB of zeros per turn);
+with per-chunk CRC the DSA variant costs nothing extra while the CPU one
+pays 20-27 ms and 0.02 core-s more. Stored per turn 193 → 189-190 MiB.
+
+**Same-day A/B of the fill change** (per-slot pipeline, 2 sessions, 23
+turns; `lifecycle-prefill` = daemon e4ddc9c0b just before it):
+
+| | 4 KiB cpu | 4 KiB dsa | 2 MiB cpu | 2 MiB dsa | MiB/turn |
+|---|---|---|---|---|---|
+| before fill | 97 / 0.13 | 98 / 0.13 | 257 / 0.35 | 127 / 0.20 | 199 |
+| with fill | 96 / 0.13 | 96 / 0.11 | 255 / 0.35 | 88 / 0.11 | 189-190 |
+
+The CPU variant is unchanged (it now scans the 80 MiB of poison to the end
+instead of exiting at byte 0, and IAA no longer compresses it; the two
+cancel), the DSA variant drops 31 % wall and 45 % CPU on 2 MiB and 15 % CPU
+on 4 KiB, and 5 % less is stored. On 4 KiB the wall is set by the ~90 ms
+outside compression (pause, memfd transfer, prefault, manifest), not IAA.
+
+**Pipeline layout matters with two daemon cores.** The shared queue
+(§7c.2j, now the default) runs both slots on one submitter thread; the
+lifecycle harness pins the daemon to two cores, and there the per-slot
+layout wins wall at a small CPU cost: 4 KiB cpu 121 → 96 ms, dsa 106 → 96;
+2 MiB cpu 352 → 255, dsa 98 → 88 (`lifecycle-fill-shared` vs
+`lifecycle-fill-per-slot2`; CPU 0.09 → 0.11 core-s for dsa). A second
+submitter thread for the shared queue (§7c.4) would reconcile the two; until
+then `--pipeline per-slot` is the better choice for multi-slot guests when
+the daemon has more than one core.
+
+Restores are unchanged within noise (144-186 ms, CRC verification
+included); one restore in roughly thirty takes ~500 ms with either daemon
+generation (first-mapping cost, §7c.3), unrelated to this change. The
+Oct 2 lifecycle figures (§7c.2e) were taken on the same host but read 25-30
+ms lower on the 2 MiB cells than any run today, including the pre-fill
+daemon's, so comparisons should stay within one day's runs.
+
 ### 7c.3 IOMMU first touch: measured, and the fix
 
 `dto-async-test` (fresh process, 2 GiB memfd filled by another mapping, then
@@ -1193,6 +1282,9 @@ slower first cell in each sweep (`cpu` 492 vs 331 ms, `dsa` w8 473 vs 214 ms).
   Huffman table builds run in parallel (§7c.2j: per-slot is 4-5 % faster
   at depth 16/32 for that reason).
 - The ~130 ms of a tmpfs snapshot spent outside compression (§7c.2j).
+- Use DSA COMPVAL in the diff path too (pages without a reference are
+  compared against a zero page; a COMPVAL with the page's first qword would
+  also catch poison pages, §7c.2n).
 - Mount the NVMe drive at boot (`/dev/nvme0n1` is not in fstab; it was
   mounted by hand for §7c.2k).
 - Rebalance `--workers` across slots by kept-chunk count (slot 0 had 109

@@ -1,0 +1,11 @@
+session,pages,checkpoint,variant,restore_ms,user_s,sys_s,guest_ms,guest_ok,rc
+winning-avg-corewars_30b,4k,last,base,442,0.01,0.20,3746,1,0
+winning-avg-corewars_30b,4k,base,base,154,0.01,0.19,6029,1,0
+winning-avg-corewars_30b,4k,last,cpu,155,0.01,0.20,2500,1,0
+winning-avg-corewars_30b,4k,base,cpu,164,0.01,0.19,4784,1,0
+winning-avg-corewars_30b,4k,last,dsa,162,0.01,0.19,2292,1,0
+winning-avg-corewars_30b,4k,base,dsa,154,0.01,0.18,4570,1,0
+winning-avg-corewars_30b,4k,last,cpucrc,158,0.00,0.20,2087,1,0
+winning-avg-corewars_30b,4k,base,cpucrc,153,0.01,0.19,4169,1,0
+winning-avg-corewars_30b,4k,last,dsacrc,178,0.01,0.21,1670,1,0
+winning-avg-corewars_30b,4k,base,dsacrc,155,0.00,0.20,3952,1,0

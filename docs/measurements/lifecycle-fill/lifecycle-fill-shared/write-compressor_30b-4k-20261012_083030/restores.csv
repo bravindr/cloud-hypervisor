@@ -1,0 +1,5 @@
+session,pages,checkpoint,variant,restore_ms,user_s,sys_s,guest_ms,guest_ok,rc
+write-compressor_30b,4k,last,cpu,167,0.00,0.20,3748,1,0
+write-compressor_30b,4k,base,cpu,176,0.01,0.20,5816,1,0
+write-compressor_30b,4k,last,dsa,169,0.01,0.19,3952,1,0
+write-compressor_30b,4k,base,dsa,169,0.01,0.20,5618,1,0

@@ -1,0 +1,5 @@
+session,pages,checkpoint,variant,restore_ms,user_s,sys_s,guest_ms,guest_ok,rc
+circuit-fibsqrt_7b,2m,last,cpu,168,0.04,0.14,3750,1,0
+circuit-fibsqrt_7b,2m,base,cpu,155,0.04,0.13,6019,1,0
+circuit-fibsqrt_7b,2m,last,dsa,525,0.05,0.13,3326,1,0
+circuit-fibsqrt_7b,2m,base,dsa,153,0.05,0.12,5202,1,0
