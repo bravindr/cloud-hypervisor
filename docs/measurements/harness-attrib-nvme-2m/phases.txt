@@ -1,0 +1,16 @@
+qpl-hardware-dynamic-async+cpu             w8   n=20 compress_ms med   503.1  sync_ms med   34.9
+qpl-hardware-dynamic-async+cpu             w32  n=20 compress_ms med   457.2  sync_ms med   60.7
+qpl-hardware-dynamic-async+cpucrc          w8   n=20 compress_ms med   624.5  sync_ms med   27.2
+qpl-hardware-dynamic-async+cpucrc          w32  n=20 compress_ms med   545.2  sync_ms med   59.4
+qpl-hardware-dynamic-async+dsa             w8   n=20 compress_ms med   421.9  sync_ms med   35.8
+qpl-hardware-dynamic-async+dsa             w32  n=20 compress_ms med   389.7  sync_ms med   54.5
+qpl-hardware-dynamic-async+dsacrc          w8   n=20 compress_ms med   441.6  sync_ms med   15.6
+qpl-hardware-dynamic-async+dsacrc          w32  n=20 compress_ms med   412.4  sync_ms med   35.2
+qpl-hardware-static-async+cpu              w8   n=20 compress_ms med   494.6  sync_ms med   72.8
+qpl-hardware-static-async+cpu              w32  n=20 compress_ms med   479.1  sync_ms med   76.0
+qpl-hardware-static-async+cpucrc           w8   n=20 compress_ms med   594.4  sync_ms med   73.9
+qpl-hardware-static-async+cpucrc           w32  n=20 compress_ms med   591.8  sync_ms med   76.0
+qpl-hardware-static-async+dsa              w8   n=20 compress_ms med   440.7  sync_ms med   57.8
+qpl-hardware-static-async+dsa              w32  n=20 compress_ms med   448.1  sync_ms med   59.4
+qpl-hardware-static-async+dsacrc           w8   n=20 compress_ms med   463.4  sync_ms med   39.5
+qpl-hardware-static-async+dsacrc           w32  n=20 compress_ms med   467.0  sync_ms med   40.9

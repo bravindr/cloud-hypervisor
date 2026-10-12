@@ -1088,6 +1088,46 @@ Attribution:
   (265 ms on tmpfs): the drive's write rate now paces it, and the shared
   queue and per-slot layouts finish within 3 % of each other.
 
+### 7c.2l The same ladder on a 2 MiB hugetlb guest
+
+Same as §7c.2k but the source guest is backed by 2 MiB hugetlbfs pages
+(`benchmark_attrib_nvme_2m.env`, `HUGEPAGES=1`). Restore stays on 4 KiB
+shmem for every variant so each step still changes one thing. Results:
+`docs/measurements/harness-attrib-nvme-2m/`.
+
+A hugetlbfs file has no holes, so nothing is skipped before classification:
+1619 of the 4096 chunks are zero and every one of them (1.6 GiB) has to be
+read to the end, against 82 on the 4 KiB guest. Prefault drops from 30-40
+ms to 0.5-1.2 ms per slot.
+
+**Snapshot (median / p95 ms, daemon CPU seconds):**
+
+| step | static d8 | CPU s | static d32 | CPU s | dynamic d8 | CPU s | dynamic d32 | CPU s |
+|---|---|---|---|---|---|---|---|---|
+| base | 1441 / 1543 | 1.15 | 1464 / 1489 | 1.18 | 1619 / 1633 | 1.37 | 1562 / 1573 | 1.31 |
+| cpu | 590 / 612 | 0.37 | 586 / 619 | 0.37 | 566 / 581 | 0.52 | 548 / 560 | 0.38 |
+| dsa | 521 / 532 | 0.30 | 538 / 545 | 0.29 | 485 / 494 | 0.44 | 475 / 485 | 0.29 |
+| cpucrc | 697 / 708 | 0.49 | 702 / 711 | 0.49 | 681 / 702 | 0.64 | 641 / 648 | 0.51 |
+| dsacrc | 531 / 539 | 0.32 | 537 / 545 | 0.31 | 489 / 496 | 0.46 | 477 / 486 | 0.31 |
+
+**Restore, depth 32 (median / p95 ms, CPU s):** base / cpu / dsa
+783-786 / 791-793 (static) and 761-766 / 767-771 (dynamic), 0.72-0.75
+core-s; cpucrc 913 / 921 and 890 / 897 at 0.85-0.87; dsacrc 787 / 799 and
+768 / 775 at 0.73-0.75.
+
+Attribution on this guest:
+
+- **The DSA zero check now pays:** dsa vs cpu is 8-14 % less wall (49-81
+  ms) and 0.07-0.09 core-s less CPU (15-24 %). The CPU scans 1.6 GiB of
+  zeros on the thread that feeds IAA; DSA takes that off the critical path.
+- **With CRC the gap widens:** dsacrc vs cpucrc is 23-28 % less wall
+  (165-192 ms) and 35-39 % less daemon CPU (0.17-0.20 core-s). dsacrc is
+  within 10 ms of dsa, so CRC on DSA stays free.
+- **Software is still the largest step:** base → cpu is 2.4-2.9x on wall
+  and 3.1-3.4x on CPU.
+- **Restore** behaves as on the 4 KiB guest: CPU verification adds 125-127
+  ms and 0.13 core-s, DSA verification 2-3 ms and ~0.01 core-s.
+
 ### 7c.3 IOMMU first touch: measured, and the fix
 
 `dto-async-test` (fresh process, 2 GiB memfd filled by another mapping, then
