@@ -223,11 +223,15 @@ enum Mode {
         #[arg(long, default_value_t = 8)]
         diff_depth: usize,
         /// Async QPL codecs: `shared` feeds every slot's classified chunks
-        /// into one queue and one IAA job pool of --workers jobs;
-        /// `per-slot` gives each slot its own thread and an even share of
-        /// the jobs (the original layout).
+        /// into one queue drained by --submitters threads that share the
+        /// --workers IAA jobs; `per-slot` gives each slot its own thread and
+        /// an even share of the jobs (the original layout).
         #[arg(long, default_value = "shared")]
         pipeline: Pipeline,
+        /// Submitter threads of the shared pipeline (each classifies a share
+        /// of the slots and drives --workers / N IAA jobs).
+        #[arg(long, default_value_t = 2)]
+        submitters: usize,
     },
     /// Stay resident: every connection from CH (send-migration with
     /// memory_mode=memfds,preserve_source=on) is one checkpoint, written to
@@ -248,6 +252,9 @@ enum Mode {
         /// IAA jobs in flight, shared by all slots.
         #[arg(long, default_value_t = default_workers())]
         workers: usize,
+        /// Submitter threads sharing the IAA jobs (full checkpoints).
+        #[arg(long, default_value_t = 2)]
+        submitters: usize,
         #[arg(long, default_value_t = default_classify())]
         classify: Classify,
         #[arg(long, default_value_t = 32)]
@@ -339,6 +346,8 @@ struct CompressionOptions {
     diff: DiffOptions,
     #[cfg_attr(not(feature = "qpl"), allow(dead_code))]
     pipeline: Pipeline,
+    #[cfg_attr(not(feature = "qpl"), allow(dead_code))]
+    submitters: usize,
 }
 
 #[derive(Clone, Copy)]
@@ -376,6 +385,7 @@ fn main() -> Result<()> {
             diff_batch,
             diff_depth,
             pipeline,
+            submitters,
         } => {
             let compression = compression.map(|codec| CompressionOptions {
                 codec,
@@ -396,6 +406,7 @@ fn main() -> Result<()> {
                     depth: diff_depth,
                 },
                 pipeline,
+                submitters,
             });
             run_snapshot(&socket, &output_dir, compression.as_ref())
         }
@@ -405,6 +416,7 @@ fn main() -> Result<()> {
             compression,
             chunk_size,
             workers,
+            submitters,
             classify,
             dsa_depth,
             crc,
@@ -435,6 +447,7 @@ fn main() -> Result<()> {
                 },
                 keep_only_last,
                 dedup_image,
+                submitters,
             },
         ),
         Mode::Restore {
@@ -1350,6 +1363,7 @@ struct ServeOptions {
     codec: Codec,
     chunk_size: usize,
     workers: usize,
+    submitters: usize,
     accel: AccelOptions,
     reference_dir: Option<PathBuf>,
     diff: DiffOptions,
@@ -1369,6 +1383,7 @@ fn run_serve(socket_path: &Path, output_root: &Path, options: ServeOptions) -> R
         codec: options.codec,
         chunk_size: options.chunk_size,
         workers: options.workers,
+        submitters: options.submitters,
         accel: options.accel,
         reference_dir: options.reference_dir,
         diff: options.diff,
@@ -1480,11 +1495,18 @@ fn dump_shared(
         )
         .collect();
     let chunk_size_u32 = compression::validate_chunk_size(options.chunk_size)?;
-    let mut pool = qpl::JobPool::new(qpl::ExecutionPath::Hardware, huffman, options.workers)
-        .map_err(compression::Error::from)?;
+    let submitters = options.submitters.max(1);
+    let per_pool = options.workers.div_ceil(submitters).max(1);
+    let mut pools = Vec::with_capacity(submitters);
+    for _ in 0..submitters {
+        pools.push(
+            qpl::JobPool::new(qpl::ExecutionPath::Hardware, huffman, per_pool)
+                .map_err(compression::Error::from)?,
+        );
+    }
     let stats = compression::compress_slots(
         &jobs,
-        &mut pool,
+        &mut pools,
         options.codec,
         options.chunk_size,
         chunk_size_u32,

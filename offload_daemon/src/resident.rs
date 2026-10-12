@@ -63,6 +63,8 @@ pub(crate) struct ResidentConfig {
     pub codec: Codec,
     pub chunk_size: usize,
     pub workers: usize,
+    /// Submitter threads sharing the IAA jobs on full checkpoints.
+    pub submitters: usize,
     pub accel: AccelOptions,
     /// Write dirty-log diffs against a reference kept in this directory.
     pub reference_dir: Option<PathBuf>,
@@ -124,7 +126,8 @@ struct SlotState {
 pub(crate) struct Resident {
     config: ResidentConfig,
     chunk_size_u32: u32,
-    pool: JobPool,
+    /// One IAA job pool per submitter thread; diffs use the first.
+    pools: Vec<JobPool>,
     slots: Vec<SlotState>,
     last_dir: Option<PathBuf>,
     index: Option<Index>,
@@ -174,11 +177,21 @@ impl Resident {
     pub(crate) fn new(config: ResidentConfig) -> Result<Self, Error> {
         let huffman: HuffmanMode = config.codec.async_huffman_mode().ok_or(Error::Codec)?;
         let chunk_size_u32 = validate_chunk_size(config.chunk_size)?;
-        let pool = JobPool::new(ExecutionPath::Hardware, huffman, config.workers)?;
+        let submitters = config.submitters.max(1);
+        let pools = (0..submitters)
+            .map(|_| {
+                JobPool::new(
+                    ExecutionPath::Hardware,
+                    huffman,
+                    config.workers.div_ceil(submitters).max(1),
+                )
+            })
+            .collect::<Result<Vec<_>, _>>()?;
         info!(
-            "resident: codec={} workers={} diff={}",
+            "resident: codec={} workers={} submitters={} diff={}",
             config.codec,
             config.workers,
+            submitters,
             if config.reference_dir.is_some() {
                 config.diff.compare.to_string()
             } else {
@@ -203,7 +216,7 @@ impl Resident {
         Ok(Self {
             config,
             chunk_size_u32,
-            pool,
+            pools,
             slots: Vec::new(),
             last_dir: None,
             index,
@@ -306,7 +319,7 @@ impl Resident {
         }
         let prepare = started.elapsed();
 
-        // 2. every slot through one ready queue and the one job pool
+        // 2. every slot through one ready queue and the submitter threads' pools
         let t = Instant::now();
         let paths: Vec<(PathBuf, PathBuf)> = work
             .iter()
@@ -332,7 +345,7 @@ impl Resident {
             .collect();
         let stats = compress_slots(
             &jobs,
-            &mut self.pool,
+            &mut self.pools,
             self.config.codec,
             self.config.chunk_size,
             self.chunk_size_u32,
@@ -453,7 +466,7 @@ impl Resident {
         }
 
         let t = Instant::now();
-        let compressed = compress_gathers(&mut self.pool, &items, dir, self.config.chunk_size)?;
+        let compressed = compress_gathers(&mut self.pools[0], &items, dir, self.config.chunk_size)?;
         let dedup_image = self.index.as_ref().map(|i| i.image.clone());
         for (item, (chunks, bytes)) in items.iter().zip(compressed) {
             stats.output_bytes += bytes;

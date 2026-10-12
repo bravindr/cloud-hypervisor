@@ -204,6 +204,12 @@ pub(crate) struct JobPool {
     slots: Vec<PoolSlot>,
 }
 
+// SAFETY: a pool is driven by one thread at a time (compress_slots gives
+// each submitter thread its own); QPL jobs are heap buffers with no thread
+// affinity, and the device is addressed through them, not through the
+// submitting thread.
+unsafe impl Send for JobPool {}
+
 impl JobPool {
     pub(crate) fn new(
         path: ExecutionPath,

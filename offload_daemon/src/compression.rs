@@ -9,6 +9,7 @@ use std::mem;
 use std::os::fd::AsRawFd;
 use std::os::unix::fs::FileExt;
 use std::path::Path;
+use std::slice;
 use std::str::FromStr;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
@@ -22,7 +23,7 @@ use zstd::bulk::{compress as zstd_compress, decompress as zstd_decompress};
 
 use crate::classify::{AccelOptions, Error as ClassifyError};
 #[cfg(feature = "qpl")]
-use crate::classify::{Classifier, Verdict};
+use crate::classify::{Classifier, Report, Verdict};
 use crate::crc::{crc32c, fill_pattern};
 #[cfg(feature = "dto")]
 use crate::dto::{Op as DtoOp, Poll as DtoPoll, Stats as DtoStats, Submit as DtoSubmit};
@@ -534,21 +535,26 @@ pub(crate) struct SlotJob<'a> {
     pub manifest_path: &'a Path,
 }
 
-/// Per-slot state inside `compress_slots`.
+/// Per-slot output state, shared by the submitter threads: the compressed
+/// file grows by atomic reservation, records are collected in any order and
+/// sorted when the manifest is written.
 #[cfg(feature = "qpl")]
-struct SlotRun {
-    output: File,
+struct SlotOut {
+    output_offset: u64,
+    /// Output bytes already handed to writeback.
+    flushed: u64,
+    records: Vec<ChunkRecord>,
+}
+
+/// One slot's classification side, owned by one submitter thread.
+#[cfg(feature = "qpl")]
+struct SlotScan {
+    slot: usize,
     chunk_has_data: Vec<bool>,
     chunk_count: usize,
     next_chunk: usize,
     classifier: Classifier,
-    records: Vec<ChunkRecord>,
-    output_offset: u64,
-    hole_chunks: usize,
-    data_bytes: usize,
     staged: VecDeque<Verdict>,
-    /// Output bytes already handed to writeback.
-    flushed: u64,
 }
 
 /// Start writeback of a slot's compressed output once this much is pending,
@@ -557,180 +563,116 @@ struct SlotRun {
 #[cfg(feature = "qpl")]
 const WRITEBACK_STEP: u64 = 64 << 20;
 
-/// The full-checkpoint pipeline for any number of slots sharing one IAA job
-/// pool. Every slot has its own classifier (DSA COMPARE ring or CPU scan),
-/// running ahead of compression; their verdicts go into one ready queue that
-/// drains into whichever IAA job is free, so no job idles while any slot
-/// still has chunks to compress (with a pool split per slot, the slot with
-/// less to compress finishes early and strands its share of the jobs).
+/// The full-checkpoint pipeline for any number of slots through one ready
+/// queue drained by `pools.len()` submitter threads. Every slot has its own
+/// classifier (DSA COMPVAL ring or CPU scan), owned by one of the threads
+/// and running ahead of compression; data verdicts go into the shared queue
+/// and whichever thread has a free IAA job takes the next one, so no job
+/// idles while any slot still has chunks to compress. Zero, fill and hole
+/// chunks never enter the queue: their records are written by the
+/// classifying thread. Two submitters put the CPU side of compression
+/// (dynamic Huffman table builds, output writes, DSA polling) on two cores,
+/// which a single-thread shared queue could not use (section 7c.2n).
 #[cfg(feature = "qpl")]
 pub(crate) fn compress_slots(
     jobs: &[SlotJob<'_>],
-    pool: &mut QplJobPool,
+    pools: &mut [QplJobPool],
     codec: Codec,
     chunk_size: usize,
     chunk_size_u32: u32,
     accel: AccelOptions,
 ) -> Result<Vec<CompressionStats>, Error> {
     let started = Instant::now();
-    let mut runs: Vec<SlotRun> = Vec::with_capacity(jobs.len());
-    for job in jobs {
-        let output = OpenOptions::new()
-            .create(true)
-            .truncate(true)
-            .read(true)
-            .write(true)
-            .open(job.data_path)
-            .map_err(Error::Write)?;
+    assert!(
+        !pools.is_empty(),
+        "compress_slots needs at least one job pool"
+    );
+    let submitters = pools.len();
+    let mut outputs: Vec<File> = Vec::with_capacity(jobs.len());
+    let mut outs: Vec<Mutex<SlotOut>> = Vec::with_capacity(jobs.len());
+    let mut hole_chunks = Vec::with_capacity(jobs.len());
+    let mut chunk_counts = Vec::with_capacity(jobs.len());
+    let mut scans: Vec<Vec<SlotScan>> = (0..submitters).map(|_| Vec::new()).collect();
+    for (s, job) in jobs.iter().enumerate() {
+        outputs.push(
+            OpenOptions::new()
+                .create(true)
+                .truncate(true)
+                .read(true)
+                .write(true)
+                .open(job.data_path)
+                .map_err(Error::Write)?,
+        );
         let chunk_count = job.source_size.div_ceil(chunk_size as u64) as usize;
         let mut chunk_has_data = vec![false; chunk_count];
         for &(start, end) in job.extents {
             chunk_has_data[start / chunk_size..end.div_ceil(chunk_size).min(chunk_count)]
                 .fill(true);
         }
-        runs.push(SlotRun {
-            output,
-            hole_chunks: chunk_has_data.iter().filter(|has| !**has).count(),
-            data_bytes: job.extents.iter().map(|(start, end)| end - start).sum(),
+        hole_chunks.push(chunk_has_data.iter().filter(|has| !**has).count());
+        chunk_counts.push(chunk_count);
+        outs.push(Mutex::new(SlotOut {
+            output_offset: 0,
+            flushed: 0,
+            records: Vec::with_capacity(chunk_count),
+        }));
+        // Slots go round-robin to the submitter threads.
+        scans[s % submitters].push(SlotScan {
+            slot: s,
             chunk_has_data,
             chunk_count,
             next_chunk: 0,
             classifier: Classifier::new(accel, chunk_size)?,
-            records: Vec::with_capacity(chunk_count),
-            output_offset: 0,
             staged: VecDeque::new(),
-            flushed: 0,
         });
     }
 
-    // (slot, verdict) waiting for a free IAA job, from every slot.
-    let mut ready: VecDeque<(usize, Verdict)> = VecDeque::new();
-    let mut active: Vec<Option<(usize, Verdict)>> = (0..pool.capacity()).map(|_| None).collect();
-    let mut active_count = 0_usize;
-    // Bound how far classification may run ahead of the pool.
-    let ready_limit = pool.capacity().max(accel.dsa_depth) * 2;
-    let mut turn = 0_usize;
-
-    loop {
-        let mut made_progress = false;
-
-        // 1. classify: slots take turns so all of them keep the queue fed
-        for k in 0..runs.len() {
-            let s = (turn + k) % runs.len();
-            let job = &jobs[s];
-            let run = &mut runs[s];
-            while run.next_chunk < run.chunk_count && ready.len() < ready_limit {
-                let offset = run.next_chunk * chunk_size;
-                let length = (job.source_size as usize - offset).min(chunk_size);
-                if !run.chunk_has_data[run.next_chunk] {
-                    ready.push_back((
-                        s,
-                        Verdict {
-                            offset,
-                            length,
-                            zero: true,
-                            fill: None,
-                            crc32c: None,
-                        },
-                    ));
-                    run.next_chunk += 1;
-                    made_progress = true;
-                    continue;
-                }
-                if !run.classifier.push(job.mapping, offset, length)? {
-                    break;
-                }
-                run.next_chunk += 1;
-                made_progress = true;
-            }
-            run.classifier.drain(job.mapping, &mut run.staged)?;
-            while let Some(verdict) = run.staged.pop_front() {
-                ready.push_back((s, verdict));
-                made_progress = true;
-            }
-        }
-        turn = turn.wrapping_add(1);
-
-        // 2. compress: one pool for every slot
-        for (index, entry) in active.iter_mut().enumerate() {
-            if let Some((s, verdict)) = entry.as_ref() {
-                let Some(output_size) = pool.poll(index)? else {
-                    continue;
-                };
-                let run = &mut runs[*s];
-                let compressed_length =
-                    u32::try_from(output_size).map_err(|_| Error::ChunkTooLarge)?;
-                run.output
-                    .write_all_at(pool.output(index, output_size), run.output_offset)
-                    .map_err(Error::Write)?;
-                run.records.push(ChunkRecord {
-                    uncompressed_offset: verdict.offset as u64,
-                    uncompressed_length: verdict.length as u32,
-                    compressed_offset: run.output_offset,
-                    compressed_length,
-                    zero: false,
-                    fill: None,
-                    crc32c: verdict.crc32c,
-                });
-                run.output_offset += output_size as u64;
-                if run.output_offset - run.flushed >= WRITEBACK_STEP {
-                    // SAFETY: plain syscall on an owned fd; only starts
-                    // writeback (the fsync before the ACK is unchanged).
-                    unsafe {
-                        libc::sync_file_range(
-                            run.output.as_raw_fd(),
-                            run.flushed as libc::off64_t,
-                            (run.output_offset - run.flushed) as libc::off64_t,
-                            libc::SYNC_FILE_RANGE_WRITE,
-                        );
+    let total_capacity: usize = pools.iter().map(QplJobPool::capacity).sum();
+    // Bound how far classification may run ahead of the pools.
+    let ready_limit = total_capacity.max(accel.dsa_depth) * 2;
+    let shared = Shared {
+        ready: Mutex::new(VecDeque::new()),
+        ready_limit,
+        producers_left: AtomicUsize::new(submitters),
+        abort: AtomicBool::new(false),
+        chunk_size,
+    };
+    let (jobs_ref, outputs_ref, outs_ref, shared_ref) = (&jobs, &outputs, &outs, &shared);
+    let outcomes: Vec<SubmitOutcome> = thread::scope(|scope| {
+        let handles: Vec<_> = pools
+            .iter_mut()
+            .zip(scans)
+            .map(|(pool, mut scans)| {
+                scope.spawn(move || {
+                    let result = submit_loop(
+                        jobs_ref,
+                        outputs_ref,
+                        outs_ref,
+                        shared_ref,
+                        pool,
+                        &mut scans,
+                    );
+                    if result.is_err() {
+                        shared_ref.abort.store(true, Ordering::Relaxed);
                     }
-                    run.flushed = run.output_offset;
-                }
-                *entry = None;
-                active_count -= 1;
-                made_progress = true;
-            }
-            if entry.is_none() {
-                while let Some((s, verdict)) = ready.pop_front() {
-                    if verdict.zero || verdict.fill.is_some() {
-                        runs[s].records.push(ChunkRecord {
-                            uncompressed_offset: verdict.offset as u64,
-                            uncompressed_length: verdict.length as u32,
-                            compressed_offset: 0,
-                            compressed_length: 0,
-                            zero: verdict.zero,
-                            fill: verdict.fill,
-                            crc32c: None,
-                        });
-                        made_progress = true;
-                        continue;
-                    }
-                    let input = jobs[s]
-                        .mapping
-                        .ptr(verdict.offset, verdict.length)
-                        .map_err(Error::Read)?;
-                    // SAFETY: the mappings outlive the pool and the VM is
-                    // paused for the whole snapshot, so the input is stable
-                    // until the job completes.
-                    unsafe { pool.submit_compress_from(index, input, verdict.length)? };
-                    *entry = Some((s, verdict));
-                    active_count += 1;
-                    made_progress = true;
-                    break;
-                }
-            }
-        }
-
-        if active_count == 0
-            && ready.is_empty()
-            && runs
-                .iter()
-                .all(|r| r.next_chunk == r.chunk_count && r.classifier.is_idle())
-        {
-            break;
-        }
-        if !made_progress {
-            thread::yield_now();
+                    let reports = scans
+                        .iter()
+                        .map(|scan| (scan.slot, scan.classifier.report()))
+                        .collect();
+                    (result, reports)
+                })
+            })
+            .collect();
+        handles
+            .into_iter()
+            .map(|handle| handle.join().map_err(|_| Error::WorkerPanic))
+            .collect::<Result<Vec<_>, Error>>()
+    })?;
+    let mut reports: Vec<Option<Report>> = vec![None; jobs.len()];
+    for (result, thread_reports) in outcomes {
+        result?;
+        for (slot, report) in thread_reports {
+            reports[slot] = Some(report);
         }
     }
 
@@ -739,9 +681,9 @@ pub(crate) fn compress_slots(
     // fsync per file in its own thread lets the device work on all of them.
     let synced = Instant::now();
     thread::scope(|scope| {
-        let handles: Vec<_> = runs
+        let handles: Vec<_> = outputs
             .iter()
-            .map(|run| scope.spawn(|| run.output.sync_all()))
+            .map(|output| scope.spawn(|| output.sync_all()))
             .collect();
         handles
             .into_iter()
@@ -749,9 +691,10 @@ pub(crate) fn compress_slots(
     })
     .map_err(Error::Write)?;
     let sync_ms = synced.elapsed().as_secs_f64() * 1e3;
-    let mut stats = Vec::with_capacity(runs.len());
-    for (job, run) in jobs.iter().zip(runs) {
-        let mut records = run.records;
+    let mut stats = Vec::with_capacity(jobs.len());
+    for (s, job) in jobs.iter().enumerate() {
+        let out = outs[s].get_mut().unwrap();
+        let mut records = mem::take(&mut out.records);
         records.sort_unstable_by_key(|record| record.uncompressed_offset);
         let zero_chunks = records.iter().filter(|record| record.zero).count();
         let fill_chunks = records
@@ -767,17 +710,18 @@ pub(crate) fn compress_slots(
         };
         let manifest_bytes = serde_json::to_vec_pretty(&manifest).map_err(Error::WriteManifest)?;
         fs::write(job.manifest_path, manifest_bytes).map_err(Error::Write)?;
-        let report = run.classifier.report();
+        let report = reports[s].unwrap_or_default();
+        let data_bytes: usize = job.extents.iter().map(|(start, end)| end - start).sum();
         log::info!(
-            "classify={} prefault={} zero_chunks={zero_chunks}/{} fill_chunks={fill_chunks} hole_chunks={} data_mib={} dsa submitted={} fallback={} failed={} cpu_scans={} crc={} slots_sharing_pool={} compress_ms={:.1} sync_ms={sync_ms:.1}",
+            "classify={} prefault={} zero_chunks={zero_chunks}/{} fill_chunks={fill_chunks} hole_chunks={} data_mib={} dsa submitted={} fallback={} failed={} cpu_scans={} crc={} slots_sharing_pool={} submitters={submitters} compress_ms={:.1} sync_ms={sync_ms:.1}",
             accel.classify,
             job.prefault.map_or_else(
                 || "off".to_owned(),
                 |elapsed| format!("{:.1}ms", elapsed.as_secs_f64() * 1e3)
             ),
-            run.chunk_count,
-            run.hole_chunks,
-            run.data_bytes >> 20,
+            chunk_counts[s],
+            hole_chunks[s],
+            data_bytes >> 20,
             report.dsa_submitted,
             report.dsa_fallback,
             report.dsa_failed,
@@ -788,12 +732,196 @@ pub(crate) fn compress_slots(
         );
         stats.push(CompressionStats {
             input_bytes: job.source_size,
-            output_bytes: run.output_offset,
-            chunks: run.chunk_count,
+            output_bytes: out.output_offset,
+            chunks: chunk_counts[s],
             elapsed,
         });
     }
     Ok(stats)
+}
+
+/// What one submitter thread hands back: its result and the classifier
+/// reports of the slots it owned.
+#[cfg(feature = "qpl")]
+type SubmitOutcome = (Result<(), Error>, Vec<(usize, Report)>);
+
+/// State shared by the submitter threads of one `compress_slots` call.
+#[cfg(feature = "qpl")]
+struct Shared {
+    /// (slot, data verdict) waiting for a free IAA job, from every slot.
+    ready: Mutex<VecDeque<(usize, Verdict)>>,
+    ready_limit: usize,
+    /// Threads whose classifiers still have chunks to produce.
+    producers_left: AtomicUsize,
+    /// Set by a thread that failed, so the others stop.
+    abort: AtomicBool,
+    chunk_size: usize,
+}
+
+/// One submitter thread: classifies its own slots into the shared queue and
+/// drains the queue into its own IAA jobs until every producer is done and
+/// the queue is empty.
+#[cfg(feature = "qpl")]
+fn submit_loop(
+    jobs: &[SlotJob<'_>],
+    outputs: &[File],
+    outs: &[Mutex<SlotOut>],
+    shared: &Shared,
+    pool: &mut QplJobPool,
+    scans: &mut [SlotScan],
+) -> Result<(), Error> {
+    let chunk_size = shared.chunk_size;
+    let mut active: Vec<Option<(usize, Verdict)>> = (0..pool.capacity()).map(|_| None).collect();
+    let mut active_count = 0_usize;
+    let mut producing = true;
+    let mut turn = 0_usize;
+    let record_no_data = |slot: usize, verdict: &Verdict| {
+        outs[slot].lock().unwrap().records.push(ChunkRecord {
+            uncompressed_offset: verdict.offset as u64,
+            uncompressed_length: verdict.length as u32,
+            compressed_offset: 0,
+            compressed_length: 0,
+            zero: verdict.zero,
+            fill: verdict.fill,
+            crc32c: None,
+        });
+    };
+
+    loop {
+        if shared.abort.load(Ordering::Relaxed) {
+            return Ok(());
+        }
+        let mut made_progress = false;
+
+        // 1. classify own slots, taking turns so all of them keep the queue fed
+        if producing {
+            for k in 0..scans.len() {
+                let scan = &mut scans[(turn + k) % scans.len()];
+                let job = &jobs[scan.slot];
+                while scan.next_chunk < scan.chunk_count
+                    && shared.ready.lock().unwrap().len() < shared.ready_limit
+                {
+                    let offset = scan.next_chunk * chunk_size;
+                    let length = (job.source_size as usize - offset).min(chunk_size);
+                    if !scan.chunk_has_data[scan.next_chunk] {
+                        record_no_data(
+                            scan.slot,
+                            &Verdict {
+                                offset,
+                                length,
+                                zero: true,
+                                fill: None,
+                                crc32c: None,
+                            },
+                        );
+                        scan.next_chunk += 1;
+                        made_progress = true;
+                        continue;
+                    }
+                    if !scan.classifier.push(job.mapping, offset, length)? {
+                        break;
+                    }
+                    scan.next_chunk += 1;
+                    made_progress = true;
+                }
+                scan.classifier.drain(job.mapping, &mut scan.staged)?;
+                if !scan.staged.is_empty() {
+                    let mut ready = shared.ready.lock().unwrap();
+                    while let Some(verdict) = scan.staged.pop_front() {
+                        if verdict.zero || verdict.fill.is_some() {
+                            record_no_data(scan.slot, &verdict);
+                        } else {
+                            ready.push_back((scan.slot, verdict));
+                        }
+                    }
+                    made_progress = true;
+                }
+            }
+            turn = turn.wrapping_add(1);
+            if scans
+                .iter()
+                .all(|scan| scan.next_chunk == scan.chunk_count && scan.classifier.is_idle())
+            {
+                producing = false;
+                shared.producers_left.fetch_sub(1, Ordering::AcqRel);
+            }
+        }
+
+        // 2. compress: this thread's jobs, fed from the shared queue
+        for (index, entry) in active.iter_mut().enumerate() {
+            if let Some((s, verdict)) = entry.as_ref() {
+                let Some(output_size) = pool.poll(index)? else {
+                    continue;
+                };
+                let compressed_length =
+                    u32::try_from(output_size).map_err(|_| Error::ChunkTooLarge)?;
+                let compressed_offset = {
+                    let mut out = outs[*s].lock().unwrap();
+                    let offset = out.output_offset;
+                    out.output_offset += output_size as u64;
+                    out.records.push(ChunkRecord {
+                        uncompressed_offset: verdict.offset as u64,
+                        uncompressed_length: verdict.length as u32,
+                        compressed_offset: offset,
+                        compressed_length,
+                        zero: false,
+                        fill: None,
+                        crc32c: verdict.crc32c,
+                    });
+                    offset
+                };
+                outputs[*s]
+                    .write_all_at(pool.output(index, output_size), compressed_offset)
+                    .map_err(Error::Write)?;
+                let mut out = outs[*s].lock().unwrap();
+                if out.output_offset - out.flushed >= WRITEBACK_STEP {
+                    // SAFETY: plain syscall on an owned fd; only starts
+                    // writeback of whatever is dirty in the range (the fsync
+                    // before the ACK covers the rest).
+                    unsafe {
+                        libc::sync_file_range(
+                            outputs[*s].as_raw_fd(),
+                            out.flushed as libc::off64_t,
+                            (out.output_offset - out.flushed) as libc::off64_t,
+                            libc::SYNC_FILE_RANGE_WRITE,
+                        );
+                    }
+                    out.flushed = out.output_offset;
+                }
+                drop(out);
+                *entry = None;
+                active_count -= 1;
+                made_progress = true;
+            }
+            if entry.is_none() {
+                let next = shared.ready.lock().unwrap().pop_front();
+                if let Some((s, verdict)) = next {
+                    let input = jobs[s]
+                        .mapping
+                        .ptr(verdict.offset, verdict.length)
+                        .map_err(Error::Read)?;
+                    // SAFETY: the mappings outlive the pools and the VM is
+                    // paused for the whole snapshot, so the input is stable
+                    // until the job completes.
+                    unsafe { pool.submit_compress_from(index, input, verdict.length)? };
+                    *entry = Some((s, verdict));
+                    active_count += 1;
+                    made_progress = true;
+                }
+            }
+        }
+
+        if active_count == 0
+            && !producing
+            && shared.producers_left.load(Ordering::Acquire) == 0
+            && shared.ready.lock().unwrap().is_empty()
+        {
+            return Ok(());
+        }
+        if !made_progress {
+            thread::yield_now();
+        }
+    }
 }
 
 /// A mapped slot, its data extents and the time spent populating them.
@@ -849,7 +977,14 @@ pub(crate) fn compress_mapped(
         data_path,
         manifest_path,
     };
-    let mut stats = compress_slots(&[job], pool, codec, chunk_size, chunk_size_u32, accel)?;
+    let mut stats = compress_slots(
+        &[job],
+        slice::from_mut(pool),
+        codec,
+        chunk_size,
+        chunk_size_u32,
+        accel,
+    )?;
     Ok(stats.remove(0))
 }
 
