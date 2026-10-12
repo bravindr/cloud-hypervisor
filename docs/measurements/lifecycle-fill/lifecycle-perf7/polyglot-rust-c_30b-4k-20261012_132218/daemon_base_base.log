@@ -1,0 +1,5 @@
+[2026-10-12T20:22:25Z INFO  offload_daemon] Offload daemon listening at "/home/byrnedan/chlogs/lifecycle-perf7/polyglot-rust-c_30b-4k-20261012_132218/offload.sock"
+[2026-10-12T20:22:25Z INFO  offload_daemon] CH connected; starting snapshot receive
+[2026-10-12T20:22:26Z INFO  offload_daemon] Compressed slot 1: codec=qpl-hardware-static-async, chunks=1024, input=1073741824 bytes, output=145027713 bytes, ratio=0.135, throughput=2.484 GiB/s
+[2026-10-12T20:22:27Z INFO  offload_daemon] Compressed slot 0: codec=qpl-hardware-static-async, chunks=3072, input=3221225472 bytes, output=56761039 bytes, ratio=0.018, throughput=2.595 GiB/s
+[2026-10-12T20:22:27Z INFO  offload_daemon] Snapshot persisted to "/mnt/chsnap/lifecycle/polyglot-rust-c_30b-4k/base/base"

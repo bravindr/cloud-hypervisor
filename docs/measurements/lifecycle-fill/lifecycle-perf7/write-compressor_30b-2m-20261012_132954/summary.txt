@@ -1,0 +1,16 @@
+13:29:54 session write-compressor_30b pages=2m turns=13 variants=base cpu dsa cpucrc dsacrc workers=8 daemon_cpus=4,5 governor=performance
+13:30:00 boot to AGENT_BASE_POINT: 5907 ms
+13:30:25   checkpointed turn 5/13
+13:30:45   checkpointed turn 10/13
+13:30:58 session done; restoring
+13:31:03 restore last base: rc=0 131 ms, guest 'AGENT_DIFF_POINT' ok=1 after 3257 ms
+13:31:11 restore base base: rc=0 133 ms, guest 'AGENT_STEP_DONE 1 ' ok=1 after 5906 ms
+13:31:16 restore last cpu: rc=0 123 ms, guest 'AGENT_DIFF_POINT' ok=1 after 1839 ms
+13:31:23 restore base cpu: rc=0 112 ms, guest 'AGENT_STEP_DONE 1 ' ok=1 after 4683 ms
+13:31:27 restore last dsa: rc=0 155 ms, guest 'AGENT_DIFF_POINT' ok=1 after 1634 ms
+13:31:33 restore base dsa: rc=0 119 ms, guest 'AGENT_STEP_DONE 1 ' ok=1 after 4072 ms
+13:31:39 restore last cpucrc: rc=0 120 ms, guest 'AGENT_DIFF_POINT' ok=1 after 3868 ms
+13:31:45 restore base cpucrc: rc=0 122 ms, guest 'AGENT_STEP_DONE 1 ' ok=1 after 4071 ms
+13:31:51 restore last dsacrc: rc=0 116 ms, guest 'AGENT_DIFF_POINT' ok=1 after 3461 ms
+13:31:57 restore base dsacrc: rc=0 115 ms, guest 'AGENT_STEP_DONE 1 ' ok=1 after 3668 ms
+13:31:57 DONE -> /home/byrnedan/chlogs/lifecycle-perf7/write-compressor_30b-2m-20261012_132954

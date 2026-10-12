@@ -1,0 +1,9 @@
+[2026-10-12T20:38:54.378101Z INFO  offload_daemon] submitters=2 (affinity: 2 cpus, cap 8 = --workers)
+[2026-10-12T20:38:54.378195Z INFO  offload_daemon] Offload daemon listening at "/home/byrnedan/chlogs/lifecycle-perf7/path-tracing_30b-2m-20261012_133845/offload.sock"
+[2026-10-12T20:38:54.428641Z INFO  offload_daemon] CH connected; starting snapshot receive
+[2026-10-12T20:38:54.486780Z INFO  offload_daemon::compression] classify=dsa prefault=1.1ms zero_chunks=2911/3072 fill_chunks=80 hole_chunks=0 data_mib=3072 dsa submitted=3072 fallback=0 failed=0 cpu_scans=0 crc=false slots_sharing_pool=2 submitters=2 compress_ms=44.5 sync_ms=0.1
+[2026-10-12T20:38:54.487223Z INFO  offload_daemon::compression] classify=dsa prefault=0.3ms zero_chunks=743/1024 fill_chunks=0 hole_chunks=0 data_mib=1024 dsa submitted=1024 fallback=0 failed=0 cpu_scans=0 crc=false slots_sharing_pool=2 submitters=2 compress_ms=44.5 sync_ms=0.1
+[2026-10-12T20:38:54.487231Z INFO  offload_daemon] shared pipeline: prepare 11.3 ms (map+extents+prefault+pools), compress 46.3 ms, submitters=2
+[2026-10-12T20:38:54.487233Z INFO  offload_daemon] Compressed slot 0: codec=qpl-hardware-static-async, chunks=3072, input=3221225472 bytes, output=52172772 bytes, ratio=0.016, throughput=67.469 GiB/s
+[2026-10-12T20:38:54.487235Z INFO  offload_daemon] Compressed slot 1: codec=qpl-hardware-static-async, chunks=1024, input=1073741824 bytes, output=144974449 bytes, ratio=0.135, throughput=22.490 GiB/s
+[2026-10-12T20:38:54.488139Z INFO  offload_daemon] Snapshot persisted to "/mnt/chsnap/lifecycle/path-tracing_30b-2m/dsa/base"

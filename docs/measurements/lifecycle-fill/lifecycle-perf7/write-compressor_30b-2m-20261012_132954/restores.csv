@@ -1,0 +1,11 @@
+session,pages,checkpoint,variant,restore_ms,user_s,sys_s,guest_ms,guest_ok,rc
+write-compressor_30b,2m,last,base,131,0.00,0.17,3257,1,0
+write-compressor_30b,2m,base,base,133,0.00,0.17,5906,1,0
+write-compressor_30b,2m,last,cpu,123,0.04,0.11,1839,1,0
+write-compressor_30b,2m,base,cpu,112,0.04,0.11,4683,1,0
+write-compressor_30b,2m,last,dsa,155,0.04,0.10,1634,1,0
+write-compressor_30b,2m,base,dsa,119,0.04,0.11,4072,1,0
+write-compressor_30b,2m,last,cpucrc,120,0.04,0.10,3868,1,0
+write-compressor_30b,2m,base,cpucrc,122,0.04,0.11,4071,1,0
+write-compressor_30b,2m,last,dsacrc,116,0.03,0.11,3461,1,0
+write-compressor_30b,2m,base,dsacrc,115,0.04,0.10,3668,1,0

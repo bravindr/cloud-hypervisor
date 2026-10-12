@@ -1312,11 +1312,55 @@ fsync tail is 62 ms, and both layouts sit on that floor). Restore unchanged
 Notes:
 - The performance governor takes 8-10 ms off every checkpoint of this guest
   (per-slot 97 → 86 ms) without changing any ordering; all lifecycle numbers
-  here are with the on-demand governor the host runs.
+  in this section are with the on-demand governor the host ran until
+  section 7c.2p switched it.
 - About one restore in thirty takes ~500 ms; the daemon's own span (connect
   to replay finished, now visible with microsecond log timestamps) is a
   normal 160-200 ms in those cases, so the time is outside the daemon.
 - Idle submitter threads spin 200 rounds and then sleep 20 us per round.
+
+### 7c.2p Submitters from the CPU affinity, performance governor
+
+`--submitters` now defaults to the number of CPUs in the daemon's affinity
+mask (`sched_getaffinity`), capped at `--workers`; an explicit value is
+clamped the same way, and the daemon logs the choice
+(`submitters=2 (affinity: 2 cpus, cap 8 = --workers)`). The lifecycle harness
+pins the daemon to two cores and so gets two threads; the NVMe harness pins
+it to one core and gets one. The host's CPU governor was switched from
+on-demand to performance on every CPU at the same time (section 7c.2o had
+measured it at 8-10 ms per checkpoint), and `lifecycle.sh` records the
+governor of the daemon's cores in its header line.
+
+**Agent lifecycle, all 7 sessions, 1770 checkpoints (0 failed), daemon on
+two cores** (median wall ms / daemon CPU core-s per full checkpoint;
+`lifecycle-perf7` against the morning's `lifecycle-fill6`, which ran the
+same code with `--submitters 2` under the on-demand governor):
+
+| variant | 4 KiB: performance | on-demand (7c.2o) | 2 MiB: performance | on-demand (7c.2o) |
+|---|---|---|---|---|
+| base daemon | 1129 / 1.46 | 1153 / 1.49 | 1392 / 1.77 | 1502 / 1.91 |
+| cpu | **82 / 0.11** | 97 / 0.13 | **175 / 0.30** | 208 / 0.36 |
+| dsa | **74 / 0.09** | 88 / 0.11 | **61 / 0.09** | 72 / 0.10 |
+| cpucrc | **93 / 0.13** | 111 / 0.16 | **184 / 0.32** | 218 / 0.38 |
+| dsacrc | **73 / 0.09** | 88 / 0.11 | **74 / 0.11** | 84 / 0.12 |
+
+The governor is worth 13-16 % of wall and 15-20 % of daemon CPU on our
+daemon (the same work at a higher clock takes fewer core-seconds) and 2-7 %
+on the base daemon, whose checkpoint is dominated by the disk write. The
+ordering is unchanged: DSA against CPU is −10 % wall / −18 % CPU on 4 KiB
+and −65 % / −70 % on 2 MiB, and per-chunk CRC stays free on DSA. Restores
+are 116-164 ms; 3 of 153 took more than 400 ms (the outliers of section
+7c.2o, unchanged).
+
+**NVMe harness, one daemon core** (`harness-pipeline-nvme-sub8`, depth 8,
+median ms, performance governor, one submitter by affinity; `sub7` in
+parentheses ran two submitters under on-demand): dynamic Huffman shared
+`+cpu`/`+dsa` 548 / 544 (572 / 563) against per-slot 615 / 605 (629 / 619),
+−11 %; static Huffman 602 / 597 (610 / 614) against 606 / 589 (608 / 599),
+within 2 %. Restore 744-769 ms (769-794). The per-slot cells, whose code did
+not change, moved −2 % with the governor and the shared cells −4 %, so one
+submitter on one core is at least no worse than two; the two changes were not
+separated by a control run.
 
 ### 7c.3 IOMMU first touch: measured, and the fix
 
@@ -1346,8 +1390,12 @@ slower first cell in each sweep (`cpu` 492 vs 331 ms, `dsa` w8 473 vs 214 ms).
 
 ### 7c.4 Follow-ups
 
-- Pick `--submitters` from the daemon's CPU affinity (one thread when
-  pinned to one core); the single-core harness still runs two.
+- The performance governor (section 7c.2p) is set with `scaling_governor`
+  and does not survive a reboot; `lifecycle.sh` logs the daemon cores'
+  governor in its header line so a result can be attributed either way.
+- An unpinned daemon now gets one submitter per host CPU (capped at
+  `--workers`, whose default is the same count); both harnesses pin the
+  daemon, and a pinned run is the only one measured.
 - The ~500 ms restore outliers (one in thirty) are outside the daemon
   (section 7c.2o): time the VMM side of receive-migration.
 - The ~130 ms of a tmpfs snapshot spent outside compression (§7c.2j).

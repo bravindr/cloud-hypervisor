@@ -1,0 +1,5 @@
+[2026-10-12T20:24:48Z INFO  offload_daemon] Offload daemon listening at "/home/byrnedan/chlogs/lifecycle-perf7/winning-avg-corewars_30b-4k-20261012_132440/offload.sock"
+[2026-10-12T20:24:48Z INFO  offload_daemon] CH connected; starting snapshot receive
+[2026-10-12T20:24:48Z INFO  offload_daemon] Compressed slot 1: codec=qpl-hardware-static-async, chunks=1024, input=1073741824 bytes, output=145809425 bytes, ratio=0.136, throughput=2.801 GiB/s
+[2026-10-12T20:24:49Z INFO  offload_daemon] Compressed slot 0: codec=qpl-hardware-static-async, chunks=3072, input=3221225472 bytes, output=56758789 bytes, ratio=0.018, throughput=2.660 GiB/s
+[2026-10-12T20:24:49Z INFO  offload_daemon] Snapshot persisted to "/mnt/chsnap/lifecycle/winning-avg-corewars_30b-4k/base/base"

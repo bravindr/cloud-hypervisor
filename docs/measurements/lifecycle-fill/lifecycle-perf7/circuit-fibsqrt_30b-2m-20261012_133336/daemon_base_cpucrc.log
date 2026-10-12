@@ -1,0 +1,9 @@
+[2026-10-12T20:33:44.115929Z INFO  offload_daemon] submitters=2 (affinity: 2 cpus, cap 8 = --workers)
+[2026-10-12T20:33:44.116020Z INFO  offload_daemon] Offload daemon listening at "/home/byrnedan/chlogs/lifecycle-perf7/circuit-fibsqrt_30b-2m-20261012_133336/offload.sock"
+[2026-10-12T20:33:44.165970Z INFO  offload_daemon] CH connected; starting snapshot receive
+[2026-10-12T20:33:44.343973Z INFO  offload_daemon::compression] classify=cpu prefault=0.9ms zero_chunks=2911/3072 fill_chunks=80 hole_chunks=0 data_mib=3072 dsa submitted=0 fallback=0 failed=0 cpu_scans=3072 crc=true slots_sharing_pool=2 submitters=2 compress_ms=165.2 sync_ms=0.1
+[2026-10-12T20:33:44.344388Z INFO  offload_daemon::compression] classify=cpu prefault=0.2ms zero_chunks=741/1024 fill_chunks=0 hole_chunks=0 data_mib=1024 dsa submitted=0 fallback=0 failed=0 cpu_scans=1024 crc=true slots_sharing_pool=2 submitters=2 compress_ms=165.2 sync_ms=0.1
+[2026-10-12T20:33:44.344397Z INFO  offload_daemon] shared pipeline: prepare 10.3 ms (map+extents+prefault+pools), compress 167.1 ms, submitters=2
+[2026-10-12T20:33:44.344399Z INFO  offload_daemon] Compressed slot 0: codec=qpl-hardware-static-async, chunks=3072, input=3221225472 bytes, output=52171321 bytes, ratio=0.016, throughput=18.157 GiB/s
+[2026-10-12T20:33:44.344402Z INFO  offload_daemon] Compressed slot 1: codec=qpl-hardware-static-async, chunks=1024, input=1073741824 bytes, output=145559593 bytes, ratio=0.136, throughput=6.052 GiB/s
+[2026-10-12T20:33:44.345351Z INFO  offload_daemon] Snapshot persisted to "/mnt/chsnap/lifecycle/circuit-fibsqrt_30b-2m/cpucrc/base"

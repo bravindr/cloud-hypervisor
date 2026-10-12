@@ -1,0 +1,5 @@
+[2026-10-12T20:12:25Z INFO  offload_daemon] Offload daemon listening at "/home/byrnedan/chlogs/lifecycle-perf7/circuit-fibsqrt_7b-4k-20261012_131218/offload.sock"
+[2026-10-12T20:12:25Z INFO  offload_daemon] CH connected; starting snapshot receive
+[2026-10-12T20:12:25Z INFO  offload_daemon] Compressed slot 1: codec=qpl-hardware-static-async, chunks=1024, input=1073741824 bytes, output=144839643 bytes, ratio=0.135, throughput=2.784 GiB/s
+[2026-10-12T20:12:26Z INFO  offload_daemon] Compressed slot 0: codec=qpl-hardware-static-async, chunks=3072, input=3221225472 bytes, output=56758869 bytes, ratio=0.018, throughput=2.661 GiB/s
+[2026-10-12T20:12:26Z INFO  offload_daemon] Snapshot persisted to "/mnt/chsnap/lifecycle/circuit-fibsqrt_7b-4k/base/base"

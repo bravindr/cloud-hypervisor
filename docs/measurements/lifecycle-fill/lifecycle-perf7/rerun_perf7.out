@@ -1,0 +1,8 @@
+performance
+node 0 free: 85945 MB
+######## full run start 13:10:10
+######## full run rc=0 end 13:49:17
+node 0 free: 57659 MB
+######## nvme sweep start 13:49:19
+######## nvme sweep rc=0 end 13:57:07
+RERUN_PERF7_DONE
