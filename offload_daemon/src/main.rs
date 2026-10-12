@@ -1462,10 +1462,21 @@ fn dump_shared(
     huffman: qpl::HuffmanMode,
 ) -> Result<()> {
     let info = slot_info(config)?;
-    // Map, find the data extents of and prefault every slot concurrently:
-    // sequentially this cost a 4 KiB-page guest 10-25 ms per slot before
-    // compression could start (the per-slot layout always overlapped it).
-    let mapped = thread::scope(|scope| {
+    let submitters = options.submitters.max(1);
+    let per_pool = options.workers.div_ceil(submitters).max(1);
+    // Map, find the data extents of and prefault every slot, and create the
+    // IAA job pools, all concurrently: sequentially this cost a 4 KiB-page
+    // guest 10-25 ms per slot plus ~10 ms per pool before compression could
+    // start (the per-slot layout always overlapped both).
+    let (mapped, mut pools) = thread::scope(|scope| {
+        let pool_handles: Vec<_> = (0..submitters)
+            .map(|_| {
+                scope.spawn(move || {
+                    qpl::JobPool::new(qpl::ExecutionPath::Hardware, huffman, per_pool)
+                        .map_err(|error| Error::from(compression::Error::from(error)))
+                })
+            })
+            .collect();
         let handles: Vec<_> = slots
             .iter()
             .map(|(slot, file)| {
@@ -1490,10 +1501,15 @@ fn dump_shared(
                 })
             })
             .collect();
-        handles
+        let mapped = handles
             .into_iter()
             .map(|handle| handle.join().expect("slot mapping thread panicked"))
-            .collect::<Result<Vec<_>>>()
+            .collect::<Result<Vec<_>>>();
+        let pools = pool_handles
+            .into_iter()
+            .map(|handle| handle.join().expect("pool creation thread panicked"))
+            .collect::<Result<Vec<_>>>();
+        mapped.and_then(|mapped| pools.map(|pools| (mapped, pools)))
     })?;
     let jobs: Vec<compression::SlotJob<'_>> = mapped
         .iter()
@@ -1509,15 +1525,6 @@ fn dump_shared(
         )
         .collect();
     let chunk_size_u32 = compression::validate_chunk_size(options.chunk_size)?;
-    let submitters = options.submitters.max(1);
-    let per_pool = options.workers.div_ceil(submitters).max(1);
-    let mut pools = Vec::with_capacity(submitters);
-    for _ in 0..submitters {
-        pools.push(
-            qpl::JobPool::new(qpl::ExecutionPath::Hardware, huffman, per_pool)
-                .map_err(compression::Error::from)?,
-        );
-    }
     let stats = compression::compress_slots(
         &jobs,
         &mut pools,
