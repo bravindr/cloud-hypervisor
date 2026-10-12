@@ -582,9 +582,11 @@ struct PartOut {
 
 /// Start writeback of a part's compressed output once this much is pending,
 /// so the disk works while IAA is still compressing and the final fsync
-/// has little left to do.
+/// has little left to do. Small enough that with several parts per slot the
+/// dirty tail stays short (64 MiB per part left 81 ms of fsync on NVMe where
+/// one file per slot left 20 ms); the syscall itself is cheap.
 #[cfg(feature = "qpl")]
-const WRITEBACK_STEP: u64 = 64 << 20;
+const WRITEBACK_STEP: u64 = 16 << 20;
 
 /// The full-checkpoint pipeline for any number of slots through one ready
 /// queue drained by `pools.len()` submitter threads. Each thread claims
