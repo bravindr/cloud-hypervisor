@@ -228,10 +228,11 @@ enum Mode {
         /// an even share of the jobs (the original layout).
         #[arg(long, default_value = "shared")]
         pipeline: Pipeline,
-        /// Submitter threads of the shared pipeline (each classifies a share
-        /// of the slots and drives --workers / N IAA jobs).
-        #[arg(long, default_value_t = 2)]
-        submitters: usize,
+        /// Submitter threads of the shared pipeline (each classifies chunks
+        /// from a shared cursor and drives --workers / N IAA jobs). Default:
+        /// one per CPU in the daemon's affinity mask, at most --workers.
+        #[arg(long)]
+        submitters: Option<usize>,
     },
     /// Stay resident: every connection from CH (send-migration with
     /// memory_mode=memfds,preserve_source=on) is one checkpoint, written to
@@ -253,8 +254,10 @@ enum Mode {
         #[arg(long, default_value_t = default_workers())]
         workers: usize,
         /// Submitter threads sharing the IAA jobs (full checkpoints).
-        #[arg(long, default_value_t = 2)]
-        submitters: usize,
+        /// Default: one per CPU in the daemon's affinity mask, at most
+        /// --workers.
+        #[arg(long)]
+        submitters: Option<usize>,
         #[arg(long, default_value_t = default_classify())]
         classify: Classify,
         #[arg(long, default_value_t = 32)]
@@ -363,6 +366,37 @@ fn default_workers() -> usize {
     thread::available_parallelism().map_or(1, usize::from)
 }
 
+/// CPUs the daemon may run on (`sched_getaffinity`), or 1 if that fails.
+fn affinity_cpus() -> usize {
+    let mut set: libc::cpu_set_t = unsafe { mem::zeroed() };
+    // SAFETY: `set` is a valid, writable cpu_set_t of the size passed.
+    if unsafe { libc::sched_getaffinity(0, mem::size_of::<libc::cpu_set_t>(), &mut set) } != 0 {
+        return 1;
+    }
+    // SAFETY: `set` was filled by sched_getaffinity.
+    usize::try_from(unsafe { libc::CPU_COUNT(&set) }).map_or(1, |n| n.max(1))
+}
+
+/// Submitter threads of the shared pipeline: the explicit `--submitters`, or
+/// one per CPU of the daemon's affinity mask (a daemon pinned to two cores
+/// gets two). Never more than the IAA jobs they would share, never zero.
+fn resolve_submitters(requested: Option<usize>, workers: usize) -> usize {
+    let cap = workers.max(1);
+    match requested {
+        Some(n) => {
+            let n = n.clamp(1, cap);
+            info!("submitters={n} (--submitters, cap {cap} = --workers)");
+            n
+        }
+        None => {
+            let cpus = affinity_cpus();
+            let n = cpus.min(cap);
+            info!("submitters={n} (affinity: {cpus} cpus, cap {cap} = --workers)");
+            n
+        }
+    }
+}
+
 fn main() -> Result<()> {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info"))
         .format_timestamp_micros()
@@ -408,7 +442,7 @@ fn main() -> Result<()> {
                     depth: diff_depth,
                 },
                 pipeline,
-                submitters,
+                submitters: resolve_submitters(submitters, workers),
             });
             run_snapshot(&socket, &output_dir, compression.as_ref())
         }
@@ -449,7 +483,7 @@ fn main() -> Result<()> {
                 },
                 keep_only_last,
                 dedup_image,
-                submitters,
+                submitters: resolve_submitters(submitters, workers),
             },
         ),
         Mode::Restore {

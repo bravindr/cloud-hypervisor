@@ -172,7 +172,8 @@ numactl -C "$VM_CPUS" -m 0 "$CH" --api-socket "$SOCK" --kernel "$KERNEL" --initr
 	--cmdline "console=ttyS0 root=/dev/vda rw init=/agent_init agent_wl=idle agent_warm= agent_steps=$STEPS" \
 	--cpus "boot=$GUEST_VCPUS" --memory "$MEM" --serial "file=$CONSOLE" --console off > "$OUT/ch.log" 2>&1 &
 CHPID=$!
-log "session $SESSION pages=$PAGES turns=$NSTEPS variants=${VARIANTS[*]} workers=$WORKERS daemon_cpus=$DAEMON_CPUS"
+gov=$(cat "/sys/devices/system/cpu/cpu${DAEMON_CPUS%%[,-]*}/cpufreq/scaling_governor" 2>/dev/null)
+log "session $SESSION pages=$PAGES turns=$NSTEPS variants=${VARIANTS[*]} workers=$WORKERS daemon_cpus=$DAEMON_CPUS governor=${gov:-unknown}"
 wait_marker AGENT_BASE_POINT 300 || exit 1
 log "boot to AGENT_BASE_POINT: $(( $(now_ms) - t_boot )) ms"
 checkpoint base 0 0
