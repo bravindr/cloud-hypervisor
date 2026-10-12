@@ -194,6 +194,15 @@ impl Classifier {
         }
     }
 
+    /// True when `push` will accept a chunk right now.
+    pub(crate) fn has_room(&self) -> bool {
+        match self {
+            Self::Cpu { .. } => true,
+            #[cfg(feature = "dto")]
+            Self::Dsa(ring) => ring.has_room(),
+        }
+    }
+
     pub(crate) fn report(&self) -> Report {
         match self {
             Self::Cpu { report, .. } => *report,
@@ -379,6 +388,10 @@ mod dsa {
 
         pub(super) fn is_idle(&self) -> bool {
             self.live == 0
+        }
+
+        pub(super) fn has_room(&self) -> bool {
+            self.live < self.slots.len()
         }
 
         pub(super) fn report(&self) -> Report {

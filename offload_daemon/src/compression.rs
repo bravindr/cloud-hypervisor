@@ -546,15 +546,16 @@ struct SlotOut {
     records: Vec<ChunkRecord>,
 }
 
-/// One slot's classification side, owned by one submitter thread.
+/// Per-slot classification state shared by the submitter threads. Chunks are
+/// claimed through `next_chunk`, so every thread classifies whichever slot
+/// still has chunks: the slots of a guest differ in size (3 GiB and 1 GiB on
+/// a 4 GiB guest) and a static slot-to-thread split left one thread idle for
+/// most of a CPU scan.
 #[cfg(feature = "qpl")]
 struct SlotScan {
-    slot: usize,
     chunk_has_data: Vec<bool>,
     chunk_count: usize,
-    next_chunk: usize,
-    classifier: Classifier,
-    staged: VecDeque<Verdict>,
+    next_chunk: AtomicUsize,
 }
 
 /// Start writeback of a slot's compressed output once this much is pending,
@@ -564,15 +565,15 @@ struct SlotScan {
 const WRITEBACK_STEP: u64 = 64 << 20;
 
 /// The full-checkpoint pipeline for any number of slots through one ready
-/// queue drained by `pools.len()` submitter threads. Every slot has its own
-/// classifier (DSA COMPVAL ring or CPU scan), owned by one of the threads
-/// and running ahead of compression; data verdicts go into the shared queue
-/// and whichever thread has a free IAA job takes the next one, so no job
-/// idles while any slot still has chunks to compress. Zero, fill and hole
-/// chunks never enter the queue: their records are written by the
-/// classifying thread. Two submitters put the CPU side of compression
-/// (dynamic Huffman table builds, output writes, DSA polling) on two cores,
-/// which a single-thread shared queue could not use (section 7c.2n).
+/// queue drained by `pools.len()` submitter threads. Each thread claims
+/// chunks of any slot, classifies them (DSA COMPVAL ring or CPU scan, one
+/// classifier per slot per thread) ahead of compression, puts data verdicts
+/// into the shared queue, and takes the next queued chunk for whichever of
+/// its own IAA jobs is free, so no job idles while any slot has data and
+/// both the classification and the CPU side of compression (dynamic
+/// Huffman table builds, output writes, DSA polling) spread over the
+/// threads. Zero, fill and hole chunks never enter the queue: the
+/// classifying thread writes their records.
 #[cfg(feature = "qpl")]
 pub(crate) fn compress_slots(
     jobs: &[SlotJob<'_>],
@@ -590,10 +591,8 @@ pub(crate) fn compress_slots(
     let submitters = pools.len();
     let mut outputs: Vec<File> = Vec::with_capacity(jobs.len());
     let mut outs: Vec<Mutex<SlotOut>> = Vec::with_capacity(jobs.len());
-    let mut hole_chunks = Vec::with_capacity(jobs.len());
-    let mut chunk_counts = Vec::with_capacity(jobs.len());
-    let mut scans: Vec<Vec<SlotScan>> = (0..submitters).map(|_| Vec::new()).collect();
-    for (s, job) in jobs.iter().enumerate() {
+    let mut scans: Vec<SlotScan> = Vec::with_capacity(jobs.len());
+    for job in jobs {
         outputs.push(
             OpenOptions::new()
                 .create(true)
@@ -609,57 +608,42 @@ pub(crate) fn compress_slots(
             chunk_has_data[start / chunk_size..end.div_ceil(chunk_size).min(chunk_count)]
                 .fill(true);
         }
-        hole_chunks.push(chunk_has_data.iter().filter(|has| !**has).count());
-        chunk_counts.push(chunk_count);
         outs.push(Mutex::new(SlotOut {
             output_offset: 0,
             flushed: 0,
             records: Vec::with_capacity(chunk_count),
         }));
-        // Slots go round-robin to the submitter threads.
-        scans[s % submitters].push(SlotScan {
-            slot: s,
+        scans.push(SlotScan {
             chunk_has_data,
             chunk_count,
-            next_chunk: 0,
-            classifier: Classifier::new(accel, chunk_size)?,
-            staged: VecDeque::new(),
+            next_chunk: AtomicUsize::new(0),
         });
     }
 
     let total_capacity: usize = pools.iter().map(QplJobPool::capacity).sum();
-    // Bound how far classification may run ahead of the pools.
-    let ready_limit = total_capacity.max(accel.dsa_depth) * 2;
     let shared = Shared {
         ready: Mutex::new(VecDeque::new()),
-        ready_limit,
+        queued: AtomicUsize::new(0),
+        // Bound how far classification may run ahead of the pools.
+        ready_limit: total_capacity.max(accel.dsa_depth) * 2,
         producers_left: AtomicUsize::new(submitters),
         abort: AtomicBool::new(false),
         chunk_size,
+        accel,
     };
-    let (jobs_ref, outputs_ref, outs_ref, shared_ref) = (&jobs, &outputs, &outs, &shared);
+    let (jobs_ref, outputs_ref, outs_ref, scans_ref, shared_ref) =
+        (&jobs, &outputs, &outs, &scans, &shared);
     let outcomes: Vec<SubmitOutcome> = thread::scope(|scope| {
         let handles: Vec<_> = pools
             .iter_mut()
-            .zip(scans)
-            .map(|(pool, mut scans)| {
+            .map(|pool| {
                 scope.spawn(move || {
-                    let result = submit_loop(
-                        jobs_ref,
-                        outputs_ref,
-                        outs_ref,
-                        shared_ref,
-                        pool,
-                        &mut scans,
-                    );
-                    if result.is_err() {
+                    let outcome =
+                        submit_loop(jobs_ref, outputs_ref, outs_ref, scans_ref, shared_ref, pool);
+                    if outcome.0.is_err() {
                         shared_ref.abort.store(true, Ordering::Relaxed);
                     }
-                    let reports = scans
-                        .iter()
-                        .map(|scan| (scan.slot, scan.classifier.report()))
-                        .collect();
-                    (result, reports)
+                    outcome
                 })
             })
             .collect();
@@ -668,11 +652,14 @@ pub(crate) fn compress_slots(
             .map(|handle| handle.join().map_err(|_| Error::WorkerPanic))
             .collect::<Result<Vec<_>, Error>>()
     })?;
-    let mut reports: Vec<Option<Report>> = vec![None; jobs.len()];
+    let mut reports = vec![Report::default(); jobs.len()];
     for (result, thread_reports) in outcomes {
         result?;
-        for (slot, report) in thread_reports {
-            reports[slot] = Some(report);
+        for (report, part) in reports.iter_mut().zip(thread_reports) {
+            report.dsa_submitted += part.dsa_submitted;
+            report.dsa_fallback += part.dsa_fallback;
+            report.dsa_failed += part.dsa_failed;
+            report.cpu_scans += part.cpu_scans;
         }
     }
 
@@ -710,17 +697,17 @@ pub(crate) fn compress_slots(
         };
         let manifest_bytes = serde_json::to_vec_pretty(&manifest).map_err(Error::WriteManifest)?;
         fs::write(job.manifest_path, manifest_bytes).map_err(Error::Write)?;
-        let report = reports[s].unwrap_or_default();
+        let report = reports[s];
+        let hole_chunks = scans[s].chunk_has_data.iter().filter(|has| !**has).count();
         let data_bytes: usize = job.extents.iter().map(|(start, end)| end - start).sum();
         log::info!(
-            "classify={} prefault={} zero_chunks={zero_chunks}/{} fill_chunks={fill_chunks} hole_chunks={} data_mib={} dsa submitted={} fallback={} failed={} cpu_scans={} crc={} slots_sharing_pool={} submitters={submitters} compress_ms={:.1} sync_ms={sync_ms:.1}",
+            "classify={} prefault={} zero_chunks={zero_chunks}/{} fill_chunks={fill_chunks} hole_chunks={hole_chunks} data_mib={} dsa submitted={} fallback={} failed={} cpu_scans={} crc={} slots_sharing_pool={} submitters={submitters} compress_ms={:.1} sync_ms={sync_ms:.1}",
             accel.classify,
             job.prefault.map_or_else(
                 || "off".to_owned(),
                 |elapsed| format!("{:.1}ms", elapsed.as_secs_f64() * 1e3)
             ),
-            chunk_counts[s],
-            hole_chunks[s],
+            scans[s].chunk_count,
             data_bytes >> 20,
             report.dsa_submitted,
             report.dsa_fallback,
@@ -733,46 +720,72 @@ pub(crate) fn compress_slots(
         stats.push(CompressionStats {
             input_bytes: job.source_size,
             output_bytes: out.output_offset,
-            chunks: chunk_counts[s],
+            chunks: scans[s].chunk_count,
             elapsed,
         });
     }
     Ok(stats)
 }
 
-/// What one submitter thread hands back: its result and the classifier
-/// reports of the slots it owned.
+/// What one submitter thread hands back: its result and, per slot, the
+/// counters of its classifiers.
 #[cfg(feature = "qpl")]
-type SubmitOutcome = (Result<(), Error>, Vec<(usize, Report)>);
+type SubmitOutcome = (Result<(), Error>, Vec<Report>);
 
 /// State shared by the submitter threads of one `compress_slots` call.
 #[cfg(feature = "qpl")]
 struct Shared {
     /// (slot, data verdict) waiting for a free IAA job, from every slot.
     ready: Mutex<VecDeque<(usize, Verdict)>>,
+    /// Upper bound of `ready.len()`, readable without the lock (bumped under
+    /// the lock on push, decremented after a pop).
+    queued: AtomicUsize,
     ready_limit: usize,
-    /// Threads whose classifiers still have chunks to produce.
+    /// Threads whose classifiers may still produce verdicts.
     producers_left: AtomicUsize,
     /// Set by a thread that failed, so the others stop.
     abort: AtomicBool,
     chunk_size: usize,
+    accel: AccelOptions,
 }
 
-/// One submitter thread: classifies its own slots into the shared queue and
-/// drains the queue into its own IAA jobs until every producer is done and
-/// the queue is empty.
+/// One submitter thread: claims and classifies chunks of every slot into
+/// the shared queue and drains the queue into its own IAA jobs until every
+/// producer is done and the queue is empty.
 #[cfg(feature = "qpl")]
 fn submit_loop(
     jobs: &[SlotJob<'_>],
     outputs: &[File],
     outs: &[Mutex<SlotOut>],
+    scans: &[SlotScan],
     shared: &Shared,
     pool: &mut QplJobPool,
-    scans: &mut [SlotScan],
+) -> SubmitOutcome {
+    let mut classifiers = Vec::with_capacity(jobs.len());
+    for _ in jobs {
+        match Classifier::new(shared.accel, shared.chunk_size) {
+            Ok(classifier) => classifiers.push(classifier),
+            Err(error) => return (Err(Error::Classify(error)), Vec::new()),
+        }
+    }
+    let result = submit_chunks(jobs, outputs, outs, scans, shared, pool, &mut classifiers);
+    (result, classifiers.iter().map(Classifier::report).collect())
+}
+
+#[cfg(feature = "qpl")]
+fn submit_chunks(
+    jobs: &[SlotJob<'_>],
+    outputs: &[File],
+    outs: &[Mutex<SlotOut>],
+    scans: &[SlotScan],
+    shared: &Shared,
+    pool: &mut QplJobPool,
+    classifiers: &mut [Classifier],
 ) -> Result<(), Error> {
     let chunk_size = shared.chunk_size;
     let mut active: Vec<Option<(usize, Verdict)>> = (0..pool.capacity()).map(|_| None).collect();
     let mut active_count = 0_usize;
+    let mut staged = VecDeque::new();
     let mut producing = true;
     let mut turn = 0_usize;
     let record_no_data = |slot: usize, verdict: &Verdict| {
@@ -793,19 +806,24 @@ fn submit_loop(
         }
         let mut made_progress = false;
 
-        // 1. classify own slots, taking turns so all of them keep the queue fed
+        // 1. classify: claim chunks of every slot in turn
         if producing {
-            for k in 0..scans.len() {
-                let scan = &mut scans[(turn + k) % scans.len()];
-                let job = &jobs[scan.slot];
-                while scan.next_chunk < scan.chunk_count
-                    && shared.ready.lock().unwrap().len() < shared.ready_limit
+            for k in 0..jobs.len() {
+                let s = (turn + k) % jobs.len();
+                let (job, scan, classifier) = (&jobs[s], &scans[s], &mut classifiers[s]);
+                while classifier.has_room()
+                    && shared.queued.load(Ordering::Relaxed) < shared.ready_limit
                 {
-                    let offset = scan.next_chunk * chunk_size;
+                    let chunk = scan.next_chunk.fetch_add(1, Ordering::Relaxed);
+                    if chunk >= scan.chunk_count {
+                        break;
+                    }
+                    let offset = chunk * chunk_size;
                     let length = (job.source_size as usize - offset).min(chunk_size);
-                    if !scan.chunk_has_data[scan.next_chunk] {
+                    made_progress = true;
+                    if !scan.chunk_has_data[chunk] {
                         record_no_data(
-                            scan.slot,
+                            s,
                             &Verdict {
                                 offset,
                                 length,
@@ -814,24 +832,23 @@ fn submit_loop(
                                 crc32c: None,
                             },
                         );
-                        scan.next_chunk += 1;
-                        made_progress = true;
                         continue;
                     }
-                    if !scan.classifier.push(job.mapping, offset, length)? {
-                        break;
+                    // The chunk is claimed, so it must be pushed; a full DSA
+                    // ring frees a slot as the device completes work.
+                    while !classifier.push(job.mapping, offset, length)? {
+                        classifier.drain(job.mapping, &mut staged)?;
                     }
-                    scan.next_chunk += 1;
-                    made_progress = true;
                 }
-                scan.classifier.drain(job.mapping, &mut scan.staged)?;
-                if !scan.staged.is_empty() {
+                classifier.drain(job.mapping, &mut staged)?;
+                if !staged.is_empty() {
                     let mut ready = shared.ready.lock().unwrap();
-                    while let Some(verdict) = scan.staged.pop_front() {
+                    while let Some(verdict) = staged.pop_front() {
                         if verdict.zero || verdict.fill.is_some() {
-                            record_no_data(scan.slot, &verdict);
+                            record_no_data(s, &verdict);
                         } else {
-                            ready.push_back((scan.slot, verdict));
+                            ready.push_back((s, verdict));
+                            shared.queued.fetch_add(1, Ordering::Relaxed);
                         }
                     }
                     made_progress = true;
@@ -840,7 +857,8 @@ fn submit_loop(
             turn = turn.wrapping_add(1);
             if scans
                 .iter()
-                .all(|scan| scan.next_chunk == scan.chunk_count && scan.classifier.is_idle())
+                .all(|scan| scan.next_chunk.load(Ordering::Relaxed) >= scan.chunk_count)
+                && classifiers.iter().all(Classifier::is_idle)
             {
                 producing = false;
                 shared.producers_left.fetch_sub(1, Ordering::AcqRel);
@@ -893,9 +911,10 @@ fn submit_loop(
                 active_count -= 1;
                 made_progress = true;
             }
-            if entry.is_none() {
+            if entry.is_none() && shared.queued.load(Ordering::Acquire) > 0 {
                 let next = shared.ready.lock().unwrap().pop_front();
                 if let Some((s, verdict)) = next {
+                    shared.queued.fetch_sub(1, Ordering::Relaxed);
                     let input = jobs[s]
                         .mapping
                         .ptr(verdict.offset, verdict.length)
@@ -914,7 +933,7 @@ fn submit_loop(
         if active_count == 0
             && !producing
             && shared.producers_left.load(Ordering::Acquire) == 0
-            && shared.ready.lock().unwrap().is_empty()
+            && shared.queued.load(Ordering::Acquire) == 0
         {
             return Ok(());
         }
