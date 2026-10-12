@@ -8,7 +8,7 @@ use std::fs::{self, File, OpenOptions};
 use std::mem;
 use std::os::fd::AsRawFd;
 use std::os::unix::fs::FileExt;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::slice;
 use std::str::FromStr;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
@@ -112,10 +112,32 @@ pub(crate) struct ChunkRecord {
     /// poisons freed initramfs and init memory with 0xCC, ~90 MiB per guest.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub fill: Option<u64>,
+    /// Which data file holds the compressed bytes: 0 is `memory-N.compressed`,
+    /// p > 0 is `memory-N.partP.compressed` (one per submitter thread, so the
+    /// threads never share a file's inode lock on their writes).
+    #[serde(default, skip_serializing_if = "is_zero_part")]
+    pub part: u8,
     /// CRC32C (seed 0, no final xor: the DSA CRC generation convention) of the
     /// uncompressed chunk, when the snapshot was taken with `--crc`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub crc32c: Option<u32>,
+}
+
+fn is_zero_part(part: &u8) -> bool {
+    *part == 0
+}
+
+/// Path of data file `part` of a slot whose part 0 is `data_path`.
+pub(crate) fn part_path(data_path: &Path, part: usize) -> PathBuf {
+    if part == 0 {
+        return data_path.to_path_buf();
+    }
+    let name = data_path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("memory.compressed");
+    let stem = name.strip_suffix(".compressed").unwrap_or(name);
+    data_path.with_file_name(format!("{stem}.part{part}.compressed"))
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -412,6 +434,7 @@ pub(crate) fn compress_file(
                                 compressed_length: 0,
                                 zero: pattern == 0,
                                 fill: (pattern != 0).then_some(pattern),
+                                part: 0,
                                 crc32c: None,
                             });
                             return Ok(());
@@ -432,6 +455,7 @@ pub(crate) fn compress_file(
                             compressed_length,
                             zero: false,
                             fill: None,
+                            part: 0,
                             crc32c: crc,
                         });
                         Ok(())
@@ -535,17 +559,6 @@ pub(crate) struct SlotJob<'a> {
     pub manifest_path: &'a Path,
 }
 
-/// Per-slot output state, shared by the submitter threads: the compressed
-/// file grows by atomic reservation, records are collected in any order and
-/// sorted when the manifest is written.
-#[cfg(feature = "qpl")]
-struct SlotOut {
-    output_offset: u64,
-    /// Output bytes already handed to writeback.
-    flushed: u64,
-    records: Vec<ChunkRecord>,
-}
-
 /// Per-slot classification state shared by the submitter threads. Chunks are
 /// claimed through `next_chunk`, so every thread classifies whichever slot
 /// still has chunks: the slots of a guest differ in size (3 GiB and 1 GiB on
@@ -558,7 +571,16 @@ struct SlotScan {
     next_chunk: AtomicUsize,
 }
 
-/// Start writeback of a slot's compressed output once this much is pending,
+/// One submitter thread's output file for one slot.
+#[cfg(feature = "qpl")]
+struct PartOut {
+    file: File,
+    offset: u64,
+    /// Output bytes already handed to writeback.
+    flushed: u64,
+}
+
+/// Start writeback of a part's compressed output once this much is pending,
 /// so the disk works while IAA is still compressing and the final fsync
 /// has little left to do.
 #[cfg(feature = "qpl")]
@@ -572,8 +594,10 @@ const WRITEBACK_STEP: u64 = 64 << 20;
 /// its own IAA jobs is free, so no job idles while any slot has data and
 /// both the classification and the CPU side of compression (dynamic
 /// Huffman table builds, output writes, DSA polling) spread over the
-/// threads. Zero, fill and hole chunks never enter the queue: the
-/// classifying thread writes their records.
+/// threads. Each thread writes its own data file per slot (`part` in the
+/// manifest): two threads writing one file serialized on its inode lock and
+/// stopped polling their jobs while they waited (pwrite 2x slower, 8 jobs no
+/// faster than 4). Zero, fill and hole chunks never enter the queue.
 #[cfg(feature = "qpl")]
 pub(crate) fn compress_slots(
     jobs: &[SlotJob<'_>],
@@ -589,30 +613,32 @@ pub(crate) fn compress_slots(
         "compress_slots needs at least one job pool"
     );
     let submitters = pools.len();
-    let mut outputs: Vec<File> = Vec::with_capacity(jobs.len());
-    let mut outs: Vec<Mutex<SlotOut>> = Vec::with_capacity(jobs.len());
     let mut scans: Vec<SlotScan> = Vec::with_capacity(jobs.len());
+    // [thread][slot]
+    let mut thread_outs: Vec<Vec<PartOut>> = (0..submitters)
+        .map(|_| Vec::with_capacity(jobs.len()))
+        .collect();
     for job in jobs {
-        outputs.push(
-            OpenOptions::new()
+        for (part, outs) in thread_outs.iter_mut().enumerate() {
+            let file = OpenOptions::new()
                 .create(true)
                 .truncate(true)
                 .read(true)
                 .write(true)
-                .open(job.data_path)
-                .map_err(Error::Write)?,
-        );
+                .open(part_path(job.data_path, part))
+                .map_err(Error::Write)?;
+            outs.push(PartOut {
+                file,
+                offset: 0,
+                flushed: 0,
+            });
+        }
         let chunk_count = job.source_size.div_ceil(chunk_size as u64) as usize;
         let mut chunk_has_data = vec![false; chunk_count];
         for &(start, end) in job.extents {
             chunk_has_data[start / chunk_size..end.div_ceil(chunk_size).min(chunk_count)]
                 .fill(true);
         }
-        outs.push(Mutex::new(SlotOut {
-            output_offset: 0,
-            flushed: 0,
-            records: Vec::with_capacity(chunk_count),
-        }));
         scans.push(SlotScan {
             chunk_has_data,
             chunk_count,
@@ -631,16 +657,16 @@ pub(crate) fn compress_slots(
         chunk_size,
         accel,
     };
-    let (jobs_ref, outputs_ref, outs_ref, scans_ref, shared_ref) =
-        (&jobs, &outputs, &outs, &scans, &shared);
+    let (jobs_ref, scans_ref, shared_ref) = (&jobs, &scans, &shared);
     let outcomes: Vec<SubmitOutcome> = thread::scope(|scope| {
         let handles: Vec<_> = pools
             .iter_mut()
-            .map(|pool| {
+            .zip(thread_outs)
+            .enumerate()
+            .map(|(part, (pool, outs))| {
                 scope.spawn(move || {
-                    let outcome =
-                        submit_loop(jobs_ref, outputs_ref, outs_ref, scans_ref, shared_ref, pool);
-                    if outcome.0.is_err() {
+                    let outcome = submit_loop(jobs_ref, scans_ref, shared_ref, pool, outs, part);
+                    if outcome.result.is_err() {
                         shared_ref.abort.store(true, Ordering::Relaxed);
                     }
                     outcome
@@ -653,24 +679,31 @@ pub(crate) fn compress_slots(
             .collect::<Result<Vec<_>, Error>>()
     })?;
     let mut reports = vec![Report::default(); jobs.len()];
-    for (result, thread_reports) in outcomes {
-        result?;
-        for (report, part) in reports.iter_mut().zip(thread_reports) {
+    let mut records: Vec<Vec<ChunkRecord>> = (0..jobs.len()).map(|_| Vec::new()).collect();
+    let mut outs: Vec<Vec<PartOut>> = Vec::with_capacity(submitters);
+    for outcome in outcomes {
+        outcome.result?;
+        for (report, part) in reports.iter_mut().zip(outcome.reports) {
             report.dsa_submitted += part.dsa_submitted;
             report.dsa_fallback += part.dsa_fallback;
             report.dsa_failed += part.dsa_failed;
             report.cpu_scans += part.cpu_scans;
         }
+        for (all, mine) in records.iter_mut().zip(outcome.records) {
+            all.extend(mine);
+        }
+        outs.push(outcome.outs);
     }
 
     let elapsed = started.elapsed();
-    // Make every slot durable before the caller ACKs, concurrently: one
+    // Make every part durable before the caller ACKs, concurrently: one
     // fsync per file in its own thread lets the device work on all of them.
     let synced = Instant::now();
     thread::scope(|scope| {
-        let handles: Vec<_> = outputs
+        let handles: Vec<_> = outs
             .iter()
-            .map(|output| scope.spawn(|| output.sync_all()))
+            .flatten()
+            .map(|out| scope.spawn(|| out.file.sync_all()))
             .collect();
         handles
             .into_iter()
@@ -680,8 +713,7 @@ pub(crate) fn compress_slots(
     let sync_ms = synced.elapsed().as_secs_f64() * 1e3;
     let mut stats = Vec::with_capacity(jobs.len());
     for (s, job) in jobs.iter().enumerate() {
-        let out = outs[s].get_mut().unwrap();
-        let mut records = mem::take(&mut out.records);
+        let mut records = mem::take(&mut records[s]);
         records.sort_unstable_by_key(|record| record.uncompressed_offset);
         let zero_chunks = records.iter().filter(|record| record.zero).count();
         let fill_chunks = records
@@ -697,6 +729,14 @@ pub(crate) fn compress_slots(
         };
         let manifest_bytes = serde_json::to_vec_pretty(&manifest).map_err(Error::WriteManifest)?;
         fs::write(job.manifest_path, manifest_bytes).map_err(Error::Write)?;
+        // Parts a thread never wrote to are not referenced; drop the files.
+        let mut output_bytes = 0_u64;
+        for (part, thread) in outs.iter().enumerate() {
+            output_bytes += thread[s].offset;
+            if part != 0 && thread[s].offset == 0 {
+                let _ = fs::remove_file(part_path(job.data_path, part));
+            }
+        }
         let report = reports[s];
         let hole_chunks = scans[s].chunk_has_data.iter().filter(|has| !**has).count();
         let data_bytes: usize = job.extents.iter().map(|(start, end)| end - start).sum();
@@ -719,7 +759,7 @@ pub(crate) fn compress_slots(
         );
         stats.push(CompressionStats {
             input_bytes: job.source_size,
-            output_bytes: out.output_offset,
+            output_bytes,
             chunks: scans[s].chunk_count,
             elapsed,
         });
@@ -727,10 +767,17 @@ pub(crate) fn compress_slots(
     Ok(stats)
 }
 
-/// What one submitter thread hands back: its result and, per slot, the
-/// counters of its classifiers.
+/// What one submitter thread hands back.
 #[cfg(feature = "qpl")]
-type SubmitOutcome = (Result<(), Error>, Vec<Report>);
+struct SubmitOutcome {
+    result: Result<(), Error>,
+    /// Per slot: the counters of this thread's classifier.
+    reports: Vec<Report>,
+    /// Per slot: the records this thread produced.
+    records: Vec<Vec<ChunkRecord>>,
+    /// Per slot: this thread's part file.
+    outs: Vec<PartOut>,
+}
 
 /// State shared by the submitter threads of one `compress_slots` call.
 #[cfg(feature = "qpl")]
@@ -751,54 +798,85 @@ struct Shared {
 
 /// One submitter thread: claims and classifies chunks of every slot into
 /// the shared queue and drains the queue into its own IAA jobs until every
-/// producer is done and the queue is empty.
+/// producer is done and the queue is empty. `part` is this thread's index,
+/// the data file its compressed chunks go to.
 #[cfg(feature = "qpl")]
 fn submit_loop(
     jobs: &[SlotJob<'_>],
-    outputs: &[File],
-    outs: &[Mutex<SlotOut>],
     scans: &[SlotScan],
     shared: &Shared,
     pool: &mut QplJobPool,
+    mut outs: Vec<PartOut>,
+    part: usize,
 ) -> SubmitOutcome {
+    let mut records: Vec<Vec<ChunkRecord>> = (0..jobs.len()).map(|_| Vec::new()).collect();
     let mut classifiers = Vec::with_capacity(jobs.len());
     for _ in jobs {
         match Classifier::new(shared.accel, shared.chunk_size) {
             Ok(classifier) => classifiers.push(classifier),
-            Err(error) => return (Err(Error::Classify(error)), Vec::new()),
+            Err(error) => {
+                return SubmitOutcome {
+                    result: Err(Error::Classify(error)),
+                    reports: Vec::new(),
+                    records,
+                    outs,
+                };
+            }
         }
     }
-    let result = submit_chunks(jobs, outputs, outs, scans, shared, pool, &mut classifiers);
-    (result, classifiers.iter().map(Classifier::report).collect())
+    let result = submit_chunks(
+        jobs,
+        scans,
+        shared,
+        pool,
+        &mut classifiers,
+        &mut outs,
+        &mut records,
+        part,
+    );
+    SubmitOutcome {
+        result,
+        reports: classifiers.iter().map(Classifier::report).collect(),
+        records,
+        outs,
+    }
 }
 
 #[cfg(feature = "qpl")]
+#[expect(clippy::too_many_arguments)]
 fn submit_chunks(
     jobs: &[SlotJob<'_>],
-    outputs: &[File],
-    outs: &[Mutex<SlotOut>],
     scans: &[SlotScan],
     shared: &Shared,
     pool: &mut QplJobPool,
     classifiers: &mut [Classifier],
+    outs: &mut [PartOut],
+    records: &mut [Vec<ChunkRecord>],
+    part: usize,
 ) -> Result<(), Error> {
     let chunk_size = shared.chunk_size;
+    let part = u8::try_from(part).expect("at most 256 submitter threads");
     let mut active: Vec<Option<(usize, Verdict)>> = (0..pool.capacity()).map(|_| None).collect();
     let mut active_count = 0_usize;
     let mut staged = VecDeque::new();
     let mut producing = true;
     let mut turn = 0_usize;
     let mut idle_rounds = 0_u32;
-    let record_no_data = |slot: usize, verdict: &Verdict| {
-        outs[slot].lock().unwrap().records.push(ChunkRecord {
-            uncompressed_offset: verdict.offset as u64,
-            uncompressed_length: verdict.length as u32,
-            compressed_offset: 0,
-            compressed_length: 0,
-            zero: verdict.zero,
-            fill: verdict.fill,
-            crc32c: None,
-        });
+    // Per-thread accounting for the debug line at the end.
+    let thread_started = Instant::now();
+    let mut classified_at = None;
+    let mut compressed = 0_usize;
+    let mut idle_sleeps = 0_u64;
+    let mut claimed = 0_usize;
+    let no_data_record = |verdict: &Verdict| ChunkRecord {
+        uncompressed_offset: verdict.offset as u64,
+        uncompressed_length: verdict.length as u32,
+        compressed_offset: 0,
+        compressed_length: 0,
+        zero: verdict.zero,
+        fill: verdict.fill,
+        part: 0,
+        crc32c: None,
     };
 
     loop {
@@ -822,17 +900,15 @@ fn submit_chunks(
                     let offset = chunk * chunk_size;
                     let length = (job.source_size as usize - offset).min(chunk_size);
                     made_progress = true;
+                    claimed += 1;
                     if !scan.chunk_has_data[chunk] {
-                        record_no_data(
-                            s,
-                            &Verdict {
-                                offset,
-                                length,
-                                zero: true,
-                                fill: None,
-                                crc32c: None,
-                            },
-                        );
+                        records[s].push(no_data_record(&Verdict {
+                            offset,
+                            length,
+                            zero: true,
+                            fill: None,
+                            crc32c: None,
+                        }));
                         continue;
                     }
                     // The chunk is claimed, so it must be pushed; a full DSA
@@ -846,7 +922,7 @@ fn submit_chunks(
                     let mut ready = shared.ready.lock().unwrap();
                     while let Some(verdict) = staged.pop_front() {
                         if verdict.zero || verdict.fill.is_some() {
-                            record_no_data(s, &verdict);
+                            records[s].push(no_data_record(&verdict));
                         } else {
                             ready.push_back((s, verdict));
                             shared.queued.fetch_add(1, Ordering::Relaxed);
@@ -862,11 +938,13 @@ fn submit_chunks(
                 && classifiers.iter().all(Classifier::is_idle)
             {
                 producing = false;
+                classified_at = Some(thread_started.elapsed());
                 shared.producers_left.fetch_sub(1, Ordering::AcqRel);
             }
         }
 
-        // 2. compress: this thread's jobs, fed from the shared queue
+        // 2. compress: this thread's jobs, fed from the shared queue, output
+        //    to this thread's own part file of the slot
         for (index, entry) in active.iter_mut().enumerate() {
             if let Some((s, verdict)) = entry.as_ref() {
                 let Some(output_size) = pool.poll(index)? else {
@@ -874,42 +952,37 @@ fn submit_chunks(
                 };
                 let compressed_length =
                     u32::try_from(output_size).map_err(|_| Error::ChunkTooLarge)?;
-                let compressed_offset = {
-                    let mut out = outs[*s].lock().unwrap();
-                    let offset = out.output_offset;
-                    out.output_offset += output_size as u64;
-                    out.records.push(ChunkRecord {
-                        uncompressed_offset: verdict.offset as u64,
-                        uncompressed_length: verdict.length as u32,
-                        compressed_offset: offset,
-                        compressed_length,
-                        zero: false,
-                        fill: None,
-                        crc32c: verdict.crc32c,
-                    });
-                    offset
-                };
-                outputs[*s]
-                    .write_all_at(pool.output(index, output_size), compressed_offset)
+                let out = &mut outs[*s];
+                out.file
+                    .write_all_at(pool.output(index, output_size), out.offset)
                     .map_err(Error::Write)?;
-                let mut out = outs[*s].lock().unwrap();
-                if out.output_offset - out.flushed >= WRITEBACK_STEP {
+                records[*s].push(ChunkRecord {
+                    uncompressed_offset: verdict.offset as u64,
+                    uncompressed_length: verdict.length as u32,
+                    compressed_offset: out.offset,
+                    compressed_length,
+                    zero: false,
+                    fill: None,
+                    part,
+                    crc32c: verdict.crc32c,
+                });
+                out.offset += output_size as u64;
+                if out.offset - out.flushed >= WRITEBACK_STEP {
                     // SAFETY: plain syscall on an owned fd; only starts
-                    // writeback of whatever is dirty in the range (the fsync
-                    // before the ACK covers the rest).
+                    // writeback (the fsync before the ACK covers the rest).
                     unsafe {
                         libc::sync_file_range(
-                            outputs[*s].as_raw_fd(),
+                            out.file.as_raw_fd(),
                             out.flushed as libc::off64_t,
-                            (out.output_offset - out.flushed) as libc::off64_t,
+                            (out.offset - out.flushed) as libc::off64_t,
                             libc::SYNC_FILE_RANGE_WRITE,
                         );
                     }
-                    out.flushed = out.output_offset;
+                    out.flushed = out.offset;
                 }
-                drop(out);
                 *entry = None;
                 active_count -= 1;
+                compressed += 1;
                 made_progress = true;
             }
             if entry.is_none() && shared.queued.load(Ordering::Acquire) > 0 {
@@ -936,6 +1009,11 @@ fn submit_chunks(
             && shared.producers_left.load(Ordering::Acquire) == 0
             && shared.queued.load(Ordering::Acquire) == 0
         {
+            log::debug!(
+                "submitter {part}: claimed {claimed} chunks, classification done at {:.1} ms, compressed {compressed} chunks, finished at {:.1} ms, idle sleeps {idle_sleeps}",
+                classified_at.unwrap_or_default().as_secs_f64() * 1e3,
+                thread_started.elapsed().as_secs_f64() * 1e3
+            );
             return Ok(());
         }
         if made_progress {
@@ -948,6 +1026,7 @@ fn submit_chunks(
             if idle_rounds < IDLE_SPIN_ROUNDS {
                 thread::yield_now();
             } else {
+                idle_sleeps += 1;
                 thread::sleep(IDLE_BACKOFF);
             }
         }
@@ -1078,8 +1157,24 @@ pub(crate) fn decompress_file(
             actual: manifest.uncompressed_size as usize,
         });
     }
-    let input = Arc::new(File::open(data_path).map_err(Error::Read)?);
-    let compressed_size = input.metadata().map_err(Error::Read)?.len();
+    let parts = manifest
+        .chunks
+        .iter()
+        .map(|record| record.part as usize)
+        .max()
+        .unwrap_or(0)
+        + 1;
+    let inputs: Vec<File> = (0..parts)
+        .map(|part| File::open(part_path(data_path, part)))
+        .collect::<io::Result<_>>()
+        .map_err(Error::Read)?;
+    let compressed_sizes: Vec<u64> = inputs
+        .iter()
+        .map(|input| input.metadata().map(|m| m.len()))
+        .collect::<io::Result<_>>()
+        .map_err(Error::Read)?;
+    let compressed_size: u64 = compressed_sizes.iter().sum();
+    let inputs = Arc::new(inputs);
     let mut expected_offset = 0_u64;
     for record in &manifest.chunks {
         if record.uncompressed_offset != expected_offset {
@@ -1095,9 +1190,11 @@ pub(crate) fn decompress_file(
             .compressed_offset
             .checked_add(record.compressed_length as u64)
             .ok_or_else(|| Error::InvalidManifest("compressed range overflow".to_owned()))?;
-        if compressed_end > compressed_size {
+        let part_size = compressed_sizes[record.part as usize];
+        if compressed_end > part_size {
             return Err(Error::InvalidManifest(format!(
-                "compressed range ends at {compressed_end}, file length is {compressed_size}"
+                "compressed range ends at {compressed_end}, part {} length is {part_size}",
+                record.part
             )));
         }
         if (record.zero || record.fill.is_some()) && record.compressed_length != 0 {
@@ -1145,7 +1242,7 @@ pub(crate) fn decompress_file(
     thread::scope(|scope| {
         let fill = scope.spawn(|| write_fill_chunks(&destination, &records));
         let result = decompress_records(
-            &input,
+            &inputs,
             &records,
             codec,
             &destination,
@@ -1161,7 +1258,7 @@ pub(crate) fn decompress_file(
 
 #[expect(clippy::too_many_arguments)]
 fn decompress_records(
-    input: &Arc<File>,
+    inputs: &Arc<Vec<File>>,
     records: &Arc<Vec<ChunkRecord>>,
     codec: Codec,
     destination: &Destination<'_>,
@@ -1173,7 +1270,7 @@ fn decompress_records(
     #[cfg(feature = "qpl")]
     if let Some(huffman_mode) = codec.async_huffman_mode() {
         return decompress_file_qpl_async(
-            input,
+            inputs,
             records,
             destination,
             expected_size,
@@ -1189,7 +1286,7 @@ fn decompress_records(
     thread::scope(|scope| {
         let mut handles = Vec::with_capacity(workers.max(1));
         for _ in 0..workers.max(1) {
-            let input = Arc::clone(input);
+            let inputs = Arc::clone(inputs);
             let records = Arc::clone(records);
             let first_error = &first_error;
             let next_chunk = &next_chunk;
@@ -1218,7 +1315,7 @@ fn decompress_records(
                             return Ok(());
                         }
                         compressed.resize(record.compressed_length as usize, 0);
-                        input
+                        inputs[record.part as usize]
                             .read_exact_at(&mut compressed, record.compressed_offset)
                             .map_err(Error::Read)?;
                         let output =
@@ -1258,16 +1355,24 @@ fn decompress_records(
 
     Ok(CompressionStats {
         input_bytes: expected_size,
-        output_bytes: input.metadata().map_err(Error::Read)?.len(),
+        output_bytes: total_len(inputs)?,
         chunks: records.len(),
         elapsed: started.elapsed(),
     })
 }
 
+/// Sum of the file lengths of a slot's data parts.
+fn total_len(inputs: &[File]) -> Result<u64, Error> {
+    inputs
+        .iter()
+        .map(|input| input.metadata().map(|m| m.len()).map_err(Error::Read))
+        .sum()
+}
+
 #[cfg(feature = "qpl")]
 #[expect(clippy::too_many_arguments)]
 fn decompress_file_qpl_async(
-    input: &File,
+    inputs: &[File],
     records: &[ChunkRecord],
     destination: &Destination<'_>,
     expected_size: u64,
@@ -1283,7 +1388,7 @@ fn decompress_file_qpl_async(
     let mut active_count = 0_usize;
     for (slot, active_record) in active.iter_mut().enumerate() {
         *active_record =
-            submit_next_decompression_chunk(&mut pool, slot, input, records, &mut next_chunk)?;
+            submit_next_decompression_chunk(&mut pool, slot, inputs, records, &mut next_chunk)?;
         active_count += usize::from(active_record.is_some());
     }
 
@@ -1344,7 +1449,7 @@ fn decompress_file_qpl_async(
             made_progress = true;
 
             *active_entry =
-                submit_next_decompression_chunk(&mut pool, slot, input, records, &mut next_chunk)?;
+                submit_next_decompression_chunk(&mut pool, slot, inputs, records, &mut next_chunk)?;
             if active_entry.is_some() {
                 active_count += 1;
             }
@@ -1363,7 +1468,7 @@ fn decompress_file_qpl_async(
 
     Ok(CompressionStats {
         input_bytes: expected_size,
-        output_bytes: input.metadata().map_err(Error::Read)?.len(),
+        output_bytes: total_len(inputs)?,
         chunks: records.len(),
         elapsed: started.elapsed(),
     })
@@ -1373,7 +1478,7 @@ fn decompress_file_qpl_async(
 fn submit_next_decompression_chunk(
     pool: &mut QplJobPool,
     slot: usize,
-    input: &File,
+    inputs: &[File],
     records: &[ChunkRecord],
     next_chunk: &mut usize,
 ) -> Result<Option<usize>, Error> {
@@ -1383,7 +1488,7 @@ fn submit_next_decompression_chunk(
         if record.zero || record.fill.is_some() {
             continue;
         }
-        input
+        inputs[record.part as usize]
             .read_exact_at(
                 pool.input_mut(slot, record.compressed_length as usize),
                 record.compressed_offset,

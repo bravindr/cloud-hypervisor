@@ -364,7 +364,9 @@ fn default_workers() -> usize {
 }
 
 fn main() -> Result<()> {
-    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info"))
+        .format_timestamp_micros()
+        .init();
 
     let cli = Cli::parse();
     match cli.mode {
@@ -1461,6 +1463,7 @@ fn dump_shared(
     options: &CompressionOptions,
     huffman: qpl::HuffmanMode,
 ) -> Result<()> {
+    let started = Instant::now();
     let info = slot_info(config)?;
     let submitters = options.submitters.max(1);
     let per_pool = options.workers.div_ceil(submitters).max(1);
@@ -1525,6 +1528,7 @@ fn dump_shared(
         )
         .collect();
     let chunk_size_u32 = compression::validate_chunk_size(options.chunk_size)?;
+    let prepared = started.elapsed();
     let stats = compression::compress_slots(
         &jobs,
         &mut pools,
@@ -1533,6 +1537,11 @@ fn dump_shared(
         chunk_size_u32,
         options.accel,
     )?;
+    info!(
+        "shared pipeline: prepare {:.1} ms (map+extents+prefault+pools), compress {:.1} ms, submitters={submitters}",
+        prepared.as_secs_f64() * 1e3,
+        (started.elapsed() - prepared).as_secs_f64() * 1e3
+    );
     for ((slot, ..), stats) in mapped.iter().zip(&stats) {
         info!(
             "Compressed slot {slot}: codec={}, chunks={}, input={} bytes, output={} bytes, ratio={:.3}, throughput={:.3} GiB/s",
