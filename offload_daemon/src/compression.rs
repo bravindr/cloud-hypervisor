@@ -969,13 +969,41 @@ pub(crate) fn decompress_file(
     // which measured 2x slower than letting the kernel allocate per write.
     let destination =
         Destination::open(destination, destination_offset, expected_size).map_err(Error::Write)?;
-    write_fill_chunks(&destination, &records)?;
+    // Fill chunks are written while the compressed ones decompress.
+    thread::scope(|scope| {
+        let fill = scope.spawn(|| write_fill_chunks(&destination, &records));
+        let result = decompress_records(
+            &input,
+            &records,
+            codec,
+            &destination,
+            expected_size,
+            workers,
+            verify_crc,
+            started,
+        );
+        fill.join().map_err(|_| Error::WorkerPanic)??;
+        result
+    })
+}
+
+#[expect(clippy::too_many_arguments)]
+fn decompress_records(
+    input: &Arc<File>,
+    records: &Arc<Vec<ChunkRecord>>,
+    codec: Codec,
+    destination: &Destination<'_>,
+    expected_size: u64,
+    workers: usize,
+    verify_crc: bool,
+    started: Instant,
+) -> Result<CompressionStats, Error> {
     #[cfg(feature = "qpl")]
     if let Some(huffman_mode) = codec.async_huffman_mode() {
         return decompress_file_qpl_async(
-            &input,
-            &records,
-            &destination,
+            input,
+            records,
+            destination,
             expected_size,
             workers,
             huffman_mode,
@@ -989,11 +1017,10 @@ pub(crate) fn decompress_file(
     thread::scope(|scope| {
         let mut handles = Vec::with_capacity(workers.max(1));
         for _ in 0..workers.max(1) {
-            let input = Arc::clone(&input);
-            let records = Arc::clone(&records);
+            let input = Arc::clone(input);
+            let records = Arc::clone(records);
             let first_error = &first_error;
             let next_chunk = &next_chunk;
-            let destination = &destination;
             handles.push(scope.spawn(move || {
                 let mut worker = match CodecWorker::new(codec, 1) {
                     Ok(worker) => worker,

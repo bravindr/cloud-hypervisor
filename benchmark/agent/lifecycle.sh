@@ -78,6 +78,8 @@ variant_args() { # variant -> extra daemon snapshot args
 		base) ;; cpu) echo "--classify cpu" ;; dsa) echo "--classify dsa --dsa-depth $DSA_DEPTH" ;;
 		cpucrc) echo "--classify cpu --crc" ;; dsacrc) echo "--classify dsa --dsa-depth $DSA_DEPTH --crc" ;;
 	esac
+	# PIPELINE=shared|per-slot selects the daemon's multi-slot layout (default: the daemon's).
+	[ "$1" != base ] && [ -n "${PIPELINE:-}" ] && echo "--pipeline $PIPELINE" || true
 }
 variant_bin() { if [ "$1" = base ]; then echo "$BASE_OD"; else echo "$OD"; fi; }
 
