@@ -1117,11 +1117,11 @@ core-s; cpucrc 913 / 921 and 890 / 897 at 0.85-0.87; dsacrc 787 / 799 and
 
 Attribution on this guest:
 
-- **The DSA zero check now pays:** dsa vs cpu is 8-14 % less wall (49-81
+- **The DSA zero check now pays:** dsa vs cpu is 8-14 % less wall (48-81
   ms) and 0.07-0.09 core-s less CPU (15-24 %). The CPU scans 1.6 GiB of
   zeros on the thread that feeds IAA; DSA takes that off the critical path.
 - **With CRC the gap widens:** dsacrc vs cpucrc is 23-28 % less wall
-  (165-192 ms) and 35-39 % less daemon CPU (0.17-0.20 core-s). dsacrc is
+  (164-192 ms) and 28-39 % less daemon CPU (0.17-0.20 core-s). dsacrc is
   within 10 ms of dsa, so CRC on DSA stays free.
 - **Software is still the largest step:** base → cpu is 2.4-2.9x on wall
   and 3.1-3.4x on CPU.
