@@ -17,6 +17,8 @@
 # VM to VM_CPUS, so only the classifier differs.
 #
 # Output: $OUT/checkpoints.csv, $OUT/restores.csv, $OUT/steps.csv, logs.
+# KEEP_ALL=1 keeps every turn's checkpoint directory (default: only base and
+# last); SKIP_RESTORE=1 ends after the session without the restores.
 set -u
 HERE=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 REPO=$(cd -- "$HERE/../.." && pwd)
@@ -29,6 +31,8 @@ ROOTFS_TEMPLATE=${ROOTFS_DIR:-$HOME/vmbench}/rootfs_traj_$SESSION.ext4
 TRAJ=$HERE/traj/$SESSION.traj.json
 read -r -a VARIANTS <<<"${VARIANTS:-base cpu dsa cpucrc dsacrc}"
 CODEC=${CODEC:-qpl-hardware-static-async}; CHUNK=${CHUNK:-1048576}
+# CODEC=raw omits --compression: the daemon then writes the sparse raw format.
+CODEC_ARGS=(--compression "$CODEC"); [ "$CODEC" = raw ] && CODEC_ARGS=()
 WORKERS=${WORKERS:-8}; RESTORE_WORKERS=${RESTORE_WORKERS:-32}; DSA_DEPTH=${DSA_DEPTH:-32}
 VM_CPUS=${VM_CPUS:-0-3}; DAEMON_CPUS=${DAEMON_CPUS:-4,5}; GUEST_MEM=${GUEST_MEM:-4G}; GUEST_VCPUS=${GUEST_VCPUS:-2}
 export DTO_WQ_LIST=${DTO_WQ_LIST:-"wq0.0;wq2.0;wq4.0;wq6.0"} DTO_IS_NUMA_AWARE=${DTO_IS_NUMA_AWARE:-1} DTO_LOG_LEVEL=${DTO_LOG_LEVEL:-1}
@@ -86,7 +90,7 @@ for f in os.listdir(d):
     if f.endswith(".compressed"): out += os.path.getsize(p)
     if f.endswith(".index.json"):
         for c in json.load(open(p))["chunks"]:
-            n += 1; zero += bool(c.get("zero"))
+            n += 1; zero += bool(c.get("zero")) or c.get("fill") is not None
 print(f"{out},{zero},{n}")
 PY
 }
@@ -105,11 +109,11 @@ checkpoint() { # name turn final(0|1)
 	"$REM" --api-socket "$SOCK" pause >/dev/null || { log "pause failed"; return 1; }
 	for ((j = 0; j < n; j++)); do
 		v=${VARIANTS[$(( (j + turn) % n ))]}
-		dir=$SNAP/$v/$name; [ "$name" != base ] && dir=$SNAP/$v/last
+		dir=$SNAP/$v/$name; [ "$name" != base ] && [ "${KEEP_ALL:-0}" != 1 ] && dir=$SNAP/$v/last
 		rm -rf -- "${dir:?}"; mkdir -p "$(dirname "$dir")"; rm -f -- "${OSOCK:?}" "${OSOCK:?}.lock"
 		dlog=$OUT/daemon_${name}_$v.log
 		/usr/bin/time -f "%e %U %S" -o "$OUT/t.txt" taskset -c "$DAEMON_CPUS" "$(variant_bin "$v")" snapshot \
-			--socket "$OSOCK" --output-dir "$dir" --compression "$CODEC" --chunk-size "$CHUNK" \
+			--socket "$OSOCK" --output-dir "$dir" ${CODEC_ARGS[@]+"${CODEC_ARGS[@]}"} --chunk-size "$CHUNK" \
 			--workers "$WORKERS" $(variant_args "$v") > "$dlog" 2>&1 &
 		dpid=$!
 		for _ in $(seq 1 200); do [ -S "$OSOCK" ] && break; sleep 0.05; done
@@ -184,6 +188,7 @@ done
 cp --sparse=always "$RUNIMG" "$FINALDISK"
 log "session done; restoring"
 
+[ "${SKIP_RESTORE:-0}" = 1 ] && VARIANTS=()
 for v in "${VARIANTS[@]}"; do
 	restore last "$v" "$FINALDISK" AGENT_DIFF_POINT 60
 	restore base "$v" "$BASEDISK" "AGENT_STEP_DONE 1 " 300
