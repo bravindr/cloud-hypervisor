@@ -1,0 +1,7 @@
+[2026-10-12T17:34:28.483911Z DEBUG offload_daemon::compression] submitter: claimed 1392 chunks, classification done at 49.4 ms, compressed 184 chunks, finished at 55.1 ms, idle sleeps 52
+[2026-10-12T17:34:28.483928Z DEBUG offload_daemon::compression] submitter: claimed 2704 chunks, classification done at 49.4 ms, compressed 181 chunks, finished at 55.1 ms, idle sleeps 49
+[2026-10-12T17:34:28.484563Z INFO  offload_daemon::compression] classify=dsa prefault=8.3ms zero_chunks=740/1024 fill_chunks=0 hole_chunks=735 data_mib=289 dsa submitted=289 fallback=0 failed=0 cpu_scans=0 crc=false slots_sharing_pool=2 submitters=2 compress_ms=55.3 sync_ms=0.1
+[2026-10-12T17:34:28.485899Z INFO  offload_daemon::compression] classify=dsa prefault=8.2ms zero_chunks=2911/3072 fill_chunks=80 hole_chunks=2837 data_mib=235 dsa submitted=235 fallback=0 failed=0 cpu_scans=0 crc=false slots_sharing_pool=2 submitters=2 compress_ms=55.3 sync_ms=0.1
+[2026-10-12T17:34:28.485930Z INFO  offload_daemon] shared pipeline: prepare 20.4 ms (map+extents+prefault+pools), compress 57.2 ms, submitters=2
+[2026-10-12T17:34:28.485932Z INFO  offload_daemon] Compressed slot 1: codec=qpl-hardware-static-async, chunks=1024, input=1073741824 bytes, output=145900509 bytes, ratio=0.136, throughput=18.097 GiB/s
+[2026-10-12T17:34:28.485934Z INFO  offload_daemon] Compressed slot 0: codec=qpl-hardware-static-async, chunks=3072, input=3221225472 bytes, output=52173579 bytes, ratio=0.016, throughput=54.290 GiB/s

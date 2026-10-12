@@ -1,0 +1,5 @@
+[2026-10-12T17:42:58Z INFO  offload_daemon] Offload daemon listening at "/home/byrnedan/chlogs/lifecycle-fill6/write-compressor_30b-4k-20261012_104251/offload.sock"
+[2026-10-12T17:42:58Z INFO  offload_daemon] CH connected; starting snapshot receive
+[2026-10-12T17:42:58Z INFO  offload_daemon] Compressed slot 1: codec=qpl-hardware-static-async, chunks=1024, input=1073741824 bytes, output=144773465 bytes, ratio=0.135, throughput=2.769 GiB/s
+[2026-10-12T17:42:59Z INFO  offload_daemon] Compressed slot 0: codec=qpl-hardware-static-async, chunks=3072, input=3221225472 bytes, output=56756985 bytes, ratio=0.018, throughput=2.646 GiB/s
+[2026-10-12T17:42:59Z INFO  offload_daemon] Snapshot persisted to "/mnt/chsnap/lifecycle/write-compressor_30b-4k/base/base"

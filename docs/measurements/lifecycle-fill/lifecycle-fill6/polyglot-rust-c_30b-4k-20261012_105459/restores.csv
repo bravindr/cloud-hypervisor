@@ -1,0 +1,11 @@
+session,pages,checkpoint,variant,restore_ms,user_s,sys_s,guest_ms,guest_ok,rc
+polyglot-rust-c_30b,4k,last,base,343,0.01,0.24,2915,1,0
+polyglot-rust-c_30b,4k,base,base,174,0.01,0.19,6036,1,0
+polyglot-rust-c_30b,4k,last,cpu,254,0.01,0.25,3952,1,0
+polyglot-rust-c_30b,4k,base,cpu,194,0.01,0.20,4577,1,0
+polyglot-rust-c_30b,4k,last,dsa,235,0.02,0.24,3538,1,0
+polyglot-rust-c_30b,4k,base,dsa,194,0.01,0.19,4376,1,0
+polyglot-rust-c_30b,4k,last,cpucrc,242,0.01,0.25,3331,1,0
+polyglot-rust-c_30b,4k,base,cpucrc,179,0.01,0.19,4165,1,0
+polyglot-rust-c_30b,4k,last,dsacrc,242,0.01,0.25,3125,1,0
+polyglot-rust-c_30b,4k,base,dsacrc,179,0.01,0.19,3949,1,0

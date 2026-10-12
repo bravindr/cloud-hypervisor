@@ -1,0 +1,17 @@
+10:55:01 session polyglot-rust-c_30b pages=4k turns=16 variants=base cpu dsa cpucrc dsacrc workers=8 daemon_cpus=4,5
+10:55:07 boot to AGENT_BASE_POINT: 6646 ms
+10:55:32   checkpointed turn 5/16
+10:55:53   checkpointed turn 10/16
+10:56:13   checkpointed turn 15/16
+10:56:18 session done; restoring
+10:56:23 restore last base: rc=0 343 ms, guest 'AGENT_DIFF_POINT' ok=1 after 2915 ms
+10:56:31 restore base base: rc=0 174 ms, guest 'AGENT_STEP_DONE 1 ' ok=1 after 6036 ms
+10:56:38 restore last cpu: rc=0 254 ms, guest 'AGENT_DIFF_POINT' ok=1 after 3952 ms
+10:56:45 restore base cpu: rc=0 194 ms, guest 'AGENT_STEP_DONE 1 ' ok=1 after 4577 ms
+10:56:51 restore last dsa: rc=0 235 ms, guest 'AGENT_DIFF_POINT' ok=1 after 3538 ms
+10:57:00 restore base dsa: rc=0 194 ms, guest 'AGENT_STEP_DONE 1 ' ok=1 after 4376 ms
+10:57:05 restore last cpucrc: rc=0 242 ms, guest 'AGENT_DIFF_POINT' ok=1 after 3331 ms
+10:57:12 restore base cpucrc: rc=0 179 ms, guest 'AGENT_STEP_DONE 1 ' ok=1 after 4165 ms
+10:57:17 restore last dsacrc: rc=0 242 ms, guest 'AGENT_DIFF_POINT' ok=1 after 3125 ms
+10:57:24 restore base dsacrc: rc=0 179 ms, guest 'AGENT_STEP_DONE 1 ' ok=1 after 3949 ms
+10:57:24 DONE -> /home/byrnedan/chlogs/lifecycle-fill6/polyglot-rust-c_30b-4k-20261012_105459

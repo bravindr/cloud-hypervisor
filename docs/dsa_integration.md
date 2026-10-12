@@ -1238,10 +1238,9 @@ outside compression (pause, memfd transfer, prefault, manifest), not IAA.
 lifecycle harness pins the daemon to two cores, and there the per-slot
 layout wins wall at a small CPU cost: 4 KiB cpu 121 → 96 ms, dsa 106 → 96;
 2 MiB cpu 352 → 255, dsa 98 → 88 (`lifecycle-fill-shared` vs
-`lifecycle-fill-per-slot2`; CPU 0.09 → 0.11 core-s for dsa). A second
-submitter thread for the shared queue (§7c.4) would reconcile the two; until
-then `--pipeline per-slot` is the better choice for multi-slot guests when
-the daemon has more than one core.
+`lifecycle-fill-per-slot2`; CPU 0.09 → 0.11 core-s for dsa). Section 7c.2o adds the
+second submitter and per-thread output parts, after which the shared
+pipeline is equal or faster than per-slot in every cell.
 
 Restores are unchanged within noise (144-186 ms, CRC verification
 included); one restore in roughly thirty takes ~500 ms with either daemon
@@ -1249,6 +1248,75 @@ generation (first-mapping cost, §7c.3), unrelated to this change. The
 Oct 2 lifecycle figures (§7c.2e) were taken on the same host but read 25-30
 ms lower on the 2 MiB cells than any run today, including the pre-fill
 daemon's, so comparisons should stay within one day's runs.
+
+### 7c.2o Two submitter threads for the shared pipeline
+
+`--submitters N` (default 2) gives the shared pipeline N threads, each with
+`--workers / N` IAA jobs. Getting it to beat the per-slot layout took four
+steps, each measured on the lifecycle guest (4 GiB, 4 KiB pages, daemon on
+two cores, `benchmark/agent/lifecycle.sh`, two sessions / 23 turns unless
+noted; `docs/measurements/lifecycle-fill/submitters/`):
+
+1. **Static slot ownership** (thread 0 owns the 3 GiB slot, thread 1 the
+   1 GiB slot, one queue): 2 MiB CPU-classify 352 → 304 ms but daemon CPU
+   0.34 → 0.54 core-s, and 4 KiB cells gained nothing for +50 % CPU. The
+   thread with the small slot finished its scan early and spun.
+2. **Work-stealing classification** (chunks of every slot claimed through a
+   per-slot atomic cursor, one classifier per slot per thread): 2 MiB CPU
+   229 ms / 0.39 core-s, now ahead of per-slot's 255, but 4 KiB stayed
+   15-20 ms behind per-slot (120 vs 96 ms). Mapping the slots and creating
+   the pools concurrently changed nothing; the A/B on one paused guest with
+   rotated order reproduced the gap and per-thread accounting located it:
+   the shared queue compressed 5.6 chunks/ms with 8, 16 or 32 jobs alike,
+   while one per-slot thread with 8 jobs reached 6.9.
+3. **One output part per thread.** Under `strace -c -w` the same 360 pwrites
+   averaged 229-274 us in the shared layout against 132-137 us per-slot:
+   two threads writing one file serialize on its inode lock, and a thread
+   blocked in pwrite is not polling its IAA jobs. Each thread now writes
+   `memory-N.partP.compressed` (manifest field `part`, default 0, so older
+   manifests stay valid; restore opens the parts a manifest names; empty
+   parts are removed). Compress phase 43 ms against per-slot's 54 and the
+   single submitter's 66; checkpoint 80 vs 84 ms (CPU classify), 74 vs 83
+   (DSA), performance governor.
+4. **Writeback step 64 → 16 MiB.** On NVMe with one daemon core the final
+   fsync of the shared layout took 81 ms against 20 for per-slot: with two
+   parts per slot, twice as much dirty data was left for it.
+
+**Agent lifecycle, all 7 sessions, 170 turns per page size, daemon on two
+cores, on-demand governor** (median wall / daemon CPU per full checkpoint;
+`lifecycle-fill6`; this morning's single-submitter run `lifecycle-fill` and
+the per-slot layout, two sessions, `lifecycle-fill-per-slot2`, for scale):
+
+| variant | 4 KiB: shared, 2 submitters | shared, 1 | per-slot | 2 MiB: shared, 2 | shared, 1 | per-slot |
+|---|---|---|---|---|---|---|
+| base daemon | 1153 / 1.49 | 1154 / 1.49 | | 1502 / 1.91 | 1507 / 1.91 | |
+| cpu | **97 / 0.13** | 132 / 0.12 | 96 / 0.13 | **208 / 0.36** | 354 / 0.34 | 255 / 0.35 |
+| dsa | **88 / 0.11** | 109 / 0.10 | 96 / 0.11 | **72 / 0.10** | 101 / 0.09 | 88 / 0.11 |
+| cpucrc | **111 / 0.16** | 159 / 0.14 | | **218 / 0.38** | 375 / 0.36 | |
+| dsacrc | **88 / 0.11** | 109 / 0.10 | | **84 / 0.12** | 114 / 0.10 | |
+
+Against the single submitter the checkpoint is 19-27 % faster on 4 KiB and
+26-41 % faster on 2 MiB at the same CPU; against per-slot it is equal or
+faster everywhere (2 MiB: −18 %). DSA vs CPU: −9 % wall / −15 % CPU on
+4 KiB, −65 % / −72 % on 2 MiB; per-chunk CRC free on DSA.
+
+**NVMe harness, one daemon core** (`harness-pipeline-nvme-sub7`, depth 8,
+median ms; `+cpu`/`+dsa` shared with two submitters, `+cpuslot`/`+dsaslot`
+per-slot): dynamic Huffman 572 / 563 vs 629 / 619 (−9 %; the table build
+now runs on two threads even with one core, because one thread's build
+overlaps the other's waits); static Huffman 610 / 614 vs 608 / 599 (within
+2 %; at depth 8 static output is written faster than the drive takes it, the
+fsync tail is 62 ms, and both layouts sit on that floor). Restore unchanged
+(761-786 ms).
+
+Notes:
+- The performance governor takes 8-10 ms off every checkpoint of this guest
+  (per-slot 97 → 86 ms) without changing any ordering; all lifecycle numbers
+  here are with the on-demand governor the host runs.
+- About one restore in thirty takes ~500 ms; the daemon's own span (connect
+  to replay finished, now visible with microsecond log timestamps) is a
+  normal 160-200 ms in those cases, so the time is outside the daemon.
+- Idle submitter threads spin 200 rounds and then sleep 20 us per round.
 
 ### 7c.3 IOMMU first touch: measured, and the fix
 
@@ -1278,9 +1346,10 @@ slower first cell in each sweep (`cpu` 492 vs 331 ms, `dsa` w8 473 vs 214 ms).
 
 ### 7c.4 Follow-ups
 
-- Two submitter threads draining the shared ready queue, so dynamic
-  Huffman table builds run in parallel (§7c.2j: per-slot is 4-5 % faster
-  at depth 16/32 for that reason).
+- Pick `--submitters` from the daemon's CPU affinity (one thread when
+  pinned to one core); the single-core harness still runs two.
+- The ~500 ms restore outliers (one in thirty) are outside the daemon
+  (section 7c.2o): time the VMM side of receive-migration.
 - The ~130 ms of a tmpfs snapshot spent outside compression (§7c.2j).
 - Use DSA COMPVAL in the diff path too (pages without a reference are
   compared against a zero page; a COMPVAL with the page's first qword would

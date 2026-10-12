@@ -1,0 +1,16 @@
+11:04:47 session circuit-fibsqrt_7b pages=2m turns=10 variants=base cpu dsa cpucrc dsacrc workers=8 daemon_cpus=4,5
+11:04:53 boot to AGENT_BASE_POINT: 5398 ms
+11:05:18   checkpointed turn 5/10
+11:05:38   checkpointed turn 10/10
+11:05:39 session done; restoring
+11:05:43 restore last base: rc=0 170 ms, guest 'AGENT_DIFF_POINT' ok=1 after 3947 ms
+11:05:51 restore base base: rc=0 158 ms, guest 'AGENT_STEP_DONE 1 ' ok=1 after 5819 ms
+11:05:54 restore last cpu: rc=0 157 ms, guest 'AGENT_DIFF_POINT' ok=1 after 2293 ms
+11:06:00 restore base cpu: rc=0 143 ms, guest 'AGENT_STEP_DONE 1 ' ok=1 after 4571 ms
+11:06:03 restore last dsa: rc=0 158 ms, guest 'AGENT_DIFF_POINT' ok=1 after 1878 ms
+11:06:09 restore base dsa: rc=0 148 ms, guest 'AGENT_STEP_DONE 1 ' ok=1 after 3953 ms
+11:06:12 restore last cpucrc: rc=0 151 ms, guest 'AGENT_DIFF_POINT' ok=1 after 1667 ms
+11:06:17 restore base cpucrc: rc=0 151 ms, guest 'AGENT_STEP_DONE 1 ' ok=1 after 3745 ms
+11:06:19 restore last dsacrc: rc=0 156 ms, guest 'AGENT_DIFF_POINT' ok=1 after 1250 ms
+11:06:24 restore base dsacrc: rc=0 147 ms, guest 'AGENT_STEP_DONE 1 ' ok=1 after 3326 ms
+11:06:24 DONE -> /home/byrnedan/chlogs/lifecycle-fill6/circuit-fibsqrt_7b-2m-20261012_110447

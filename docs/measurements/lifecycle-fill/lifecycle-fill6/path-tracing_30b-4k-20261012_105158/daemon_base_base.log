@@ -1,0 +1,5 @@
+[2026-10-12T17:52:07Z INFO  offload_daemon] Offload daemon listening at "/home/byrnedan/chlogs/lifecycle-fill6/path-tracing_30b-4k-20261012_105158/offload.sock"
+[2026-10-12T17:52:07Z INFO  offload_daemon] CH connected; starting snapshot receive
+[2026-10-12T17:52:08Z INFO  offload_daemon] Compressed slot 1: codec=qpl-hardware-static-async, chunks=1024, input=1073741824 bytes, output=164078426 bytes, ratio=0.153, throughput=2.678 GiB/s
+[2026-10-12T17:52:08Z INFO  offload_daemon] Compressed slot 0: codec=qpl-hardware-static-async, chunks=3072, input=3221225472 bytes, output=35208517 bytes, ratio=0.011, throughput=2.615 GiB/s
+[2026-10-12T17:52:08Z INFO  offload_daemon] Snapshot persisted to "/mnt/chsnap/lifecycle/path-tracing_30b-4k/base/base"

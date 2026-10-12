@@ -1,0 +1,26 @@
+10:57:26 session winning-avg-corewars_30b pages=4k turns=60 variants=base cpu dsa cpucrc dsacrc workers=8 daemon_cpus=4,5
+10:57:33 boot to AGENT_BASE_POINT: 6643 ms
+10:57:57   checkpointed turn 5/60
+10:58:18   checkpointed turn 10/60
+10:58:39   checkpointed turn 15/60
+10:58:59   checkpointed turn 20/60
+10:59:19   checkpointed turn 25/60
+10:59:39   checkpointed turn 30/60
+10:59:59   checkpointed turn 35/60
+11:00:19   checkpointed turn 40/60
+11:00:40   checkpointed turn 45/60
+11:01:00   checkpointed turn 50/60
+11:01:20   checkpointed turn 55/60
+11:01:40   checkpointed turn 60/60
+11:01:41 session done; restoring
+11:01:46 restore last base: rc=0 386 ms, guest 'AGENT_DIFF_POINT' ok=1 after 3744 ms
+11:01:55 restore base base: rc=0 557 ms, guest 'AGENT_STEP_DONE 1 ' ok=1 after 6030 ms
+11:02:00 restore last cpu: rc=0 165 ms, guest 'AGENT_DIFF_POINT' ok=1 after 2702 ms
+11:02:07 restore base cpu: rc=0 174 ms, guest 'AGENT_STEP_DONE 1 ' ok=1 after 4789 ms
+11:02:12 restore last dsa: rc=0 170 ms, guest 'AGENT_DIFF_POINT' ok=1 after 2495 ms
+11:02:20 restore base dsa: rc=0 165 ms, guest 'AGENT_STEP_DONE 1 ' ok=1 after 4569 ms
+11:02:24 restore last cpucrc: rc=0 157 ms, guest 'AGENT_DIFF_POINT' ok=1 after 2293 ms
+11:02:31 restore base cpucrc: rc=0 185 ms, guest 'AGENT_STEP_DONE 1 ' ok=1 after 4366 ms
+11:02:35 restore last dsacrc: rc=0 172 ms, guest 'AGENT_DIFF_POINT' ok=1 after 1875 ms
+11:02:42 restore base dsacrc: rc=0 164 ms, guest 'AGENT_STEP_DONE 1 ' ok=1 after 4163 ms
+11:02:42 DONE -> /home/byrnedan/chlogs/lifecycle-fill6/winning-avg-corewars_30b-4k-20261012_105724

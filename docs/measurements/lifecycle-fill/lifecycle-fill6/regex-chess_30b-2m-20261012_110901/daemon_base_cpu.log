@@ -1,0 +1,8 @@
+[2026-10-12T18:09:07.809189Z INFO  offload_daemon] Offload daemon listening at "/home/byrnedan/chlogs/lifecycle-fill6/regex-chess_30b-2m-20261012_110901/offload.sock"
+[2026-10-12T18:09:07.859661Z INFO  offload_daemon] CH connected; starting snapshot receive
+[2026-10-12T18:09:08.379731Z INFO  offload_daemon::compression] classify=cpu prefault=69.0ms zero_chunks=744/1024 fill_chunks=0 hole_chunks=0 data_mib=1024 dsa submitted=0 fallback=0 failed=0 cpu_scans=1024 crc=false slots_sharing_pool=2 submitters=2 compress_ms=178.4 sync_ms=0.2
+[2026-10-12T18:09:08.381069Z INFO  offload_daemon::compression] classify=cpu prefault=256.2ms zero_chunks=2911/3072 fill_chunks=80 hole_chunks=0 data_mib=3072 dsa submitted=0 fallback=0 failed=0 cpu_scans=3072 crc=false slots_sharing_pool=2 submitters=2 compress_ms=178.4 sync_ms=0.2
+[2026-10-12T18:09:08.381100Z INFO  offload_daemon] shared pipeline: prepare 338.9 ms (map+extents+prefault+pools), compress 180.6 ms, submitters=2
+[2026-10-12T18:09:08.381103Z INFO  offload_daemon] Compressed slot 1: codec=qpl-hardware-static-async, chunks=1024, input=1073741824 bytes, output=144543259 bytes, ratio=0.135, throughput=5.604 GiB/s
+[2026-10-12T18:09:08.381106Z INFO  offload_daemon] Compressed slot 0: codec=qpl-hardware-static-async, chunks=3072, input=3221225472 bytes, output=52172447 bytes, ratio=0.016, throughput=16.812 GiB/s
+[2026-10-12T18:09:08.382290Z INFO  offload_daemon] Snapshot persisted to "/mnt/chsnap/lifecycle/regex-chess_30b-2m/cpu/base"

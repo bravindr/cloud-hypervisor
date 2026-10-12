@@ -1,0 +1,9 @@
+variant                                  connected->persisted  prepare  compress   sync  connected->classify log
+qpl-hardware-dynamic-async+cpu                          560.4     77.5     421.4   23.4                    525.4
+qpl-hardware-dynamic-async+cpuslot                      617.0      nan     509.8    6.6                    433.3
+qpl-hardware-dynamic-async+dsa                          551.1     76.9     412.9   26.1                    517.5
+qpl-hardware-dynamic-async+dsaslot                      607.2      nan     501.1    6.7                    430.4
+qpl-hardware-static-async+cpu                           598.8     77.4     420.8   64.8                    566.4
+qpl-hardware-static-async+cpuslot                       596.2      nan     486.6    6.3                    554.3
+qpl-hardware-static-async+dsa                           601.9     77.7     425.2   62.2                    568.7
+qpl-hardware-static-async+dsaslot                       587.2      nan     466.6   21.5                    554.5

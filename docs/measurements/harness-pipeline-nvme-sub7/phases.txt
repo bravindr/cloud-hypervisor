@@ -1,0 +1,8 @@
+qpl-hardware-dynamic-async+cpu             w8   n=20 compress_ms med   421.4  sync_ms med   23.4
+qpl-hardware-dynamic-async+cpuslot         w8   n=20 compress_ms med   509.8  sync_ms med    6.9
+qpl-hardware-dynamic-async+dsa             w8   n=20 compress_ms med   412.9  sync_ms med   26.1
+qpl-hardware-dynamic-async+dsaslot         w8   n=20 compress_ms med   501.1  sync_ms med    9.5
+qpl-hardware-static-async+cpu              w8   n=20 compress_ms med   420.8  sync_ms med   64.8
+qpl-hardware-static-async+cpuslot          w8   n=20 compress_ms med   486.6  sync_ms med  145.8
+qpl-hardware-static-async+dsa              w8   n=20 compress_ms med   425.2  sync_ms med   62.2
+qpl-hardware-static-async+dsaslot          w8   n=20 compress_ms med   466.6  sync_ms med  156.6

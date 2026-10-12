@@ -1,0 +1,6 @@
+[2026-10-12T17:24:50.038523Z DEBUG offload_daemon::compression] submitter: claimed 3072 chunks, classification done at 10.5 ms, compressed 33 chunks, finished at 20.7 ms, idle sleeps 0
+[2026-10-12T17:24:50.039958Z INFO  offload_daemon::compression] classify=cpu prefault=4.3ms zero_chunks=2966/3072 fill_chunks=73 hole_chunks=2901 data_mib=171 dsa submitted=0 fallback=0 failed=0 cpu_scans=171 crc=false slots_sharing_pool=1 submitters=1 compress_ms=20.9 sync_ms=0.1
+[2026-10-12T17:24:50.042796Z INFO  offload_daemon] Compressed slot 0: codec=qpl-hardware-static-async, chunks=3072, input=3221225472 bytes, output=31022046 bytes, ratio=0.010, throughput=143.704 GiB/s
+[2026-10-12T17:24:50.065639Z DEBUG offload_daemon::compression] submitter: claimed 1024 chunks, classification done at 2.1 ms, compressed 331 chunks, finished at 47.9 ms, idle sleeps 20
+[2026-10-12T17:24:50.066133Z INFO  offload_daemon::compression] classify=cpu prefault=8.4ms zero_chunks=691/1024 fill_chunks=2 hole_chunks=678 data_mib=346 dsa submitted=0 fallback=0 failed=0 cpu_scans=346 crc=false slots_sharing_pool=1 submitters=1 compress_ms=48.0 sync_ms=0.1
+[2026-10-12T17:24:50.070982Z INFO  offload_daemon] Compressed slot 1: codec=qpl-hardware-static-async, chunks=1024, input=1073741824 bytes, output=167023100 bytes, ratio=0.156, throughput=20.828 GiB/s

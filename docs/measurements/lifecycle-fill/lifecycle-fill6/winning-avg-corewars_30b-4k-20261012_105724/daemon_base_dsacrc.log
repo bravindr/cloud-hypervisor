@@ -1,0 +1,8 @@
+[2026-10-12T17:57:35.060431Z INFO  offload_daemon] Offload daemon listening at "/home/byrnedan/chlogs/lifecycle-fill6/winning-avg-corewars_30b-4k-20261012_105724/offload.sock"
+[2026-10-12T17:57:35.109077Z INFO  offload_daemon] CH connected; starting snapshot receive
+[2026-10-12T17:57:35.176670Z INFO  offload_daemon::compression] classify=dsa prefault=9.7ms zero_chunks=2911/3072 fill_chunks=80 hole_chunks=2837 data_mib=235 dsa submitted=470 fallback=0 failed=0 cpu_scans=0 crc=true slots_sharing_pool=2 submitters=2 compress_ms=37.7 sync_ms=0.3
+[2026-10-12T17:57:35.177086Z INFO  offload_daemon::compression] classify=dsa prefault=9.5ms zero_chunks=736/1024 fill_chunks=0 hole_chunks=731 data_mib=293 dsa submitted=586 fallback=0 failed=0 cpu_scans=0 crc=true slots_sharing_pool=2 submitters=2 compress_ms=37.7 sync_ms=0.3
+[2026-10-12T17:57:35.177095Z INFO  offload_daemon] shared pipeline: prepare 24.7 ms (map+extents+prefault+pools), compress 41.0 ms, submitters=2
+[2026-10-12T17:57:35.177097Z INFO  offload_daemon] Compressed slot 0: codec=qpl-hardware-static-async, chunks=3072, input=3221225472 bytes, output=52169494 bytes, ratio=0.016, throughput=79.576 GiB/s
+[2026-10-12T17:57:35.177099Z INFO  offload_daemon] Compressed slot 1: codec=qpl-hardware-static-async, chunks=1024, input=1073741824 bytes, output=146261119 bytes, ratio=0.136, throughput=26.525 GiB/s
+[2026-10-12T17:57:35.184472Z INFO  offload_daemon] Snapshot persisted to "/mnt/chsnap/lifecycle/winning-avg-corewars_30b-4k/dsacrc/base"

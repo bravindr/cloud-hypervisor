@@ -1,0 +1,8 @@
+[2026-10-12T17:42:59.528910Z INFO  offload_daemon] Offload daemon listening at "/home/byrnedan/chlogs/lifecycle-fill6/write-compressor_30b-4k-20261012_104251/offload.sock"
+[2026-10-12T17:42:59.581141Z INFO  offload_daemon] CH connected; starting snapshot receive
+[2026-10-12T17:42:59.645715Z INFO  offload_daemon::compression] classify=dsa prefault=8.3ms zero_chunks=745/1024 fill_chunks=0 hole_chunks=740 data_mib=284 dsa submitted=284 fallback=0 failed=0 cpu_scans=0 crc=false slots_sharing_pool=2 submitters=2 compress_ms=36.0 sync_ms=0.4
+[2026-10-12T17:42:59.648002Z INFO  offload_daemon::compression] classify=dsa prefault=9.5ms zero_chunks=2911/3072 fill_chunks=80 hole_chunks=2837 data_mib=235 dsa submitted=235 fallback=0 failed=0 cpu_scans=0 crc=false slots_sharing_pool=2 submitters=2 compress_ms=36.0 sync_ms=0.4
+[2026-10-12T17:42:59.648036Z INFO  offload_daemon] shared pipeline: prepare 24.7 ms (map+extents+prefault+pools), compress 40.3 ms, submitters=2
+[2026-10-12T17:42:59.648038Z INFO  offload_daemon] Compressed slot 1: codec=qpl-hardware-static-async, chunks=1024, input=1073741824 bytes, output=144773465 bytes, ratio=0.135, throughput=27.776 GiB/s
+[2026-10-12T17:42:59.648041Z INFO  offload_daemon] Compressed slot 0: codec=qpl-hardware-static-async, chunks=3072, input=3221225472 bytes, output=52169145 bytes, ratio=0.016, throughput=83.329 GiB/s
+[2026-10-12T17:42:59.655218Z INFO  offload_daemon] Snapshot persisted to "/mnt/chsnap/lifecycle/write-compressor_30b-4k/dsa/base"
