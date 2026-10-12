@@ -1462,25 +1462,39 @@ fn dump_shared(
     huffman: qpl::HuffmanMode,
 ) -> Result<()> {
     let info = slot_info(config)?;
-    let mut mapped = Vec::with_capacity(slots.len());
-    for (slot, file) in slots {
-        let &(_, _, size, file_offset) = info
+    // Map, find the data extents of and prefault every slot concurrently:
+    // sequentially this cost a 4 KiB-page guest 10-25 ms per slot before
+    // compression could start (the per-slot layout always overlapped it).
+    let mapped = thread::scope(|scope| {
+        let handles: Vec<_> = slots
             .iter()
-            .find(|(s, ..)| s == slot)
-            .ok_or(Error::MissingSlot(*slot))?;
-        let (mapping, extents, prefault) =
-            compression::map_slot(file, file_offset, size, options.accel.prefault)?;
-        mapped.push((
-            *slot,
-            size,
-            file_offset,
-            mapping,
-            extents,
-            prefault,
-            output_dir.join(format!("memory-{slot}.compressed")),
-            output_dir.join(format!("memory-{slot}.index.json")),
-        ));
-    }
+            .map(|(slot, file)| {
+                let info = &info;
+                scope.spawn(move || {
+                    let &(_, _, size, file_offset) = info
+                        .iter()
+                        .find(|(s, ..)| s == slot)
+                        .ok_or(Error::MissingSlot(*slot))?;
+                    let (mapping, extents, prefault) =
+                        compression::map_slot(file, file_offset, size, options.accel.prefault)?;
+                    Ok::<_, Error>((
+                        *slot,
+                        size,
+                        file_offset,
+                        mapping,
+                        extents,
+                        prefault,
+                        output_dir.join(format!("memory-{slot}.compressed")),
+                        output_dir.join(format!("memory-{slot}.index.json")),
+                    ))
+                })
+            })
+            .collect();
+        handles
+            .into_iter()
+            .map(|handle| handle.join().expect("slot mapping thread panicked"))
+            .collect::<Result<Vec<_>>>()
+    })?;
     let jobs: Vec<compression::SlotJob<'_>> = mapped
         .iter()
         .map(

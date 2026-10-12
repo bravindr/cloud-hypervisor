@@ -788,6 +788,7 @@ fn submit_chunks(
     let mut staged = VecDeque::new();
     let mut producing = true;
     let mut turn = 0_usize;
+    let mut idle_rounds = 0_u32;
     let record_no_data = |slot: usize, verdict: &Verdict| {
         outs[slot].lock().unwrap().records.push(ChunkRecord {
             uncompressed_offset: verdict.offset as u64,
@@ -937,11 +938,28 @@ fn submit_chunks(
         {
             return Ok(());
         }
-        if !made_progress {
-            thread::yield_now();
+        if made_progress {
+            idle_rounds = 0;
+        } else {
+            // Spin briefly (device completions are a few hundred microseconds
+            // apart), then back off so a thread with nothing to do stops
+            // burning a core while the other one scans.
+            idle_rounds += 1;
+            if idle_rounds < IDLE_SPIN_ROUNDS {
+                thread::yield_now();
+            } else {
+                thread::sleep(IDLE_BACKOFF);
+            }
         }
     }
 }
+
+/// Idle loop iterations before a submitter thread starts sleeping.
+#[cfg(feature = "qpl")]
+const IDLE_SPIN_ROUNDS: u32 = 200;
+/// Sleep per idle iteration after that.
+#[cfg(feature = "qpl")]
+const IDLE_BACKOFF: Duration = Duration::from_micros(20);
 
 /// A mapped slot, its data extents and the time spent populating them.
 #[cfg(feature = "qpl")]
