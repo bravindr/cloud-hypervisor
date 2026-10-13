@@ -6,9 +6,11 @@
 //! the compression pipeline and the accelerators work on the memory in place
 //! instead of copying every chunk through `pread`.
 
+use std::alloc::{self, Layout};
 use std::fs::File;
 use std::io;
 use std::mem;
+use std::ops::{Deref, DerefMut};
 use std::os::fd::AsRawFd;
 use std::ptr::{self, NonNull};
 #[cfg(feature = "qpl")]
@@ -243,3 +245,129 @@ impl Drop for Mapping {
 unsafe impl Send for Mapping {}
 // SAFETY: as above.
 unsafe impl Sync for Mapping {}
+
+/// A buffer that is page aligned, and 2 MiB aligned (and `MADV_HUGEPAGE`, so
+/// one THP) once it holds 2 MiB or more: the IAA pool's output buffers and the
+/// fill-chunk pattern. A chunk handed to `UFFDIO_COPY` must start on a page
+/// boundary for the kernel's copy offload to take it (a `Vec` from malloc
+/// starts 16 bytes into a page), and a single physically contiguous source
+/// lets the device copy it in one go.
+pub(crate) struct AlignedBuf {
+    ptr: *mut u8,
+    len: usize,
+    cap: usize,
+    align: usize,
+    /// A view into another buffer's allocation: never freed or regrown.
+    view: bool,
+}
+
+const BUF_PAGE: usize = 4096;
+const BUF_HUGE: usize = 2 << 20;
+
+impl AlignedBuf {
+    pub(crate) const fn new() -> Self {
+        Self {
+            ptr: ptr::null_mut(),
+            len: 0,
+            cap: 0,
+            align: 0,
+            view: false,
+        }
+    }
+
+    /// `cap` bytes at `ptr` inside an allocation someone else owns (and
+    /// keeps alive for as long as this view): resizes stay within `cap`.
+    pub(crate) fn view(ptr: *mut u8, cap: usize) -> Self {
+        Self {
+            ptr,
+            len: 0,
+            cap,
+            align: 0,
+            view: true,
+        }
+    }
+
+    pub(crate) fn as_mut_ptr_at(&self, offset: usize) -> *mut u8 {
+        assert!(offset <= self.cap);
+        // SAFETY: within the allocation.
+        unsafe { self.ptr.add(offset) }
+    }
+
+    /// Make the buffer `len` bytes long; contents are unspecified (the job
+    /// writes them), zeroed on a fresh allocation.
+    pub(crate) fn resize(&mut self, len: usize) {
+        if len > self.cap {
+            assert!(!self.view, "a buffer view cannot grow past its allocation");
+            self.release();
+            let align = if len >= BUF_HUGE { BUF_HUGE } else { BUF_PAGE };
+            let cap = len.div_ceil(align) * align;
+            let layout = Layout::from_size_align(cap, align).expect("valid buffer layout");
+            // SAFETY: non-zero-sized layout.
+            let p = unsafe { alloc::alloc_zeroed(layout) };
+            if p.is_null() {
+                alloc::handle_alloc_error(layout);
+            }
+            if align == BUF_HUGE {
+                // SAFETY: advice on memory this buffer owns; failure is harmless.
+                unsafe { libc::madvise(p.cast(), cap, libc::MADV_HUGEPAGE) };
+            }
+            self.ptr = p;
+            self.cap = cap;
+            self.align = align;
+        }
+        self.len = len;
+    }
+
+    /// The whole allocation, for registering it with the kernel.
+    pub(crate) fn allocation(&self) -> Option<(*const u8, usize)> {
+        (self.cap != 0).then(|| (self.ptr.cast_const(), self.cap))
+    }
+
+    fn release(&mut self) {
+        if self.view {
+            self.cap = 0;
+            self.len = 0;
+            return;
+        }
+        if self.cap != 0 {
+            // SAFETY: allocated in `resize` with exactly this layout.
+            unsafe {
+                alloc::dealloc(
+                    self.ptr,
+                    Layout::from_size_align(self.cap, self.align).expect("valid buffer layout"),
+                );
+            };
+            self.cap = 0;
+            self.len = 0;
+            self.ptr = ptr::null_mut();
+        }
+    }
+}
+
+impl Deref for AlignedBuf {
+    type Target = [u8];
+
+    fn deref(&self) -> &[u8] {
+        if self.len == 0 {
+            return &[];
+        }
+        // SAFETY: `len` <= `cap` bytes of zero-initialised or job-written memory.
+        unsafe { slice::from_raw_parts(self.ptr, self.len) }
+    }
+}
+
+impl DerefMut for AlignedBuf {
+    fn deref_mut(&mut self) -> &mut [u8] {
+        if self.len == 0 {
+            return &mut [];
+        }
+        // SAFETY: as above; exclusive through `&mut self`.
+        unsafe { slice::from_raw_parts_mut(self.ptr, self.len) }
+    }
+}
+
+impl Drop for AlignedBuf {
+    fn drop(&mut self) {
+        self.release();
+    }
+}

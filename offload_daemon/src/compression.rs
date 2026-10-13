@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #[cfg(feature = "qpl")]
+use std::env;
 use std::collections::VecDeque;
 use std::fs::{self, File, OpenOptions};
 use std::mem;
@@ -27,8 +28,8 @@ use crate::classify::{Classifier, Report, Verdict};
 use crate::crc::{crc32c, fill_pattern};
 #[cfg(feature = "dto")]
 use crate::dto::{Op as DtoOp, Poll as DtoPoll, Stats as DtoStats, Submit as DtoSubmit};
-use crate::mapping::Mapping;
-use crate::uffd::Uffd;
+use crate::mapping::{AlignedBuf, Mapping};
+use crate::uffd::{Registered, SourceRegistry, Uffd};
 #[cfg(feature = "qpl")]
 use crate::mapping::data_extents;
 #[cfg(feature = "qpl")]
@@ -1394,9 +1395,26 @@ pub(crate) fn decompress_file(
     let destination =
         Destination::open_with(destination, destination_offset, expected_size, uffd_copy)
             .map_err(Error::Write)?;
+    // UFFDIO_COPY sources (the IAA output buffers and the fill pattern) are
+    // handed to the kernel's copy provider once, so no copy pins or maps
+    // them; OFFLOAD_NO_REGISTER=1 leaves them unregistered, for comparison.
+    let registry = if matches!(destination, Destination::Uffd { .. })
+        && env::var_os("OFFLOAD_NO_REGISTER").is_none()
+    {
+        match SourceRegistry::open() {
+            Ok(registry) => Some(registry),
+            Err(error) => {
+                log::warn!("uffd_dma source registration unavailable ({error}); copies pin and map per chunk");
+                None
+            }
+        }
+    } else {
+        None
+    };
+    let registry = registry.as_ref();
     // Fill chunks are written while the compressed ones decompress.
     thread::scope(|scope| {
-        let fill = scope.spawn(|| write_fill_chunks(&destination, &records));
+        let fill = scope.spawn(|| write_fill_chunks(&destination, &records, registry));
         let result = decompress_records(
             &inputs,
             &records,
@@ -1405,6 +1423,7 @@ pub(crate) fn decompress_file(
             expected_size,
             workers,
             verify_crc,
+            registry,
             started,
         );
         fill.join().map_err(|_| Error::WorkerPanic)??;
@@ -1421,6 +1440,7 @@ fn decompress_records(
     expected_size: u64,
     workers: usize,
     verify_crc: bool,
+    registry: Option<&SourceRegistry>,
     started: Instant,
 ) -> Result<CompressionStats, Error> {
     #[cfg(feature = "qpl")]
@@ -1433,9 +1453,12 @@ fn decompress_records(
             workers,
             huffman_mode,
             verify_crc,
+            registry,
             started,
         );
     }
+    #[cfg(not(feature = "qpl"))]
+    let _ = registry;
     let next_chunk = AtomicUsize::new(0);
     let first_error = Mutex::new(None);
 
@@ -1535,9 +1558,31 @@ fn decompress_file_qpl_async(
     workers: usize,
     huffman_mode: HuffmanMode,
     verify_crc: bool,
+    registry: Option<&SourceRegistry>,
     started: Instant,
 ) -> Result<CompressionStats, Error> {
     let mut pool = QplJobPool::new(ExecutionPath::Hardware, huffman_mode, workers)?;
+    // Declared after the pool, so it drops (unregisters) before the pool's
+    // buffers can be freed.
+    let mut registered = registry.map(Registered::new);
+    if let Some(registered) = registered.as_mut() {
+        // One arena for every output, registered as one buffer: pinned and
+        // mapped once per device by the kernel.
+        let chunk = records
+            .iter()
+            .map(|record| record.uncompressed_length as usize)
+            .max()
+            .unwrap_or(0);
+        pool.reserve_output(chunk);
+        for (ptr, len) in pool.output_buffers() {
+            registered.add(ptr, len).map_err(Error::Write)?;
+        }
+        log::info!(
+            "registered {} output arena(s) for {} jobs with uffd_dma",
+            registered.len(),
+            pool.capacity()
+        );
+    }
     let mut verifier = ChunkVerifier::new(verify_crc, pool.capacity());
     let mut active = vec![None; pool.capacity()];
     let mut next_chunk = 0_usize;
@@ -1773,8 +1818,16 @@ impl ChunkVerifier {
 /// ~90 MiB per 4 GiB guest that is a few milliseconds of pwrite; a DSA
 /// MEMFILL through a fresh 4 KiB-page mapping would fault once per page
 /// (the reason restore writes with pwrite, see `Destination::open`).
-fn write_fill_chunks(destination: &Destination<'_>, records: &[ChunkRecord]) -> Result<(), Error> {
-    let mut buffer: Vec<u8> = Vec::new();
+fn write_fill_chunks(
+    destination: &Destination<'_>,
+    records: &[ChunkRecord],
+    registry: Option<&SourceRegistry>,
+) -> Result<(), Error> {
+    // Page aligned (a UFFDIO_COPY source), so a fill chunk is offloadable
+    // too, and registered like the output buffers.
+    let mut buffer = AlignedBuf::new();
+    // Drops before `buffer`: unregistered before freed.
+    let mut registered = registry.map(Registered::new);
     for record in records {
         let Some(pattern) = record.fill else {
             continue;
@@ -1782,8 +1835,22 @@ fn write_fill_chunks(destination: &Destination<'_>, records: &[ChunkRecord]) -> 
         let bytes = pattern.to_ne_bytes();
         let length = record.uncompressed_length as usize;
         if buffer.len() != length || buffer[..8] != bytes {
-            buffer.clear();
-            buffer.extend(bytes.iter().cycle().take(length));
+            if length > buffer.allocation().map_or(0, |(_, cap)| cap) {
+                // About to reallocate: nothing registered may be freed.
+                drop(registered.take());
+                buffer.resize(length);
+                registered = registry.map(Registered::new);
+                if let (Some(registered), Some((ptr, len))) =
+                    (registered.as_mut(), buffer.allocation())
+                {
+                    registered.add(ptr, len).map_err(Error::Write)?;
+                }
+            } else {
+                buffer.resize(length);
+            }
+            for chunk in buffer.chunks_exact_mut(8) {
+                chunk.copy_from_slice(&bytes);
+            }
         }
         destination
             .write(record.uncompressed_offset as usize, &buffer)

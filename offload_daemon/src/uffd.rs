@@ -7,7 +7,7 @@
 //! before it is copied in: a plain access would block on a fault this process
 //! never serves.
 
-use std::fs::OpenOptions;
+use std::fs::{File, OpenOptions};
 use std::io;
 use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
 
@@ -157,5 +157,98 @@ impl Uffd {
                 _ => return Err(error),
             }
         }
+    }
+}
+
+// _IOW(0xDA, 1|2, struct uffd_dma_reg { u64 addr; u64 len; })
+const UFFD_DMA_IOC_REGISTER: libc::c_ulong = 0x4010_da01;
+const UFFD_DMA_IOC_UNREGISTER: libc::c_ulong = 0x4010_da02;
+
+#[repr(C)]
+struct UffdDmaReg {
+    addr: u64,
+    len: u64,
+}
+
+/// Buffers registered with the kernel's `uffd_dma` copy provider through
+/// `/dev/uffd_dma`: pinned once and mapped for the device once, so a
+/// `UFFDIO_COPY` out of them pins and maps nothing. The contract is
+/// io_uring's: a registered buffer must stay allocated and in place until
+/// it is unregistered. A buffer freed while registered leaves its address
+/// range pointing at the pinned pages, and an allocation that later lands
+/// on that range would be copied from the stale pages (the kernel now
+/// invalidates such a registration on unmap, but the ordering is still
+/// ours to get right), so registrations are held in a [`Registered`]
+/// guard that unregisters before the buffers can be freed.
+pub(crate) struct SourceRegistry {
+    file: File,
+}
+
+/// Buffers registered for the life of this value; dropping it unregisters
+/// them. Declare it after the buffers it covers, so it drops first.
+pub(crate) struct Registered<'a> {
+    registry: &'a SourceRegistry,
+    ranges: Vec<(*const u8, usize)>,
+}
+
+impl<'a> Registered<'a> {
+    pub(crate) fn new(registry: &'a SourceRegistry) -> Self {
+        Self {
+            registry,
+            ranges: Vec::new(),
+        }
+    }
+
+    pub(crate) fn add(&mut self, ptr: *const u8, len: usize) -> io::Result<()> {
+        self.registry.register(ptr, len)?;
+        self.ranges.push((ptr, len));
+        Ok(())
+    }
+
+    pub(crate) fn len(&self) -> usize {
+        self.ranges.len()
+    }
+}
+
+impl Drop for Registered<'_> {
+    fn drop(&mut self) {
+        for &(ptr, len) in &self.ranges {
+            if let Err(error) = self.registry.unregister(ptr, len) {
+                log::warn!("uffd_dma unregister of {len} bytes at {ptr:p} failed: {error}");
+            }
+        }
+    }
+}
+
+impl SourceRegistry {
+    pub(crate) fn open() -> io::Result<Self> {
+        Ok(Self {
+            file: OpenOptions::new()
+                .read(true)
+                .write(true)
+                .open("/dev/uffd_dma")?,
+        })
+    }
+
+    /// Register `len` bytes at `ptr` (both page aligned).
+    fn register(&self, ptr: *const u8, len: usize) -> io::Result<()> {
+        self.ioctl(UFFD_DMA_IOC_REGISTER, ptr, len)
+    }
+
+    fn unregister(&self, ptr: *const u8, len: usize) -> io::Result<()> {
+        self.ioctl(UFFD_DMA_IOC_UNREGISTER, ptr, len)
+    }
+
+    fn ioctl(&self, request: libc::c_ulong, ptr: *const u8, len: usize) -> io::Result<()> {
+        let reg = UffdDmaReg {
+            addr: ptr as u64,
+            len: len as u64,
+        };
+        // SAFETY: valid fd; the argument is a correctly laid out struct the
+        // kernel only reads.
+        if unsafe { libc::ioctl(self.file.as_raw_fd(), request, &reg) } != 0 {
+            return Err(io::Error::last_os_error());
+        }
+        Ok(())
     }
 }
