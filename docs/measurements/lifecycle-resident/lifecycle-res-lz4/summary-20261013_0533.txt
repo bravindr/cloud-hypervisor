@@ -1,0 +1,39 @@
+checkpoints 1062 (0 failed), restores 42
+
+=== 2m: per-turn checkpoint, median over 170 turns ===
+variant            wall ms   p95  cpu ms    p95  KiB out prep ms cmp ms gath ms comp ms populate dedup pg dedup ms
+full-res               275   396   525.4  766.1   197053     0.8                  260.1        0                  
+diff-cpu-res            11    77     8.3   74.3      618     0.4    0.6     1.8     5.0        2        0      0.0
+diff-dsa-res            10    71     7.0   67.1      618     0.4    0.3     1.0     4.8        2        0      0.0
+
+=== 2m: all checkpoints of all sessions ===
+variant             wall s   cpu s stored MiB dedup pages
+full-res             56.36  106.12      36328           0
+diff-cpu-res          8.12   10.18       1723           0
+diff-dsa-res          6.43    7.68       1723           0
+
+  base (first, full) checkpoint median wall: full-res 572 ms, diff-cpu-res 598 ms, diff-dsa-res 419 ms
+
+=== 2m: restores ===
+  full-res           median   218 ms, chain up to 0 diffs, guest ok 7/7
+  diff-cpu-res       median   454 ms, chain up to 60 diffs, guest ok 7/7
+  diff-dsa-res       median   452 ms, chain up to 60 diffs, guest ok 7/7
+
+=== 4k: per-turn checkpoint, median over 170 turns ===
+variant            wall ms   p95  cpu ms    p95  KiB out prep ms cmp ms gath ms comp ms populate dedup pg dedup ms
+full-res               275   412   522.5  789.6   197536     6.4                  255.3        0                  
+diff-cpu-res            10    78     7.8   74.4      614     0.0    0.6     1.9     4.9        0        0      0.0
+diff-dsa-res             9    71     6.3   67.3      614     0.0    0.3     0.9     4.7        0        0      0.0
+
+=== 4k: all checkpoints of all sessions ===
+variant             wall s   cpu s stored MiB dedup pages
+full-res             53.72  102.15      36257           0
+diff-cpu-res          7.33    8.62       1722           0
+diff-dsa-res          6.50    7.75       1722           0
+
+  base (first, full) checkpoint median wall: full-res 283 ms, diff-cpu-res 501 ms, diff-dsa-res 441 ms
+
+=== 4k: restores ===
+  full-res           median   270 ms, chain up to 0 diffs, guest ok 7/7
+  diff-cpu-res       median   512 ms, chain up to 60 diffs, guest ok 7/7
+  diff-dsa-res       median   499 ms, chain up to 60 diffs, guest ok 7/7

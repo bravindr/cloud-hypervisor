@@ -1,0 +1,10 @@
+05:25:42 resident lifecycle path-tracing_30b pages=2m turns=23 variants=full-res diff-cpu-res diff-dsa-res
+05:26:33   turn 10/23
+05:27:14   turn 20/23
+05:27:33 restore full-res (chain of 0 diffs): rc=0 247 ms, guest ok=1
+05:27:41 restore diff-cpu-res (chain of 23 diffs): rc=0 596 ms, guest ok=1
+05:27:48 restore diff-dsa-res (chain of 23 diffs): rc=0 609 ms, guest ok=1
+827	diff-cpu-res/
+827	diff-dsa-res/
+217	full-res/
+05:27:49 DONE -> /home/byrnedan/chlogs/lifecycle-res-lz4/path-tracing_30b-2m-20261013_052541

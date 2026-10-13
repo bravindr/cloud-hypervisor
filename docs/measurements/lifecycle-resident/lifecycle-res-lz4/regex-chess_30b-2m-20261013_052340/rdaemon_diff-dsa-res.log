@@ -1,0 +1,6 @@
+[2026-10-13T12:25:37.122028Z INFO  offload_daemon] Offload daemon connected to "/home/byrnedan/chlogs/lifecycle-res-lz4/regex-chess_30b-2m-20261013_052340/restore-data.sock" (ondemand=false)
+[2026-10-13T12:25:37.288282Z INFO  offload_daemon] Decompressed offload-slot-1: chunks=1024, compressed=148504629 bytes, output=1073741824 bytes, ratio=0.138, throughput=6.037 GiB/s
+[2026-10-13T12:25:37.288578Z INFO  offload_daemon] Decompressed offload-slot-0: chunks=3072, compressed=53016117 bytes, output=3221225472 bytes, ratio=0.016, throughput=18.080 GiB/s
+[2026-10-13T12:25:37.292800Z INFO  offload_daemon] Applied 24 diffs to slot 0: 801 pages in 4.2 ms
+[2026-10-13T12:25:37.596621Z INFO  offload_daemon] Applied 24 diffs to slot 1: 65885 pages in 308.3 ms
+[2026-10-13T12:25:37.602529Z INFO  offload_daemon] Restore replay finished

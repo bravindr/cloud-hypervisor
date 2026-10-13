@@ -1,0 +1,6 @@
+[2026-10-13T12:49:56.737965Z INFO  offload_daemon] Offload daemon connected to "/home/byrnedan/chlogs/lifecycle-res-iaa/write-compressor_30b-2m-20261013_054841/restore-data.sock" (ondemand=false)
+[2026-10-13T12:49:56.786071Z INFO  offload_daemon] Decompressed offload-slot-0: chunks=3072, compressed=52172300 bytes, output=3221225472 bytes, ratio=0.016, throughput=66.403 GiB/s
+[2026-10-13T12:49:56.787556Z INFO  offload_daemon] Applied 13 diffs to slot 0: 442 pages in 1.5 ms
+[2026-10-13T12:49:56.837725Z INFO  offload_daemon] Decompressed offload-slot-1: chunks=1024, compressed=145057640 bytes, output=1073741824 bytes, ratio=0.135, throughput=10.308 GiB/s
+[2026-10-13T12:49:56.860240Z INFO  offload_daemon] Applied 13 diffs to slot 1: 11856 pages in 22.5 ms
+[2026-10-13T12:49:56.868969Z INFO  offload_daemon] Restore replay finished

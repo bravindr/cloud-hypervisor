@@ -1,0 +1,9 @@
+05:20:35 resident lifecycle circuit-fibsqrt_7b pages=2m turns=10 variants=full-res diff-cpu-res diff-dsa-res
+05:21:23   turn 10/10
+05:21:28 restore full-res (chain of 0 diffs): rc=0 204 ms, guest ok=1
+05:21:34 restore diff-cpu-res (chain of 10 diffs): rc=0 303 ms, guest ok=1
+05:21:39 restore diff-dsa-res (chain of 10 diffs): rc=0 305 ms, guest ok=1
+701	diff-cpu-res/
+701	diff-dsa-res/
+215	full-res/
+05:21:40 DONE -> /home/byrnedan/chlogs/lifecycle-res-lz4/circuit-fibsqrt_7b-2m-20261013_052035

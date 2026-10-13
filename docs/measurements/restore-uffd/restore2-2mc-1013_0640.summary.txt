@@ -1,0 +1,71 @@
+06:40:55 snapshot /mnt/chsnap/lifecycle-2mc/write-compressor_30b-2m/dsa/last disk /home/byrnedan/chlogs/lifecycle-scratch/write-compressor_30b-2m.run.ext4 console /home/byrnedan/chlogs/snaps-restore/write-compressor_30b-2m-20261013_060659/console.log binary /home/byrnedan/cloud-hypervisor/target-iaa2/release/offload_daemon
+06:40:55 == cell cpu: cpus=4,5 workers=32 uffd_dma=0 dcbm=0 args='--hugetlb'
+06:41:01 cpu_r1 rc=0 wall 145 ms, daemon user/sys 0.04 0.14, guest ok=1
+    Decompressed offload-slot-0: chunks=1536, compressed=51374340 bytes, output=3221225472 bytes, ratio=0.016, throughput=48.980 GiB/s
+    Decompressed offload-slot-1: chunks=512, compressed=144894685 bytes, output=1073741824 bytes, ratio=0.135, throughput=8.563 GiB/s
+06:41:07 cpu_r2 rc=0 wall 136 ms, daemon user/sys 0.04 0.14, guest ok=1
+    Decompressed offload-slot-0: chunks=1536, compressed=51374340 bytes, output=3221225472 bytes, ratio=0.016, throughput=50.282 GiB/s
+    Decompressed offload-slot-1: chunks=512, compressed=144894685 bytes, output=1073741824 bytes, ratio=0.135, throughput=8.536 GiB/s
+06:41:13 cpu_r3 rc=0 wall 135 ms, daemon user/sys 0.04 0.13, guest ok=1
+    Decompressed offload-slot-0: chunks=1536, compressed=51374340 bytes, output=3221225472 bytes, ratio=0.016, throughput=49.089 GiB/s
+    Decompressed offload-slot-1: chunks=512, compressed=144894685 bytes, output=1073741824 bytes, ratio=0.135, throughput=8.885 GiB/s
+06:41:14 == cell cpuclr: cpus=4,5 workers=32 uffd_dma=0 dcbm=1 args='--hugetlb'
+06:41:19 cpuclr_r1 rc=0 wall 128 ms, daemon user/sys 0.05 0.10, guest ok=1
+    Decompressed offload-slot-0: chunks=1536, compressed=51374340 bytes, output=3221225472 bytes, ratio=0.016, throughput=55.183 GiB/s
+    Decompressed offload-slot-1: chunks=512, compressed=144894685 bytes, output=1073741824 bytes, ratio=0.135, throughput=9.260 GiB/s
+    counters: dcbm_cleared=744
+06:41:25 cpuclr_r2 rc=0 wall 120 ms, daemon user/sys 0.03 0.12, guest ok=1
+    Decompressed offload-slot-0: chunks=1536, compressed=51374340 bytes, output=3221225472 bytes, ratio=0.016, throughput=53.678 GiB/s
+    Decompressed offload-slot-1: chunks=512, compressed=144894685 bytes, output=1073741824 bytes, ratio=0.135, throughput=10.500 GiB/s
+    counters: dcbm_cleared=226
+06:41:32 cpuclr_r3 rc=0 wall 119 ms, daemon user/sys 0.04 0.10, guest ok=1
+    Decompressed offload-slot-0: chunks=1536, compressed=51374340 bytes, output=3221225472 bytes, ratio=0.016, throughput=54.222 GiB/s
+    Decompressed offload-slot-1: chunks=512, compressed=144894685 bytes, output=1073741824 bytes, ratio=0.135, throughput=10.490 GiB/s
+    counters: dcbm_cleared=226
+06:41:32 == cell uffdcpu: cpus=4,5 workers=32 uffd_dma=0 dcbm=0 args='--hugetlb --uffd-copy'
+06:41:38 uffdcpu_r1 rc=0 wall 122 ms, daemon user/sys 0.01 0.14, guest ok=1
+    Decompressed offload-slot-0: chunks=1536, compressed=51374340 bytes, output=3221225472 bytes, ratio=0.016, throughput=56.927 GiB/s
+    Decompressed offload-slot-1: chunks=512, compressed=144894685 bytes, output=1073741824 bytes, ratio=0.135, throughput=10.026 GiB/s
+06:41:44 uffdcpu_r2 rc=0 wall 123 ms, daemon user/sys 0.01 0.15, guest ok=1
+    Decompressed offload-slot-0: chunks=1536, compressed=51374340 bytes, output=3221225472 bytes, ratio=0.016, throughput=54.670 GiB/s
+    Decompressed offload-slot-1: chunks=512, compressed=144894685 bytes, output=1073741824 bytes, ratio=0.135, throughput=9.960 GiB/s
+06:41:50 uffdcpu_r3 rc=0 wall 165 ms, daemon user/sys 0.01 0.15, guest ok=1
+    Decompressed offload-slot-0: chunks=1536, compressed=51374340 bytes, output=3221225472 bytes, ratio=0.016, throughput=31.399 GiB/s
+    Decompressed offload-slot-1: chunks=512, compressed=144894685 bytes, output=1073741824 bytes, ratio=0.135, throughput=7.127 GiB/s
+06:41:51 == cell uffddma: cpus=4,5 workers=32 uffd_dma=1 dcbm=0 args='--hugetlb --uffd-copy'
+06:41:56 uffddma_r1 rc=0 wall 118 ms, daemon user/sys 0.02 0.14, guest ok=1
+    Decompressed offload-slot-0: chunks=1536, compressed=51374340 bytes, output=3221225472 bytes, ratio=0.016, throughput=51.583 GiB/s
+    Decompressed offload-slot-1: chunks=512, compressed=144894685 bytes, output=1073741824 bytes, ratio=0.135, throughput=10.333 GiB/s
+    counters: copies_refused=226
+06:42:03 uffddma_r2 rc=0 wall 119 ms, daemon user/sys 0.01 0.14, guest ok=1
+    Decompressed offload-slot-0: chunks=1536, compressed=51374340 bytes, output=3221225472 bytes, ratio=0.016, throughput=54.440 GiB/s
+    Decompressed offload-slot-1: chunks=512, compressed=144894685 bytes, output=1073741824 bytes, ratio=0.135, throughput=9.781 GiB/s
+    counters: copies_refused=226
+06:42:09 uffddma_r3 rc=0 wall 118 ms, daemon user/sys 0.01 0.14, guest ok=1
+    Decompressed offload-slot-0: chunks=1536, compressed=51374340 bytes, output=3221225472 bytes, ratio=0.016, throughput=56.589 GiB/s
+    Decompressed offload-slot-1: chunks=512, compressed=144894685 bytes, output=1073741824 bytes, ratio=0.135, throughput=10.326 GiB/s
+    counters: copies_refused=226
+06:42:09 == cell cpu8: cpus=4-11 workers=32 uffd_dma=0 dcbm=0 args='--hugetlb'
+06:42:15 cpu8_r1 rc=0 wall 132 ms, daemon user/sys 0.05 0.14, guest ok=1
+    Decompressed offload-slot-0: chunks=1536, compressed=51374340 bytes, output=3221225472 bytes, ratio=0.016, throughput=50.333 GiB/s
+    Decompressed offload-slot-1: chunks=512, compressed=144894685 bytes, output=1073741824 bytes, ratio=0.135, throughput=8.801 GiB/s
+06:42:21 cpu8_r2 rc=0 wall 137 ms, daemon user/sys 0.05 0.13, guest ok=1
+    Decompressed offload-slot-0: chunks=1536, compressed=51374340 bytes, output=3221225472 bytes, ratio=0.016, throughput=49.718 GiB/s
+    Decompressed offload-slot-1: chunks=512, compressed=144894685 bytes, output=1073741824 bytes, ratio=0.135, throughput=8.805 GiB/s
+06:42:28 cpu8_r3 rc=0 wall 136 ms, daemon user/sys 0.05 0.13, guest ok=1
+    Decompressed offload-slot-0: chunks=1536, compressed=51374340 bytes, output=3221225472 bytes, ratio=0.016, throughput=50.804 GiB/s
+    Decompressed offload-slot-1: chunks=512, compressed=144894685 bytes, output=1073741824 bytes, ratio=0.135, throughput=8.746 GiB/s
+06:42:28 == cell uffddma8: cpus=4-11 workers=32 uffd_dma=1 dcbm=0 args='--hugetlb --uffd-copy'
+06:42:34 uffddma8_r1 rc=0 wall 123 ms, daemon user/sys 0.01 0.15, guest ok=1
+    Decompressed offload-slot-0: chunks=1536, compressed=51374340 bytes, output=3221225472 bytes, ratio=0.016, throughput=54.677 GiB/s
+    Decompressed offload-slot-1: chunks=512, compressed=144894685 bytes, output=1073741824 bytes, ratio=0.135, throughput=9.854 GiB/s
+    counters: copies_refused=226
+06:42:40 uffddma8_r2 rc=0 wall 126 ms, daemon user/sys 0.00 0.16, guest ok=1
+    Decompressed offload-slot-0: chunks=1536, compressed=51374340 bytes, output=3221225472 bytes, ratio=0.016, throughput=54.841 GiB/s
+    Decompressed offload-slot-1: chunks=512, compressed=144894685 bytes, output=1073741824 bytes, ratio=0.135, throughput=10.123 GiB/s
+    counters: copies_refused=226
+06:42:46 uffddma8_r3 rc=0 wall 125 ms, daemon user/sys 0.01 0.15, guest ok=1
+    Decompressed offload-slot-0: chunks=1536, compressed=51374340 bytes, output=3221225472 bytes, ratio=0.016, throughput=55.172 GiB/s
+    Decompressed offload-slot-1: chunks=512, compressed=144894685 bytes, output=1073741824 bytes, ratio=0.135, throughput=9.752 GiB/s
+    counters: copies_refused=226
+06:42:47 DONE -> /home/byrnedan/chlogs/restore2-2mc-1013_0640

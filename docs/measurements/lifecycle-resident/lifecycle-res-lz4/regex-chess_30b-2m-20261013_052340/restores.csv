@@ -1,0 +1,4 @@
+session,pages,variant,chain,restore_ms,guest_ok,rc
+regex-chess_30b,2m,full-res,0,227,1,0
+regex-chess_30b,2m,diff-cpu-res,24,481,1,0
+regex-chess_30b,2m,diff-dsa-res,24,490,1,0

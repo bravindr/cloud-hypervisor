@@ -1,0 +1,14 @@
+== 4k w8 restore, daemon samples only, relative %
+    22.77%  [k] shmem_write_end
+    17.45%  [k] copy_folio_from_iter_atomic
+    14.26%  [k] _copy_to_iter
+     4.26%  [k] _raw_spin_unlock_irq
+     3.62%  [k] shmem_file_read_iter
+     3.40%  [k] rwsem_spin_on_owner
+     2.98%  [k] do_user_addr_fault
+     1.70%  [k] shmem_add_to_page_cache
+     1.70%  [.] 0x00000000001a1efa
+     1.49%  [k] __rcu_read_unlock
+     1.49%  [k] _raw_spin_lock
+     1.28%  [.] 0x00000000000986e1
+     1.06%  [k] get_page_from_freelist

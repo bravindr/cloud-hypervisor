@@ -1,0 +1,6 @@
+[2026-10-13T12:27:44.103370Z INFO  offload_daemon] Offload daemon connected to "/home/byrnedan/chlogs/lifecycle-res-lz4/path-tracing_30b-2m-20261013_052541/restore-data.sock" (ondemand=false)
+[2026-10-13T12:27:44.275050Z INFO  offload_daemon] Decompressed offload-slot-0: chunks=3072, compressed=53013831 bytes, output=3221225472 bytes, ratio=0.016, throughput=17.532 GiB/s
+[2026-10-13T12:27:44.277584Z INFO  offload_daemon] Decompressed offload-slot-1: chunks=1024, compressed=147287188 bytes, output=1073741824 bytes, ratio=0.137, throughput=5.756 GiB/s
+[2026-10-13T12:27:44.279859Z INFO  offload_daemon] Applied 23 diffs to slot 0: 779 pages in 4.8 ms
+[2026-10-13T12:27:44.692191Z INFO  offload_daemon] Applied 23 diffs to slot 1: 85987 pages in 414.6 ms
+[2026-10-13T12:27:44.702718Z INFO  offload_daemon] Restore replay finished

@@ -1,0 +1,6 @@
+[2026-10-13T12:58:42.017109Z INFO  offload_daemon] Offload daemon connected to "/home/byrnedan/chlogs/lifecycle-res-iaa/polyglot-rust-c_30b-2m-20261013_055713/restore-data.sock" (ondemand=false)
+[2026-10-13T12:58:42.060558Z INFO  offload_daemon] Decompressed offload-slot-0: chunks=3072, compressed=31022108 bytes, output=3221225472 bytes, ratio=0.010, throughput=72.261 GiB/s
+[2026-10-13T12:58:42.060764Z INFO  offload_daemon] Applied 16 diffs to slot 0: 0 pages in 0.2 ms
+[2026-10-13T12:58:42.125258Z INFO  offload_daemon] Decompressed offload-slot-1: chunks=1024, compressed=166192773 bytes, output=1073741824 bytes, ratio=0.155, throughput=9.443 GiB/s
+[2026-10-13T12:58:42.289076Z INFO  offload_daemon] Applied 16 diffs to slot 1: 74355 pages in 163.8 ms
+[2026-10-13T12:58:42.297124Z INFO  offload_daemon] Restore replay finished

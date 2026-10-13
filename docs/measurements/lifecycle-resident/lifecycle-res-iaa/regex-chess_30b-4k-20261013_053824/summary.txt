@@ -1,0 +1,10 @@
+05:38:24 resident lifecycle regex-chess_30b pages=4k turns=24 variants=full-res diff-cpu-res diff-dsa-res
+05:39:14   turn 10/24
+05:39:54   turn 20/24
+05:40:15 restore full-res (chain of 0 diffs): rc=0 194 ms, guest ok=1
+05:40:20 restore diff-cpu-res (chain of 24 diffs): rc=0 284 ms, guest ok=1
+05:40:25 restore diff-dsa-res (chain of 24 diffs): rc=0 282 ms, guest ok=1
+777	diff-cpu-res/
+777	diff-dsa-res/
+217	full-res/
+05:40:26 DONE -> /home/byrnedan/chlogs/lifecycle-res-iaa/regex-chess_30b-4k-20261013_053824

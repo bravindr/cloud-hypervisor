@@ -1,0 +1,11 @@
+== 2m w8 restore, daemon samples only, relative %
+    33.08%  [k] folio_zero_user
+    26.67%  [.] 0x00000000001a19d2
+    13.33%  [k] _copy_to_iter
+     3.33%  [k] do_user_addr_fault
+     1.79%  [k] filemap_get_entry
+     1.54%  [k] shmem_file_read_iter
+     1.28%  [k] do_syscall_64
+     1.03%  [k] __rcu_read_lock
+     1.03%  [k] xas_load
+     1.03%  [k] zap_present_ptes.constprop.0

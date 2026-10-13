@@ -1,0 +1,9 @@
+05:42:37 resident lifecycle polyglot-rust-c_30b pages=4k turns=16 variants=full-res diff-cpu-res diff-dsa-res
+05:43:26   turn 10/16
+05:43:57 restore full-res (chain of 0 diffs): rc=0 201 ms, guest ok=1
+05:44:03 restore diff-cpu-res (chain of 16 diffs): rc=0 324 ms, guest ok=1
+05:44:10 restore diff-dsa-res (chain of 16 diffs): rc=0 330 ms, guest ok=1
+860	diff-cpu-res/
+860	diff-dsa-res/
+250	full-res/
+05:44:10 DONE -> /home/byrnedan/chlogs/lifecycle-res-iaa/polyglot-rust-c_30b-4k-20261013_054235

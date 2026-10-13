@@ -1538,14 +1538,12 @@ and ~0.004 per diff.
 
 **Where gaps remain:**
 
-- **No measured CPU-only diff cell.** `offload_daemon serve` requires an
-  async QPL codec; the software engine is not wired into the resident
-  diff compressor (`resident.rs` builds `Engine::Iaa` only). It is a small
-  change and would replace the 13-18 ms estimate above.
+- **No measured CPU-only diff cell** (at the time of writing): `serve`
+  required an async QPL codec. Closed in 7c.2r: 10-11 ms measured against
+  the 13-18 ms estimate above.
 - **Resident full checkpoints were not re-measured** with the shared
-  pipeline and the performance governor (7c.2g predates both); the one-shot
-  daemon still pays ~8 ms of IAA job-pool setup per checkpoint, 10-13 % of
-  a DSA + IAA checkpoint.
+  pipeline and the performance governor; the one-shot daemon pays ~8 ms of
+  IAA job-pool setup per checkpoint. Closed in 7c.2r: 53 / 55 ms resident.
 - **Restore gets nothing from DSA**, and after IAA decompression 115-130 ms
   remain, mostly the copy into guest memory; DSA MEMMOVE / `uffd_dma`
   populate (7c.2b) is the lever, and one in thirty restores takes >400 ms
@@ -1571,6 +1569,165 @@ and ~0.004 per diff.
   fstab, COMPVAL is not used in the diff path, and KVM dirty logging's cost
   to a 2 MiB guest under diff checkpoints is unmeasured (guest time is tiny
   in these sessions).
+
+### 7c.2r Resident diffs with software codecs, and the restore side
+
+Two of section 7c.2q's gaps closed, one measured and left open.
+
+**The resident daemon takes lz4/zstd.** `serve --compression lz4|zstd
+[--zstd-level N]` builds a software engine per submitter thread instead of
+the IAA job pools (`Engine::Software`, the same code path as the one-shot
+daemon's); full checkpoints go through `compress_slots` and diffs through
+`compress_gathers` with the same engine type. Verified as before (`verify_resident.sh` with
+`lz4`: both chains restore identical to a raw dump except the one page a
+plain restore rewrites). Lifecycle: `run_all_resident.sh 4k 2m` with
+`VARIANTS="full-res diff-cpu-res diff-dsa-res"`, once with `CODEC=lz4` and
+once with `qpl-hardware-static-async`, performance governor, daemon on two
+cores: 1062 checkpoints per run, 0 failed, 42/42 restores resumed the
+guest. Results in `docs/measurements/lifecycle-resident/lifecycle-res-{lz4,iaa}`.
+
+Per-turn checkpoint, median over 170 turns (p95 in brackets) / daemon CPU
+per checkpoint:
+
+| cell | 4 KiB pause | 4 KiB CPU | 2 MiB pause | 2 MiB CPU |
+|---|---|---|---|---|
+| full, CPU only (lz4, DSA classify) | 275 ms (412) | 522 ms | 275 ms (396) | 525 ms |
+| full, DSA + IAA | **53 ms (67)** | **73 ms** | **55 ms (64)** | **85 ms** |
+| diff, CPU only (lz4 + CPU compare) | 10 ms (78) | 7.8 ms | 11 ms (77) | 8.3 ms |
+| diff, DSA only (lz4 + DSA compare/gather) | 9 ms (71) | 6.3 ms | 10 ms (71) | 7.0 ms |
+| diff, IAA only (IAA + CPU compare) | 6 ms (31) | 3.2 ms | 6 ms (36) | 3.6 ms |
+| diff, DSA + IAA | **5 ms (21)** | **2.3 ms** | **5 ms (24)** | **2.7 ms** |
+
+Diff phases (ms, 4 KiB / 2 MiB): compare 0.6 → 0.3 and gather 1.9 / 1.8 →
+0.9 / 1.0 with DSA; compress of the ~600 KiB of changed pages 4.9 / 5.0 on
+lz4 → 0.7 / 0.8 on IAA. Whole sessions (177 checkpoints × 7 sessions): diff
+CPU only 7.3 / 8.1 s of pauses and 8.6 / 10.2 core-s; diff DSA + IAA 2.7 /
+2.7 s and 2.4 / 2.5 core-s; full CPU only 53.7 / 56.4 s and 102 / 106
+core-s; full DSA + IAA 9.9 / 12.1 s and 13.5 / 17.5 core-s.
+
+Reading:
+
+- **The CPU-only diff cell is 10-11 ms, not the 13-18 ms estimated in
+  7c.2q**: lz4 compresses the diff in 4.7-5.0 ms, DSA + IAA takes the same
+  checkpoint to 5 ms at 3-3.5× less CPU, and the tail is where the
+  accelerators show most (p95 71-78 → 21-24 ms: the turns that dirty
+  many pages are compress-bound on one lz4 thread).
+- **Resident full checkpoints re-measured** with the shared pipeline and
+  the governor: 53 / 55 ms against the one-shot daemon's 74 / 61 (7c.2q),
+  i.e. the ~8 ms of IAA pool setup plus process start are gone; against
+  7c.2g (80 / 148 ms) the 2 MiB cell gained most from the two submitter
+  threads. The resident lz4 cell is at parity with one-shot lz4 (275 vs
+  266-284 ms): compression-bound either way.
+- With resident DSA + IAA diffs the fork-from-base session of 7c.2q
+  becomes ~13 s (steps 7.5 + 7 base restores 1.2 + diffs 2.7 + 7 chain
+  restores 1.8) against ~20 s with CPU-only resident diffs (lz4 base
+  restores 0.27 s and chains 0.5 s each) and 69 / 87 s with CPU-only full
+  checkpoints.
+- Restores of lz4 chains take 450-512 ms (IAA 217-257): `apply_diff`
+  decompresses each of up to 60 diffs on one thread, and the lz4 base
+  restore is 218-270 ms against 137-171.
+
+**The restore side.** The restore is a one-shot process with one thread
+per memory slot: IAA (or software) decompresses `--workers`/slots chunks
+in flight and each finished chunk is written to the destination memfd:
+`pwrite` on a 4 KiB shmem memfd (the kernel allocates the page and copies),
+a `memcpy` into a mapping on a hugetlb memfd (the kernel allocates and
+clears the huge page on the fault, then the daemon copies). Fill chunks go
+on a side thread, zero chunks stay holes. On the daemon's two cores it is
+almost all system time (4 KiB: 0.01 user / 0.17 sys of a 0.14 s wall).
+Profile of the daemon's samples (`perf record -e cpu-clock -C 4,5`,
+`docs/measurements/restore-uffd/perf_*`):
+
+| 4 KiB memfd | | 2 MiB hugetlb memfd | |
+|---|---|---|---|
+| `shmem_write_end` (page cache insert) | 23 % | `folio_zero_user` (clear on fault) | 33 % |
+| `copy_folio_from_iter_atomic` (pwrite copy) | 17 % | libc `memcpy` into the mapping | 27 % |
+| `_copy_to_iter` (reading the compressed parts) | 14 % | `_copy_to_iter` (reading the compressed parts) | 13 % |
+| fault, page-cache, locks | ~10 % | fault | 3 % |
+
+What the kernel on this host offloads (`7.2.0-mmoff-v1+`, `uffd_dma`
+provider, `/sys/kernel/uffd_dma/offloading`): `UFFDIO_COPY` into
+**anonymous private** VMAs in batches of ≥16 pages (`mfill_batch_applicable`
+rejects `VM_SHARED`) and into **hugetlb** VMAs, shared included, through
+`copy_user_large_folio`; shmem `mfill` and the shmem write path are not
+hooked. Guest memory on the migration path is a shared memfd, so a 4 KiB
+guest has no offloadable copy at all and a 2 MiB guest has one: the daemon
+can `UFFDIO_COPY` into its own mapping of the hugetlb memfd. That is now
+`restore --uffd-copy` (`Destination::Uffd`): map the memfd, register it
+`MISSING`, install every decompressed chunk with one `UFFDIO_COPY`
+(`EEXIST` falls back to a plain write), which needs whole huge pages, i.e. a
+snapshot taken with `--chunk-size 2097152`, and `vm.unprivileged_userfaultfd=1`
+(or access to `/dev/userfaultfd`). The provider refuses a source that is
+not page aligned (the first run: `copies_refused=226`), so the IAA pool's
+output buffers are now page aligned, 2 MiB aligned and `MADV_HUGEPAGE` from
+2 MiB (`AlignedBuf` in `qpl.rs`; one physically contiguous source per copy).
+
+Restore cells (`restore_cells2.sh`; write-compressor_30b at its last
+turn, the same checkpoint restored 3× per cell into a fresh VMM over
+`receive-migration`, daemon pinned to two cores unless noted, `--workers`
+as given; harness wall ms, min-max of 3, and daemon user/sys s):
+
+| snapshot | cell | wall | daemon CPU |
+|---|---|---|---|
+| 4 KiB, 1 MiB chunks | w32 (the lifecycle harness's setting) | 142-147 | 0.01 / 0.17 |
+| | w32, 8 cores | 126-133 | 0.01 / 0.17 |
+| | w16 | 125-161 | 0.00 / 0.15 |
+| | **w8** | **111-127** | 0.00 / 0.15 |
+| | w4 | 124-132 | 0.01 / 0.15 |
+| | w32 `--verify-crc` (DSA) | 133-137 | 0.01 / 0.16 |
+| 2 MiB, 1 MiB chunks | w32 `--hugetlb` | 117-122 | 0.04 / 0.11 |
+| | w32, 8 cores | 117-121 | 0.05 / 0.10 |
+| | w32 + kernel clear offload (`dcbm`) | 100 | 0.03 / 0.08 |
+| | w8 | 102-120 | 0.03 / 0.09 |
+| | **w8 + kernel clear offload** | **86-95** | 0.03 / 0.06 |
+| 2 MiB, 2 MiB chunks | w32, mapping writes | 121-133 | 0.05 / 0.10 |
+| | w32 + kernel clear offload | 119-128 | 0.04 / 0.10 |
+| | w32 `--uffd-copy`, provider off (kernel CPU copy) | **107-113** | 0.01 / 0.12 |
+| | w32 `--uffd-copy`, provider on (DSA) | 127-144 | 0.01 / 0.14 |
+| | w32 `--uffd-copy`, provider on, 8 cores | 117-130 | 0.01 / 0.13 |
+
+Reading:
+
+- **4 KiB restores are bound by the kernel's shmem writes on the daemon's
+  two cores**: 8 cores buy 11 %, and fewer IAA jobs in flight buy more
+  (w8 is 12-22 % faster than w32: 8 MiB of output buffers instead of
+  32 MiB in flight). There is nothing for DSA to do here until the kernel
+  hooks shmem `mfill` (or the restore puts 4 KiB guests into hugetlb,
+  which `--hugetlb` already does regardless of the source's page size,
+  7c.2m).
+- **2 MiB restores split between the clear and the copy.** The kernel
+  clear offload (`dcbm`, already measured in 7c.2b) takes 15 % off, 25 %
+  with w8 (86-95 ms). `UFFDIO_COPY` removes the clear and moves the copy
+  into the kernel: 107-113 against 121-133 ms with the same 2 MiB chunks,
+  the same gain as the clear offload, and the daemon's user time drops to
+  0.01 s.
+- **The DSA copy does not pay yet.** With the provider on, 189 of 226
+  copies per restore go to DSA (396 MB, `striped_copies=189`) and the
+  device time is small (`wait_ns_total` 8-12 ms per restore), but
+  `map_us_total` is 44-72 ms: `uffd_dma` maps the 2 MiB source and
+  destination for every copy in a DMA-FQ IOMMU domain with no mapping
+  cache, 230-380 µs per copy, more than the copy itself. The wall lands
+  at 127-144 ms. The 37 refused copies per run are the provider's
+  admission gate, not alignment. A standing mapping of the daemon's
+  (reused) output buffers, or the `dcbm` map cache applied to this
+  provider, is what would make the DSA copy win; the copy itself is
+  ~50 µs per 2 MiB.
+- **2 MiB chunks cost ~10 ms on the plain path** (121-133 vs 117-122 ms
+  with 1 MiB chunks: fewer, longer IAA jobs per slot thread), which the
+  `UFFDIO_COPY` path wins back. A `UFFDIO_COPY` of two 1 MiB chunks would
+  need a 2 MiB staging copy; chunk = huge page is the cleaner rule.
+- **Reading the compressed input is 13-14 % of the daemon's time** in both
+  cells (`pread` of ~200 MiB into the pool's input buffers); mapping the
+  parts and feeding IAA from the page cache would remove it.
+
+Restore follow-ups, in order of value: `--workers 8` as the restore default
+(the harness runs 32); the kernel clear offload on for hugetlb restores
+(per boot: `dcbm` `offloading=1`, kernel work queues from 7c.2b); a mapping
+cache in `uffd_dma` (then `--uffd-copy` with the provider on, expected
+≤95 ms); mmap'd compressed input; hugetlb destinations for 4 KiB guests or
+a shmem `mfill` hook; and the ~60-80 ms that remain after all of that:
+daemon start and connect (10-15 ms), IAA decompression of 450 MiB on one
+thread per slot, and CH's state replay (4-10 ms).
 
 ### 7c.3 IOMMU first touch: measured, and the fix
 
@@ -1618,12 +1775,15 @@ slower first cell in each sweep (`cpu` 492 vs 331 ms, `dsa` w8 473 vs 214 ms).
   kept chunks and 4 jobs; slot 1 had 997 and 4 jobs).
 - Auto-select `--hugetlb` from the migration config's memory zones.
 - Explain the first-mapping 270 ms.
-- Wire the software compression engine into the resident diff path so a
-  CPU-only diff cell can be measured (section 7c.2q).
 - Run the lifecycle with dynamic Huffman through the shared pipeline
   (section 7c.2q).
-- Re-measure resident full checkpoints with the shared pipeline and the
-  performance governor (section 7c.2q).
+- Restore (section 7c.2r): `--workers 8` default; kernel clear offload on
+  for hugetlb restores; a mapping cache in `uffd_dma` so `--uffd-copy` with
+  the DSA provider beats the kernel's CPU copy; mmap the compressed parts
+  instead of `pread`; hugetlb destinations for 4 KiB guests or a shmem
+  `mfill` hook in the kernel.
+- `apply_diff` decompresses a chain one diff at a time on one thread
+  (450-512 ms for 60 lz4 diffs, 217-257 ms on IAA; section 7c.2r).
 - Classify granularity below the 1 MiB chunk is not needed (§3), so the
   in-VMM 64 KiB batching stays out.
 - ~~Push `ch-async-ops` to a DTO fork~~: pushed to https://github.com/byrnedj/DTO branch

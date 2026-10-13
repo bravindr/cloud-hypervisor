@@ -1,0 +1,55 @@
+06:50:58 snapshot /mnt/chsnap/lifecycle/write-compressor_30b-2m/dsa/last disk /home/byrnedan/chlogs/lifecycle-scratch/write-compressor_30b-2m.run.ext4 console /home/byrnedan/chlogs/snaps-restore/write-compressor_30b-2m-20261013_060557/console.log binary /home/byrnedan/cloud-hypervisor/target-iaa2/release/offload_daemon
+06:50:58 == cell w4: cpus=4,5 workers=4 uffd_dma=0 dcbm=0 args='--hugetlb'
+06:51:04 w4_r1 rc=0 wall 139 ms, daemon user/sys 0.05 0.09, guest ok=1
+    Decompressed offload-slot-0: chunks=3072, compressed=52173657 bytes, output=3221225472 bytes, ratio=0.016, throughput=48.823 GiB/s
+    Decompressed offload-slot-1: chunks=1024, compressed=146081832 bytes, output=1073741824 bytes, ratio=0.136, throughput=8.395 GiB/s
+06:51:10 w4_r2 rc=0 wall 124 ms, daemon user/sys 0.05 0.09, guest ok=1
+    Decompressed offload-slot-0: chunks=3072, compressed=52173657 bytes, output=3221225472 bytes, ratio=0.016, throughput=72.942 GiB/s
+    Decompressed offload-slot-1: chunks=1024, compressed=146081832 bytes, output=1073741824 bytes, ratio=0.136, throughput=9.961 GiB/s
+06:51:16 w4_r3 rc=0 wall 120 ms, daemon user/sys 0.06 0.08, guest ok=1
+    Decompressed offload-slot-0: chunks=3072, compressed=52173657 bytes, output=3221225472 bytes, ratio=0.016, throughput=73.440 GiB/s
+    Decompressed offload-slot-1: chunks=1024, compressed=146081832 bytes, output=1073741824 bytes, ratio=0.136, throughput=9.910 GiB/s
+06:51:16 == cell w8: cpus=4,5 workers=8 uffd_dma=0 dcbm=0 args='--hugetlb'
+06:51:22 w8_r1 rc=0 wall 120 ms, daemon user/sys 0.03 0.10, guest ok=1
+    Decompressed offload-slot-0: chunks=3072, compressed=52173657 bytes, output=3221225472 bytes, ratio=0.016, throughput=65.984 GiB/s
+    Decompressed offload-slot-1: chunks=1024, compressed=146081832 bytes, output=1073741824 bytes, ratio=0.136, throughput=10.174 GiB/s
+06:51:28 w8_r2 rc=0 wall 112 ms, daemon user/sys 0.03 0.09, guest ok=1
+    Decompressed offload-slot-0: chunks=3072, compressed=52173657 bytes, output=3221225472 bytes, ratio=0.016, throughput=68.320 GiB/s
+    Decompressed offload-slot-1: chunks=1024, compressed=146081832 bytes, output=1073741824 bytes, ratio=0.136, throughput=10.350 GiB/s
+06:51:34 w8_r3 rc=0 wall 102 ms, daemon user/sys 0.03 0.09, guest ok=1
+    Decompressed offload-slot-0: chunks=3072, compressed=52173657 bytes, output=3221225472 bytes, ratio=0.016, throughput=83.191 GiB/s
+    Decompressed offload-slot-1: chunks=1024, compressed=146081832 bytes, output=1073741824 bytes, ratio=0.136, throughput=11.630 GiB/s
+06:51:35 == cell w16: cpus=4,5 workers=16 uffd_dma=0 dcbm=0 args='--hugetlb'
+06:51:40 w16_r1 rc=0 wall 134 ms, daemon user/sys 0.03 0.09, guest ok=1
+    Decompressed offload-slot-0: chunks=3072, compressed=52173657 bytes, output=3221225472 bytes, ratio=0.016, throughput=45.492 GiB/s
+    Decompressed offload-slot-1: chunks=1024, compressed=146081832 bytes, output=1073741824 bytes, ratio=0.136, throughput=8.855 GiB/s
+06:51:46 w16_r2 rc=0 wall 110 ms, daemon user/sys 0.03 0.09, guest ok=1
+    Decompressed offload-slot-0: chunks=3072, compressed=52173657 bytes, output=3221225472 bytes, ratio=0.016, throughput=75.555 GiB/s
+    Decompressed offload-slot-1: chunks=1024, compressed=146081832 bytes, output=1073741824 bytes, ratio=0.136, throughput=11.424 GiB/s
+06:51:52 w16_r3 rc=0 wall 104 ms, daemon user/sys 0.04 0.09, guest ok=1
+    Decompressed offload-slot-0: chunks=3072, compressed=52173657 bytes, output=3221225472 bytes, ratio=0.016, throughput=73.458 GiB/s
+    Decompressed offload-slot-1: chunks=1024, compressed=146081832 bytes, output=1073741824 bytes, ratio=0.136, throughput=11.416 GiB/s
+06:51:52 == cell w32: cpus=4,5 workers=32 uffd_dma=0 dcbm=0 args='--hugetlb'
+06:51:58 w32_r1 rc=0 wall 117 ms, daemon user/sys 0.04 0.11, guest ok=1
+    Decompressed offload-slot-0: chunks=3072, compressed=52173657 bytes, output=3221225472 bytes, ratio=0.016, throughput=62.245 GiB/s
+    Decompressed offload-slot-1: chunks=1024, compressed=146081832 bytes, output=1073741824 bytes, ratio=0.136, throughput=9.966 GiB/s
+06:52:04 w32_r2 rc=0 wall 122 ms, daemon user/sys 0.05 0.10, guest ok=1
+    Decompressed offload-slot-0: chunks=3072, compressed=52173657 bytes, output=3221225472 bytes, ratio=0.016, throughput=62.578 GiB/s
+    Decompressed offload-slot-1: chunks=1024, compressed=146081832 bytes, output=1073741824 bytes, ratio=0.136, throughput=10.056 GiB/s
+06:52:09 w32_r3 rc=0 wall 122 ms, daemon user/sys 0.04 0.11, guest ok=1
+    Decompressed offload-slot-0: chunks=3072, compressed=52173657 bytes, output=3221225472 bytes, ratio=0.016, throughput=61.692 GiB/s
+    Decompressed offload-slot-1: chunks=1024, compressed=146081832 bytes, output=1073741824 bytes, ratio=0.136, throughput=9.945 GiB/s
+06:52:10 == cell w8clr: cpus=4,5 workers=8 uffd_dma=0 dcbm=1 args='--hugetlb'
+06:52:16 w8clr_r1 rc=0 wall 86 ms, daemon user/sys 0.03 0.06, guest ok=1
+    Decompressed offload-slot-0: chunks=3072, compressed=52173657 bytes, output=3221225472 bytes, ratio=0.016, throughput=96.247 GiB/s
+    Decompressed offload-slot-1: chunks=1024, compressed=146081832 bytes, output=1073741824 bytes, ratio=0.136, throughput=14.276 GiB/s
+    counters: dcbm_cleared=226
+06:52:21 w8clr_r2 rc=0 wall 95 ms, daemon user/sys 0.04 0.05, guest ok=1
+    Decompressed offload-slot-0: chunks=3072, compressed=52173657 bytes, output=3221225472 bytes, ratio=0.016, throughput=92.554 GiB/s
+    Decompressed offload-slot-1: chunks=1024, compressed=146081832 bytes, output=1073741824 bytes, ratio=0.136, throughput=14.199 GiB/s
+    counters: dcbm_cleared=226
+06:52:27 w8clr_r3 rc=0 wall 86 ms, daemon user/sys 0.03 0.06, guest ok=1
+    Decompressed offload-slot-0: chunks=3072, compressed=52173657 bytes, output=3221225472 bytes, ratio=0.016, throughput=96.082 GiB/s
+    Decompressed offload-slot-1: chunks=1024, compressed=146081832 bytes, output=1073741824 bytes, ratio=0.136, throughput=14.184 GiB/s
+    counters: dcbm_cleared=226
+06:52:28 DONE -> /home/byrnedan/chlogs/restore2-2m-workers-1013_0650

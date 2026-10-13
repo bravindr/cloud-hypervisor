@@ -1,0 +1,8 @@
+performance
+node 0 free: 66628 MB
+######## lz4 run start 05:04:22
+######## lz4 run rc=0 end 05:33:53
+node 0 free: 66760 MB
+######## iaa run start 05:33:54
+######## iaa run rc=0 end 06:03:15
+RUN_RES_DONE

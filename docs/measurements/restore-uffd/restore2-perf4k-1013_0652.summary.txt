@@ -1,0 +1,6 @@
+06:52:29 snapshot /mnt/chsnap/lifecycle/write-compressor_30b-4k/dsa/last disk /home/byrnedan/chlogs/lifecycle-scratch/write-compressor_30b-4k.run.ext4 console /home/byrnedan/chlogs/snaps-restore/write-compressor_30b-4k-20261013_060455/console.log binary /home/byrnedan/cloud-hypervisor/target-iaa2/release/offload_daemon
+06:52:29 == cell w32: cpus=4,5 workers=32 uffd_dma=0 dcbm=0 args=''
+06:52:35 w32_r1 rc=0 wall 170 ms, daemon user/sys 0.01 0.19, guest ok=1
+    Decompressed offload-slot-0: chunks=3072, compressed=52172272 bytes, output=3221225472 bytes, ratio=0.016, throughput=43.344 GiB/s
+    Decompressed offload-slot-1: chunks=1024, compressed=145988885 bytes, output=1073741824 bytes, ratio=0.136, throughput=7.221 GiB/s
+06:52:35 DONE -> /home/byrnedan/chlogs/restore2-perf4k-1013_0652

@@ -1,0 +1,14 @@
+05:29:23 resident lifecycle winning-avg-corewars_30b pages=2m turns=60 variants=full-res diff-cpu-res diff-dsa-res
+05:30:12   turn 10/60
+05:30:52   turn 20/60
+05:31:32   turn 30/60
+05:32:13   turn 40/60
+05:32:53   turn 50/60
+05:33:33   turn 60/60
+05:33:40 restore full-res (chain of 0 diffs): rc=0 182 ms, guest ok=1
+05:33:46 restore diff-cpu-res (chain of 60 diffs): rc=0 454 ms, guest ok=1
+05:33:52 restore diff-dsa-res (chain of 60 diffs): rc=0 452 ms, guest ok=1
+672	diff-cpu-res/
+672	diff-dsa-res/
+194	full-res/
+05:33:52 DONE -> /home/byrnedan/chlogs/lifecycle-res-lz4/winning-avg-corewars_30b-2m-20261013_052923

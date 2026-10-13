@@ -1,0 +1,210 @@
+######## write-compressor_30b 4k start 05:04:22
+05:04:24 resident lifecycle write-compressor_30b pages=4k turns=13 variants=full-res diff-cpu-res diff-dsa-res
+05:05:13   turn 10/13
+05:05:31 restore full-res (chain of 0 diffs): rc=0 270 ms, guest ok=1
+05:05:38 restore diff-cpu-res (chain of 13 diffs): rc=0 294 ms, guest ok=1
+05:05:44 restore diff-dsa-res (chain of 13 diffs): rc=0 291 ms, guest ok=1
+651	diff-cpu-res/
+651	diff-dsa-res/
+194	full-res/
+05:05:45 DONE -> /home/byrnedan/chlogs/lifecycle-res-lz4/write-compressor_30b-4k-20261013_050422
+######## write-compressor_30b 4k rc=0 end 05:05:45
+######## circuit-fibsqrt_7b 4k start 05:05:45
+05:05:46 resident lifecycle circuit-fibsqrt_7b pages=4k turns=10 variants=full-res diff-cpu-res diff-dsa-res
+05:06:34   turn 10/10
+05:06:40 restore full-res (chain of 0 diffs): rc=0 253 ms, guest ok=1
+05:06:45 restore diff-cpu-res (chain of 10 diffs): rc=0 381 ms, guest ok=1
+05:06:51 restore diff-dsa-res (chain of 10 diffs): rc=0 352 ms, guest ok=1
+714	diff-cpu-res/
+714	diff-dsa-res/
+215	full-res/
+05:06:51 DONE -> /home/byrnedan/chlogs/lifecycle-res-lz4/circuit-fibsqrt_7b-4k-20261013_050545
+######## circuit-fibsqrt_7b 4k rc=0 end 05:06:51
+######## circuit-fibsqrt_30b 4k start 05:06:51
+05:06:52 resident lifecycle circuit-fibsqrt_30b pages=4k turns=24 variants=full-res diff-cpu-res diff-dsa-res
+05:07:41   turn 10/24
+05:08:21   turn 20/24
+05:08:43 restore full-res (chain of 0 diffs): rc=0 249 ms, guest ok=1
+05:08:48 restore diff-cpu-res (chain of 24 diffs): rc=0 431 ms, guest ok=1
+05:08:53 restore diff-dsa-res (chain of 24 diffs): rc=0 432 ms, guest ok=1
+735	diff-cpu-res/
+735	diff-dsa-res/
+218	full-res/
+05:08:54 DONE -> /home/byrnedan/chlogs/lifecycle-res-lz4/circuit-fibsqrt_30b-4k-20261013_050651
+######## circuit-fibsqrt_30b 4k rc=0 end 05:08:54
+######## regex-chess_30b 4k start 05:08:54
+05:08:54 resident lifecycle regex-chess_30b pages=4k turns=24 variants=full-res diff-cpu-res diff-dsa-res
+05:09:44   turn 10/24
+05:10:25   turn 20/24
+05:10:46 restore full-res (chain of 0 diffs): rc=0 287 ms, guest ok=1
+05:10:50 restore diff-cpu-res (chain of 24 diffs): rc=0 549 ms, guest ok=1
+05:10:55 restore diff-dsa-res (chain of 24 diffs): rc=0 554 ms, guest ok=1
+788	diff-cpu-res/
+788	diff-dsa-res/
+223	full-res/
+05:10:56 DONE -> /home/byrnedan/chlogs/lifecycle-res-lz4/regex-chess_30b-4k-20261013_050854
+######## regex-chess_30b 4k rc=0 end 05:10:56
+######## path-tracing_30b 4k start 05:10:56
+05:10:58 resident lifecycle path-tracing_30b pages=4k turns=23 variants=full-res diff-cpu-res diff-dsa-res
+05:11:50   turn 10/23
+05:12:31   turn 20/23
+05:12:51 restore full-res (chain of 0 diffs): rc=0 289 ms, guest ok=1
+05:12:58 restore diff-cpu-res (chain of 23 diffs): rc=0 659 ms, guest ok=1
+05:13:06 restore diff-dsa-res (chain of 23 diffs): rc=0 683 ms, guest ok=1
+829	diff-cpu-res/
+829	diff-dsa-res/
+216	full-res/
+05:13:07 DONE -> /home/byrnedan/chlogs/lifecycle-res-lz4/path-tracing_30b-4k-20261013_051056
+######## path-tracing_30b 4k rc=0 end 05:13:07
+######## polyglot-rust-c_30b 4k start 05:13:07
+05:13:09 resident lifecycle polyglot-rust-c_30b pages=4k turns=16 variants=full-res diff-cpu-res diff-dsa-res
+05:13:59   turn 10/16
+05:14:29 restore full-res (chain of 0 diffs): rc=0 322 ms, guest ok=1
+05:14:36 restore diff-cpu-res (chain of 16 diffs): rc=0 579 ms, guest ok=1
+05:14:43 restore diff-dsa-res (chain of 16 diffs): rc=0 572 ms, guest ok=1
+890	diff-cpu-res/
+890	diff-dsa-res/
+261	full-res/
+05:14:43 DONE -> /home/byrnedan/chlogs/lifecycle-res-lz4/polyglot-rust-c_30b-4k-20261013_051307
+######## polyglot-rust-c_30b 4k rc=0 end 05:14:43
+######## winning-avg-corewars_30b 4k start 05:14:43
+05:14:45 resident lifecycle winning-avg-corewars_30b pages=4k turns=60 variants=full-res diff-cpu-res diff-dsa-res
+05:15:34   turn 10/60
+05:16:14   turn 20/60
+05:16:54   turn 30/60
+05:17:35   turn 40/60
+05:18:15   turn 50/60
+05:18:55   turn 60/60
+05:19:02 restore full-res (chain of 0 diffs): rc=0 228 ms, guest ok=1
+05:19:08 restore diff-cpu-res (chain of 60 diffs): rc=0 512 ms, guest ok=1
+05:19:14 restore diff-dsa-res (chain of 60 diffs): rc=0 499 ms, guest ok=1
+678	diff-cpu-res/
+678	diff-dsa-res/
+193	full-res/
+05:19:14 DONE -> /home/byrnedan/chlogs/lifecycle-res-lz4/winning-avg-corewars_30b-4k-20261013_051443
+######## winning-avg-corewars_30b 4k rc=0 end 05:19:14
+######## write-compressor_30b 2m start 05:19:14
+05:19:15 resident lifecycle write-compressor_30b pages=2m turns=13 variants=full-res diff-cpu-res diff-dsa-res
+05:20:03   turn 10/13
+05:20:22 restore full-res (chain of 0 diffs): rc=0 185 ms, guest ok=1
+05:20:28 restore diff-cpu-res (chain of 13 diffs): rc=0 262 ms, guest ok=1
+05:20:34 restore diff-dsa-res (chain of 13 diffs): rc=0 240 ms, guest ok=1
+646	diff-cpu-res/
+646	diff-dsa-res/
+193	full-res/
+05:20:35 DONE -> /home/byrnedan/chlogs/lifecycle-res-lz4/write-compressor_30b-2m-20261013_051914
+######## write-compressor_30b 2m rc=0 end 05:20:35
+######## circuit-fibsqrt_7b 2m start 05:20:35
+05:20:35 resident lifecycle circuit-fibsqrt_7b pages=2m turns=10 variants=full-res diff-cpu-res diff-dsa-res
+05:21:23   turn 10/10
+05:21:28 restore full-res (chain of 0 diffs): rc=0 204 ms, guest ok=1
+05:21:34 restore diff-cpu-res (chain of 10 diffs): rc=0 303 ms, guest ok=1
+05:21:39 restore diff-dsa-res (chain of 10 diffs): rc=0 305 ms, guest ok=1
+701	diff-cpu-res/
+701	diff-dsa-res/
+215	full-res/
+05:21:40 DONE -> /home/byrnedan/chlogs/lifecycle-res-lz4/circuit-fibsqrt_7b-2m-20261013_052035
+######## circuit-fibsqrt_7b 2m rc=0 end 05:21:40
+######## circuit-fibsqrt_30b 2m start 05:21:40
+05:21:40 resident lifecycle circuit-fibsqrt_30b pages=2m turns=24 variants=full-res diff-cpu-res diff-dsa-res
+05:22:28   turn 10/24
+05:23:08   turn 20/24
+05:23:30 restore full-res (chain of 0 diffs): rc=0 218 ms, guest ok=1
+05:23:35 restore diff-cpu-res (chain of 24 diffs): rc=0 380 ms, guest ok=1
+05:23:40 restore diff-dsa-res (chain of 24 diffs): rc=0 383 ms, guest ok=1
+733	diff-cpu-res/
+733	diff-dsa-res/
+218	full-res/
+05:23:40 DONE -> /home/byrnedan/chlogs/lifecycle-res-lz4/circuit-fibsqrt_30b-2m-20261013_052140
+######## circuit-fibsqrt_30b 2m rc=0 end 05:23:40
+######## regex-chess_30b 2m start 05:23:40
+05:23:41 resident lifecycle regex-chess_30b pages=2m turns=24 variants=full-res diff-cpu-res diff-dsa-res
+05:24:30   turn 10/24
+05:25:10   turn 20/24
+05:25:31 restore full-res (chain of 0 diffs): rc=0 227 ms, guest ok=1
+05:25:36 restore diff-cpu-res (chain of 24 diffs): rc=0 481 ms, guest ok=1
+05:25:41 restore diff-dsa-res (chain of 24 diffs): rc=0 490 ms, guest ok=1
+792	diff-cpu-res/
+792	diff-dsa-res/
+225	full-res/
+05:25:41 DONE -> /home/byrnedan/chlogs/lifecycle-res-lz4/regex-chess_30b-2m-20261013_052340
+######## regex-chess_30b 2m rc=0 end 05:25:41
+######## path-tracing_30b 2m start 05:25:41
+05:25:42 resident lifecycle path-tracing_30b pages=2m turns=23 variants=full-res diff-cpu-res diff-dsa-res
+05:26:33   turn 10/23
+05:27:14   turn 20/23
+05:27:33 restore full-res (chain of 0 diffs): rc=0 247 ms, guest ok=1
+05:27:41 restore diff-cpu-res (chain of 23 diffs): rc=0 596 ms, guest ok=1
+05:27:48 restore diff-dsa-res (chain of 23 diffs): rc=0 609 ms, guest ok=1
+827	diff-cpu-res/
+827	diff-dsa-res/
+217	full-res/
+05:27:49 DONE -> /home/byrnedan/chlogs/lifecycle-res-lz4/path-tracing_30b-2m-20261013_052541
+######## path-tracing_30b 2m rc=0 end 05:27:49
+######## polyglot-rust-c_30b 2m start 05:27:49
+05:27:49 resident lifecycle polyglot-rust-c_30b pages=2m turns=16 variants=full-res diff-cpu-res diff-dsa-res
+05:28:39   turn 10/16
+05:29:09 restore full-res (chain of 0 diffs): rc=0 268 ms, guest ok=1
+05:29:16 restore diff-cpu-res (chain of 16 diffs): rc=0 522 ms, guest ok=1
+05:29:22 restore diff-dsa-res (chain of 16 diffs): rc=0 517 ms, guest ok=1
+896	diff-cpu-res/
+896	diff-dsa-res/
+261	full-res/
+05:29:23 DONE -> /home/byrnedan/chlogs/lifecycle-res-lz4/polyglot-rust-c_30b-2m-20261013_052749
+######## polyglot-rust-c_30b 2m rc=0 end 05:29:23
+######## winning-avg-corewars_30b 2m start 05:29:23
+05:29:23 resident lifecycle winning-avg-corewars_30b pages=2m turns=60 variants=full-res diff-cpu-res diff-dsa-res
+05:30:12   turn 10/60
+05:30:52   turn 20/60
+05:31:32   turn 30/60
+05:32:13   turn 40/60
+05:32:53   turn 50/60
+05:33:33   turn 60/60
+05:33:40 restore full-res (chain of 0 diffs): rc=0 182 ms, guest ok=1
+05:33:46 restore diff-cpu-res (chain of 60 diffs): rc=0 454 ms, guest ok=1
+05:33:52 restore diff-dsa-res (chain of 60 diffs): rc=0 452 ms, guest ok=1
+672	diff-cpu-res/
+672	diff-dsa-res/
+194	full-res/
+05:33:52 DONE -> /home/byrnedan/chlogs/lifecycle-res-lz4/winning-avg-corewars_30b-2m-20261013_052923
+######## winning-avg-corewars_30b 2m rc=0 end 05:33:52
+checkpoints 1062 (0 failed), restores 42
+
+=== 2m: per-turn checkpoint, median over 170 turns ===
+variant            wall ms   p95  cpu ms    p95  KiB out prep ms cmp ms gath ms comp ms populate dedup pg dedup ms
+full-res               275   396   525.4  766.1   197053     0.8                  260.1        0                  
+diff-cpu-res            11    77     8.3   74.3      618     0.4    0.6     1.8     5.0        2        0      0.0
+diff-dsa-res            10    71     7.0   67.1      618     0.4    0.3     1.0     4.8        2        0      0.0
+
+=== 2m: all checkpoints of all sessions ===
+variant             wall s   cpu s stored MiB dedup pages
+full-res             56.36  106.12      36328           0
+diff-cpu-res          8.12   10.18       1723           0
+diff-dsa-res          6.43    7.68       1723           0
+
+  base (first, full) checkpoint median wall: full-res 572 ms, diff-cpu-res 598 ms, diff-dsa-res 419 ms
+
+=== 2m: restores ===
+  full-res           median   218 ms, chain up to 0 diffs, guest ok 7/7
+  diff-cpu-res       median   454 ms, chain up to 60 diffs, guest ok 7/7
+  diff-dsa-res       median   452 ms, chain up to 60 diffs, guest ok 7/7
+
+=== 4k: per-turn checkpoint, median over 170 turns ===
+variant            wall ms   p95  cpu ms    p95  KiB out prep ms cmp ms gath ms comp ms populate dedup pg dedup ms
+full-res               275   412   522.5  789.6   197536     6.4                  255.3        0                  
+diff-cpu-res            10    78     7.8   74.4      614     0.0    0.6     1.9     4.9        0        0      0.0
+diff-dsa-res             9    71     6.3   67.3      614     0.0    0.3     0.9     4.7        0        0      0.0
+
+=== 4k: all checkpoints of all sessions ===
+variant             wall s   cpu s stored MiB dedup pages
+full-res             53.72  102.15      36257           0
+diff-cpu-res          7.33    8.62       1722           0
+diff-dsa-res          6.50    7.75       1722           0
+
+  base (first, full) checkpoint median wall: full-res 283 ms, diff-cpu-res 501 ms, diff-dsa-res 441 ms
+
+=== 4k: restores ===
+  full-res           median   270 ms, chain up to 0 diffs, guest ok 7/7
+  diff-cpu-res       median   512 ms, chain up to 60 diffs, guest ok 7/7
+  diff-dsa-res       median   499 ms, chain up to 60 diffs, guest ok 7/7
+LIFECYCLE_RES_ALL_DONE
