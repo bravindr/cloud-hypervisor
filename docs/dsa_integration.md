@@ -1357,10 +1357,27 @@ median ms, performance governor, one submitter by affinity; `sub7` in
 parentheses ran two submitters under on-demand): dynamic Huffman shared
 `+cpu`/`+dsa` 548 / 544 (572 / 563) against per-slot 615 / 605 (629 / 619),
 −11 %; static Huffman 602 / 597 (610 / 614) against 606 / 589 (608 / 599),
-within 2 %. Restore 744-769 ms (769-794). The per-slot cells, whose code did
-not change, moved −2 % with the governor and the shared cells −4 %, so one
-submitter on one core is at least no worse than two; the two changes were not
-separated by a control run.
+within 2 %. Restore 744-769 ms (769-794).
+
+A control sweep (`harness-pipeline-nvme-sub9`: `--submitters 2` forced on
+the one core, performance governor, `OFFLOAD_EXTRA_ARGS` in the env)
+separates the two changes. Snapshot medians, one vs two submitters, both
+under performance:
+
+| codec | shared +cpu | +dsa | per-slot +cpuslot | +dsaslot |
+|---|---|---|---|---|
+| dynamic, 1 submitter (sub8) | 548 (62 % cpu) | 544 (63 %) | 615 | 605 |
+| dynamic, 2 submitters (sub9) | 551 (70 %) | 549 (72 %) | 609 | 596 |
+| static, 1 submitter (sub8) | 602 (53 %) | 597 (53 %) | 606 | 589 |
+| static, 2 submitters (sub9) | 609 (57 %) | 603 (57 %) | 596 | 585 |
+
+On one core a second submitter changes the wall by less than 1 % in every
+shared cell (the per-slot cells, with identical code, scatter 1-2 % between
+the two sweeps) and costs 4-9 points of daemon CPU: the thread that is not
+running has nothing to overlap. The whole sub7 → sub8 move (572 / 563 →
+548 / 544 dynamic) is the governor, as sub9 with two submitters lands on the
+same 551 / 549. The affinity default (one thread per pinned core) is the
+right choice here.
 
 ### 7c.3 IOMMU first touch: measured, and the fix
 
