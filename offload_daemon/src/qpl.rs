@@ -2,6 +2,9 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
+use std::alloc::{self, Layout};
+use std::ops::{Deref, DerefMut};
+use std::{ptr, slice};
 use std::ffi::{c_int, c_void};
 use std::ptr::{NonNull, null_mut};
 use std::thread;
@@ -195,9 +198,102 @@ impl Drop for Job {
 struct PoolSlot {
     job: Job,
     input: Vec<u8>,
-    output: Vec<u8>,
+    output: AlignedBuf,
     submitted: bool,
     submitted_at: Option<Instant>,
+}
+
+/// Output buffer of a pool slot: page aligned, and 2 MiB aligned (and
+/// `MADV_HUGEPAGE`, so one THP) once it holds 2 MiB or more. A restored chunk
+/// handed to `UFFDIO_COPY` must start on a page boundary for the kernel's copy
+/// offload to take it (a `Vec` from malloc starts 16 bytes into a page), and a
+/// single physically contiguous source lets the device copy it in one go.
+struct AlignedBuf {
+    ptr: *mut u8,
+    len: usize,
+    cap: usize,
+    align: usize,
+}
+
+const BUF_PAGE: usize = 4096;
+const BUF_HUGE: usize = 2 << 20;
+
+impl AlignedBuf {
+    const fn new() -> Self {
+        Self {
+            ptr: ptr::null_mut(),
+            len: 0,
+            cap: 0,
+            align: 0,
+        }
+    }
+
+    /// Make the buffer `len` bytes long; contents are unspecified (the job
+    /// writes them), zeroed on a fresh allocation.
+    fn resize(&mut self, len: usize) {
+        if len > self.cap {
+            self.release();
+            let align = if len >= BUF_HUGE { BUF_HUGE } else { BUF_PAGE };
+            let cap = len.div_ceil(align) * align;
+            let layout = Layout::from_size_align(cap, align).expect("valid buffer layout");
+            // SAFETY: non-zero-sized layout.
+            let p = unsafe { alloc::alloc_zeroed(layout) };
+            if p.is_null() {
+                alloc::handle_alloc_error(layout);
+            }
+            if align == BUF_HUGE {
+                // SAFETY: advice on memory this buffer owns; failure is harmless.
+                unsafe { libc::madvise(p.cast(), cap, libc::MADV_HUGEPAGE) };
+            }
+            self.ptr = p;
+            self.cap = cap;
+            self.align = align;
+        }
+        self.len = len;
+    }
+
+    fn release(&mut self) {
+        if self.cap != 0 {
+            // SAFETY: allocated in `resize` with exactly this layout.
+            unsafe {
+                alloc::dealloc(
+                    self.ptr,
+                    Layout::from_size_align(self.cap, self.align).expect("valid buffer layout"),
+                );
+            };
+            self.cap = 0;
+            self.len = 0;
+            self.ptr = ptr::null_mut();
+        }
+    }
+}
+
+impl Deref for AlignedBuf {
+    type Target = [u8];
+
+    fn deref(&self) -> &[u8] {
+        if self.len == 0 {
+            return &[];
+        }
+        // SAFETY: `len` <= `cap` bytes of zero-initialised or job-written memory.
+        unsafe { slice::from_raw_parts(self.ptr, self.len) }
+    }
+}
+
+impl DerefMut for AlignedBuf {
+    fn deref_mut(&mut self) -> &mut [u8] {
+        if self.len == 0 {
+            return &mut [];
+        }
+        // SAFETY: as above; exclusive through `&mut self`.
+        unsafe { slice::from_raw_parts_mut(self.ptr, self.len) }
+    }
+}
+
+impl Drop for AlignedBuf {
+    fn drop(&mut self) {
+        self.release();
+    }
 }
 
 pub(crate) struct JobPool {
@@ -221,7 +317,7 @@ impl JobPool {
                 Ok(PoolSlot {
                     job: Job::new_with_mode(path, huffman_mode)?,
                     input: Vec::new(),
-                    output: Vec::new(),
+                    output: AlignedBuf::new(),
                     submitted: false,
                     submitted_at: None,
                 })
@@ -273,7 +369,7 @@ impl JobPool {
         if output_capacity == 0 {
             return Err(Error::InvalidOutput);
         }
-        slot.output.resize(output_capacity as usize, 0);
+        slot.output.resize(output_capacity as usize);
         let deadline = Instant::now() + ASYNC_TIMEOUT;
         loop {
             // SAFETY: slot buffers cannot be resized again until this job completes.
@@ -311,7 +407,7 @@ impl JobPool {
         debug_assert!(!slot.submitted);
         let input_size = u32::try_from(slot.input.len()).map_err(|_| Error::InputTooLarge)?;
         let output_capacity = u32::try_from(output_size).map_err(|_| Error::InputTooLarge)?;
-        slot.output.resize(output_size, 0);
+        slot.output.resize(output_size);
         let deadline = Instant::now() + ASYNC_TIMEOUT;
         loop {
             // SAFETY: slot buffers cannot be resized again until this job completes.

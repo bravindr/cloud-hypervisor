@@ -24,6 +24,7 @@ mod diff;
 #[cfg(feature = "dto")]
 mod dto;
 mod mapping;
+mod uffd;
 #[cfg(feature = "qpl")]
 mod qpl;
 #[cfg(feature = "qpl")]
@@ -322,6 +323,12 @@ enum Mode {
         /// instead of 4 KiB pages.
         #[arg(long)]
         hugetlb: bool,
+        /// Install decompressed huge pages with UFFDIO_COPY instead of
+        /// writing them (needs --hugetlb and a snapshot chunk size that is a
+        /// multiple of the huge page); the kernel's copy offload provider
+        /// then does the copy on DSA.
+        #[arg(long)]
+        uffd_copy: bool,
     },
 }
 
@@ -363,6 +370,7 @@ struct RestoreOptions {
     populate: Populate,
     dsa_depth: usize,
     hugetlb: bool,
+    uffd_copy: bool,
 }
 
 fn default_workers() -> usize {
@@ -503,6 +511,7 @@ fn main() -> Result<()> {
             populate,
             dsa_depth,
             hugetlb,
+            uffd_copy,
         } => {
             compression::set_verify_on_cpu(verify_engine == Classify::Cpu);
             run_restore(
@@ -516,6 +525,7 @@ fn main() -> Result<()> {
                     populate,
                     dsa_depth,
                     hugetlb,
+                    uffd_copy,
                 },
             )
         }
@@ -1201,6 +1211,7 @@ fn create_memfd_with_contents(
             size,
             options.workers,
             options.verify_crc,
+            options.uffd_copy,
         )?;
         info!(
             "Decompressed {name}: chunks={}, compressed={} bytes, output={} bytes, ratio={:.3}, throughput={:.3} GiB/s",

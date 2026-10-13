@@ -28,6 +28,7 @@ use crate::crc::{crc32c, fill_pattern};
 #[cfg(feature = "dto")]
 use crate::dto::{Op as DtoOp, Poll as DtoPoll, Stats as DtoStats, Submit as DtoSubmit};
 use crate::mapping::Mapping;
+use crate::uffd::Uffd;
 #[cfg(feature = "qpl")]
 use crate::mapping::data_extents;
 #[cfg(feature = "qpl")]
@@ -1209,23 +1210,52 @@ pub(crate) fn compress_mapped(
 }
 
 /// Where decompressed chunks go: pwrite into the file, or a memcpy into a
-/// mapping when the file is hugetlbfs-backed (no write(2) there).
+/// mapping when the file is hugetlbfs-backed (no write(2) there), or
+/// `UFFDIO_COPY` into a hugetlb mapping registered with userfaultfd, where the
+/// kernel allocates each huge page and copies the chunk into it (offloadable
+/// to DSA by the mm_offload copy provider), so the daemon neither faults the
+/// page in nor copies on the CPU.
 pub(crate) enum Destination<'a> {
     File { file: &'a File, offset: u64 },
     Mapped(Mapping),
+    Uffd { mapping: Mapping, uffd: Uffd },
 }
 
 const HUGETLBFS_MAGIC: i64 = 0x958458f6;
 
 impl<'a> Destination<'a> {
     pub(crate) fn open(file: &'a File, offset: u64, length: u64) -> io::Result<Self> {
+        Self::open_with(file, offset, length, false)
+    }
+
+    /// With `uffd_copy`, a hugetlb destination is written through
+    /// `UFFDIO_COPY` (whole huge pages only; a 4 KiB memfd is refused: the
+    /// kernel offloads neither shmem nor shared 4 KiB copies).
+    pub(crate) fn open_with(
+        file: &'a File,
+        offset: u64,
+        length: u64,
+        uffd_copy: bool,
+    ) -> io::Result<Self> {
         // SAFETY: zeroed statfs buffer filled by the kernel.
         let mut stat: libc::statfs = unsafe { mem::zeroed() };
         // SAFETY: valid fd and out pointer.
         let hugetlb = unsafe { libc::fstatfs(file.as_raw_fd(), &mut stat) } == 0
             && stat.f_type == HUGETLBFS_MAGIC;
         if hugetlb {
-            Ok(Self::Mapped(Mapping::map_file(file, offset, length, true)?))
+            let mapping = Mapping::map_file(file, offset, length, true)?;
+            if uffd_copy {
+                let uffd = Uffd::new()?;
+                uffd.register_missing(mapping.ptr(0, mapping.len())?, mapping.len())?;
+                Ok(Self::Uffd { mapping, uffd })
+            } else {
+                Ok(Self::Mapped(mapping))
+            }
+        } else if uffd_copy {
+            Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "UFFDIO_COPY restore needs a hugetlb memfd (--hugetlb)",
+            ))
         } else {
             Ok(Self::File { file, offset })
         }
@@ -1235,10 +1265,30 @@ impl<'a> Destination<'a> {
         match self {
             Self::File { file, offset } => file.write_all_at(data, offset + chunk_offset as u64),
             Self::Mapped(mapping) => mapping.write(chunk_offset, data),
+            Self::Uffd { mapping, uffd } => {
+                let page = mapping.page_size();
+                if chunk_offset % page != 0 || data.len() % page != 0 {
+                    return Err(io::Error::new(
+                        io::ErrorKind::InvalidInput,
+                        format!(
+                            "UFFDIO_COPY restore needs whole huge pages: chunk {chunk_offset}+{} on {page}-byte pages (snapshot with --chunk-size {page})",
+                            data.len()
+                        ),
+                    ));
+                }
+                let dst = mapping.mut_ptr(chunk_offset, data.len())?;
+                if uffd.copy(dst, data.as_ptr(), data.len())? {
+                    Ok(())
+                } else {
+                    // already present (populated by someone else): plain write
+                    mapping.write(chunk_offset, data)
+                }
+            }
         }
     }
 }
 
+#[expect(clippy::too_many_arguments)]
 pub(crate) fn decompress_file(
     data_path: &Path,
     manifest_path: &Path,
@@ -1247,6 +1297,7 @@ pub(crate) fn decompress_file(
     expected_size: u64,
     workers: usize,
     verify_crc: bool,
+    uffd_copy: bool,
 ) -> Result<CompressionStats, Error> {
     let started = Instant::now();
     let manifest_bytes = fs::read(manifest_path).map_err(Error::Read)?;
@@ -1341,7 +1392,8 @@ pub(crate) fn decompress_file(
     // stays: writing through a fresh mapping takes one page fault per page,
     // which measured 2x slower than letting the kernel allocate per write.
     let destination =
-        Destination::open(destination, destination_offset, expected_size).map_err(Error::Write)?;
+        Destination::open_with(destination, destination_offset, expected_size, uffd_copy)
+            .map_err(Error::Write)?;
     // Fill chunks are written while the compressed ones decompress.
     thread::scope(|scope| {
         let fill = scope.spawn(|| write_fill_chunks(&destination, &records));
@@ -2009,6 +2061,7 @@ mod tests {
                 input.len() as u64,
                 4,
                 false,
+            false,
             )
             .unwrap();
 
@@ -2074,6 +2127,7 @@ mod tests {
             input.len() as u64,
             3,
             false,
+            false,
         )
         .unwrap();
         assert_eq!(decompressed.chunks, 13);
@@ -2132,6 +2186,7 @@ mod tests {
             0,
             input.len() as u64,
             2,
+            false,
             false,
         )
         .unwrap();
