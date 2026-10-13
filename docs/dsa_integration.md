@@ -1924,6 +1924,107 @@ Reading:
   are ~18 ms, the rest IAA decompression, reading the compressed parts
   and the VMM's connect and replay.
 
+### 7c.2t Porting estimate: CubeSandbox (tencentcloud/CubeSandbox)
+
+Read on 2026-10-13 at `master` (v0.7.3). What it is, from the code rather
+than the README:
+
+- **VMM**: a vendored Cloud Hypervisor v28 (`hypervisor/`, crate
+  `cube-hypervisor 28.0.0`) with two added modules, `vmm/src/pagemap_anon.rs`
+  and `vmm/src/soft_dirty.rs`, and a `--snapshot-type full|incremental|soft-dirty`
+  option. The shim (`CubeShim/shim/src/sandbox/sb.rs`) drives it over the
+  API: `vm.pause` → `vm.snapshot` → `vm.resume`; a pause is a snapshot
+  followed by `VmDelete`; a rollback is `VmDelete` plus a restore into the
+  same VMM process; a clone is a temporary snapshot plus N restores. Hosts
+  run PVM kernels (6.6.117: KVM without hardware virtualization, so the
+  "host" is often itself a cloud VM) with `transparent_hugepage=never`, no
+  hugetlb. Sandboxes are 2 vCPU / 2 GiB in every benchmark.
+- **Guest memory** of a sandbox created from a template is
+  `mmap(MAP_PRIVATE)` of the template's `memory-ranges` image
+  (`restore_memory_regions_and_zones`, read-only fd, `MAP_POPULATE` only
+  if prefault is asked for, no userfaultfd). Untouched pages are page
+  cache shared by every clone on the node; written pages become anonymous
+  CoW pages. That is the whole density and cold-start story: create from
+  template 48 ms serial, 3.6 ms amortized at 50-way concurrency, "regardless
+  of snapshot size", because nothing is copied.
+- **Snapshot**: with the VM paused, `/proc/self/pagemap` (8 bytes per
+  page) selects pages that are `present && !PM_FILE` (incremental: every
+  CoW'd page since the template) or additionally soft-dirty (`clear_refs`
+  `4` between snapshots; "hundreds of ms on multi-GiB VMs" of PTE walk),
+  and `save_range_to_file()` writes them raw, single-threaded, with
+  `write_volatile_to()` into a destination file the node agent
+  (`Cubelet/storage`, `CommitMemoryFromBase`) has reflinked from the base
+  on XFS (`cubecow`, `FICLONE`), so unwritten offsets inherit the parent.
+  No compression, no checksum, no dedup, no hole punching.
+- **Measured by them** (BMI5 bare metal, Xeon 8255C, NVMe XFS):
+  snapshot 47 ms floor + ~40 ms per 100 MB dirty (7 MB → 47 ms, 1136 MB →
+  487 ms); pause 558 ms full copy in June, 150 → 88 ms for a 2 GiB sandbox
+  in v0.7.3; clone 220 ms, rollback 82 ms, resume 42 ms; cross-node package
+  ~205 MiB of memory + ~4 MiB rootfs + ~4 MiB metadata, uploaded to S3 in
+  4.3 s average (P95 6.3 s), cross-node resume 836 ms reading 10-20 MiB
+  lazily through `CubeS3lvol` (1 MiB chunks, local WAL and chunk cache).
+  "Each snapshot corresponds to a full image in persistent storage."
+
+**How their pipeline lines up with ours.** Their snapshot is the in-VMM
+model of our `djb-dsa-iaa` branch (section 7b: memory already mapped,
+no pread, one process), not the daemon model: the natural port is the
+in-VMM chain into `send_pagemap_anon_memory()` / `send_soft_dirty_memory()`,
+compressing each selected range and writing a compressed image plus an
+index instead of the raw `memory-ranges`, with the restore path
+decompressing into the node's copy of the image once and mapping it
+`MAP_PRIVATE` exactly as today. Their pagemap filter already does what
+`SEEK_DATA` does for us (never-touched pages cost nothing), so the
+accelerators' share of the work is what remains inside the anonymous set.
+
+**Estimate**, their 2 GiB sandbox on a host with DSA and IAA, from our
+measured rates (IAA static: ~450 MiB kept compressed and written in
+42-47 ms, 5-7× smaller; DSA COMPVAL: allocated zeros and poison are ~1/3
+of an agent guest's data bytes, 7c.2n; DSA compare: 27 % of dirty pages
+are false dirty, 7c.2f; DSA CRC dedup against the rootfs: 34-60 % of diff
+pages, 7c.2h; resident diff checkpoint 5-6 ms, p99 51-53 ms, 7c.2r):
+
+| their operation | today | with the port | why |
+|---|---|---|---|
+| snapshot, 200 MiB dirty (a fresh agent sandbox) | ~127 ms (47 + 0.4/MB) | ~35-45 ms | compress + write at ~10 GB/s instead of a raw write at 2.5 GB/s; the fixed cost stays |
+| snapshot, 1.1 GiB dirty | 487 ms | ~130-150 ms | same |
+| pause (incremental), 2 GiB sandbox | 88 ms | ~40 ms | fixed costs dominate at this size |
+| checkpoint floor for per-step snapshots | 47 ms, plus the `clear_refs` walk | 5-6 ms | KVM dirty log (our CH `DirtyLog`) instead of `clear_refs` + pagemap; resident diff engine |
+| checkpoint tail (p99) | not published; `clear_refs` "hundreds of ms" on large guests | ~50 ms | 7c.2r |
+| storage written per snapshot | dirty bytes, raw | ÷8-15 | compression 5-7×, zero/poison elision ~1.3×, rootfs dedup 1.3-2× |
+| pause-to-S3 upload (205 MiB) | 4.3 s avg | ~0.7-1.0 s | bytes ÷5-7, if the upload is bandwidth bound as it looks |
+| cross-node resume | 836 ms | ~700-800 ms | the 10-20 MiB lazily read become 2-4 MiB plus decompression; S3lvol and metadata dominate |
+| create from template, clone, rollback | 48-85 / 220 / 82 ms | unchanged | lazy page-cache restore copies nothing; our eager restore (7c.2r, 7c.2s) does not apply |
+| host CPU per snapshot | one core for the write | ÷3-5 | 0.08-0.10 core-s per 4 GiB checkpoint against 0.55-0.74 for lz4 |
+| integrity | none | per-chunk CRC32C, free | DSA CRC on the snapshot path, verified on restore |
+
+**What does not transfer**
+- The whole offloaded restore (UFFDIO_COPY, the DSA copy provider, the
+  standing mappings, the clear offload): their restore is lazy and 4 KiB,
+  there is no bulk copy and no hugetlb. A compressed image cannot be
+  mapped `MAP_PRIVATE`, so the hot template image has to be decompressed
+  once per node (IAA: ~20-40 ms for a 205 MiB package) and then shared as
+  today; compression belongs to the at-rest and in-transit tiers, not the
+  mapped tier, unless the on-demand decompression of 7c.2b is built.
+- The hugetlb-specific classification win (DSA hiding a 4 GiB scan): their
+  guests are 4 KiB with THP off, so the 4 KiB numbers apply (IAA 3.9×, DSA
+  a few percent plus free CRC).
+- Hardware: PVM exists so that hosts can be cloud VMs, which do not pass
+  through DSA or IAA, and both of their benchmark hosts (Cascade Lake
+  bare metal; an SA9 cloud VM) have neither. The port needs the software
+  fallback we keep (lz4, CPU classification) and pays off only on
+  Sapphire Rapids or later bare metal.
+
+**Engineering shape of the port**: (1) the in-VMM compression chain from
+`djb-dsa-iaa` into `cube-hypervisor`'s three `send_*_memory()` paths, a
+compressed image format with an index next to `memory-ranges`, and a
+restore step that materializes the image into the page cache (eager,
+once per node and template); (2) our CH `DirtyLog` command (KVM dirty
+bitmap over the API) as the incremental source in place of
+`clear_refs`/soft-dirty, with the DSA compare dropping false-dirty
+pages; (3) the DSA CRC index against the template rootfs for dedup; all
+behind a feature flag because of the hardware caveat. The daemon,
+memfd and live-migration machinery of this branch would not move.
+
 ### 7c.3 IOMMU first touch: measured, and the fix
 
 `dto-async-test` (fresh process, 2 GiB memfd filled by another mapping, then
