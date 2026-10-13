@@ -30,7 +30,7 @@ use thiserror::Error;
 
 use crate::classify::AccelOptions;
 use crate::compression::{
-    ChunkRecord, Codec, Error as CompressionError, SlotJob, SlotManifest, compress_slots,
+    ChunkRecord, Codec, Engine, Error as CompressionError, SlotJob, SlotManifest, compress_slots,
     validate_chunk_size,
 };
 use crate::dedup::{self, DedupRun, Index};
@@ -343,9 +343,10 @@ impl Resident {
                 manifest_path: manifest,
             })
             .collect();
+        let mut engines: Vec<Engine<'_>> = self.pools.iter_mut().map(Engine::Iaa).collect();
         let stats = compress_slots(
             &jobs,
-            &mut self.pools,
+            &mut engines,
             self.config.codec,
             self.config.chunk_size,
             self.chunk_size_u32,

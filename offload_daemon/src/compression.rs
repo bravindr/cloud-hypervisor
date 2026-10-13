@@ -213,6 +213,8 @@ pub(crate) enum Error {
         expected: u32,
         actual: u32,
     },
+    #[error("{0} is not a software codec")]
+    NotSoftware(Codec),
     #[error("Chunk classification failed")]
     Classify(#[from] ClassifyError),
 }
@@ -559,6 +561,105 @@ pub(crate) struct SlotJob<'a> {
     pub manifest_path: &'a Path,
 }
 
+/// What a submitter thread compresses with: its share of the IAA jobs, or
+/// a software codec run on the thread itself. The software engine has one
+/// slot and completes at submit, so `submit_chunks` drives both the same
+/// way; with it the shared pipeline (mapped input, hole skipping, DSA or
+/// CPU classification, parts, writeback) is the CPU-only baseline the IAA
+/// path is compared against, instead of the pread loop of `compress_file`.
+#[cfg(feature = "qpl")]
+pub(crate) enum Engine<'a> {
+    Iaa(&'a mut QplJobPool),
+    Software(SoftwareEngine),
+}
+
+#[cfg(feature = "qpl")]
+impl Engine<'_> {
+    fn capacity(&self) -> usize {
+        match self {
+            Self::Iaa(pool) => pool.capacity(),
+            Self::Software(_) => 1,
+        }
+    }
+
+    /// Completed output length of slot `index`, if its chunk is done.
+    fn poll(&mut self, index: usize) -> Result<Option<usize>, Error> {
+        match self {
+            Self::Iaa(pool) => Ok(pool.poll(index)?),
+            Self::Software(engine) => Ok(engine.pending.take()),
+        }
+    }
+
+    fn output(&self, index: usize, size: usize) -> &[u8] {
+        match self {
+            Self::Iaa(pool) => pool.output(index, size),
+            Self::Software(engine) => &engine.output[..size],
+        }
+    }
+
+    /// Compress `len` bytes at `input` in slot `index`.
+    ///
+    /// # Safety
+    /// The input must stay mapped and unchanged until `poll` reports the
+    /// chunk complete.
+    unsafe fn submit_compress_from(
+        &mut self,
+        index: usize,
+        input: *const u8,
+        len: usize,
+    ) -> Result<(), Error> {
+        match self {
+            Self::Iaa(pool) => {
+                // SAFETY: the caller's contract is the pool's.
+                unsafe { pool.submit_compress_from(index, input, len) }.map_err(Error::from)
+            }
+            Self::Software(engine) => {
+                debug_assert!(engine.pending.is_none());
+                // SAFETY: the caller guarantees `len` readable bytes at `input`
+                // for the duration of this call.
+                let input = unsafe { slice::from_raw_parts(input, len) };
+                engine.pending = Some(engine.compress(input)?);
+                Ok(())
+            }
+        }
+    }
+}
+
+/// A software codec (lz4 or zstd) driven by one submitter thread.
+#[cfg(feature = "qpl")]
+pub(crate) struct SoftwareEngine {
+    codec: Codec,
+    zstd_level: i32,
+    output: Vec<u8>,
+    pending: Option<usize>,
+}
+
+#[cfg(feature = "qpl")]
+impl SoftwareEngine {
+    pub(crate) fn new(codec: Codec, zstd_level: i32) -> Result<Self, Error> {
+        if !matches!(codec, Codec::Lz4 | Codec::Zstd) {
+            return Err(Error::NotSoftware(codec));
+        }
+        Ok(Self {
+            codec,
+            zstd_level,
+            output: Vec::new(),
+            pending: None,
+        })
+    }
+
+    fn compress(&mut self, input: &[u8]) -> Result<usize, Error> {
+        match self.codec {
+            Codec::Lz4 => self.output = lz4_compress(input),
+            Codec::Zstd => {
+                self.output = zstd_compress(input, self.zstd_level).map_err(Error::Compress)?;
+            }
+            other => return Err(Error::NotSoftware(other)),
+        }
+        Ok(self.output.len())
+    }
+}
+
 /// Per-slot classification state shared by the submitter threads. Chunks are
 /// claimed through `next_chunk`, so every thread classifies whichever slot
 /// still has chunks: the slots of a guest differ in size (3 GiB and 1 GiB on
@@ -589,7 +690,7 @@ struct PartOut {
 const WRITEBACK_STEP: u64 = 16 << 20;
 
 /// The full-checkpoint pipeline for any number of slots through one ready
-/// queue drained by `pools.len()` submitter threads. Each thread claims
+/// queue drained by `engines.len()` submitter threads. Each thread claims
 /// chunks of any slot, classifies them (DSA COMPVAL ring or CPU scan, one
 /// classifier per slot per thread) ahead of compression, puts data verdicts
 /// into the shared queue, and takes the next queued chunk for whichever of
@@ -603,7 +704,7 @@ const WRITEBACK_STEP: u64 = 16 << 20;
 #[cfg(feature = "qpl")]
 pub(crate) fn compress_slots(
     jobs: &[SlotJob<'_>],
-    pools: &mut [QplJobPool],
+    engines: &mut [Engine<'_>],
     codec: Codec,
     chunk_size: usize,
     chunk_size_u32: u32,
@@ -611,10 +712,10 @@ pub(crate) fn compress_slots(
 ) -> Result<Vec<CompressionStats>, Error> {
     let started = Instant::now();
     assert!(
-        !pools.is_empty(),
-        "compress_slots needs at least one job pool"
+        !engines.is_empty(),
+        "compress_slots needs at least one engine"
     );
-    let submitters = pools.len();
+    let submitters = engines.len();
     let mut scans: Vec<SlotScan> = Vec::with_capacity(jobs.len());
     // [thread][slot]
     let mut thread_outs: Vec<Vec<PartOut>> = (0..submitters)
@@ -648,7 +749,7 @@ pub(crate) fn compress_slots(
         });
     }
 
-    let total_capacity: usize = pools.iter().map(QplJobPool::capacity).sum();
+    let total_capacity: usize = engines.iter().map(Engine::capacity).sum();
     let shared = Shared {
         ready: Mutex::new(VecDeque::new()),
         queued: AtomicUsize::new(0),
@@ -661,13 +762,13 @@ pub(crate) fn compress_slots(
     };
     let (jobs_ref, scans_ref, shared_ref) = (&jobs, &scans, &shared);
     let outcomes: Vec<SubmitOutcome> = thread::scope(|scope| {
-        let handles: Vec<_> = pools
+        let handles: Vec<_> = engines
             .iter_mut()
             .zip(thread_outs)
             .enumerate()
-            .map(|(part, (pool, outs))| {
+            .map(|(part, (engine, outs))| {
                 scope.spawn(move || {
-                    let outcome = submit_loop(jobs_ref, scans_ref, shared_ref, pool, outs, part);
+                    let outcome = submit_loop(jobs_ref, scans_ref, shared_ref, engine, outs, part);
                     if outcome.result.is_err() {
                         shared_ref.abort.store(true, Ordering::Relaxed);
                     }
@@ -807,7 +908,7 @@ fn submit_loop(
     jobs: &[SlotJob<'_>],
     scans: &[SlotScan],
     shared: &Shared,
-    pool: &mut QplJobPool,
+    engine: &mut Engine<'_>,
     mut outs: Vec<PartOut>,
     part: usize,
 ) -> SubmitOutcome {
@@ -830,7 +931,7 @@ fn submit_loop(
         jobs,
         scans,
         shared,
-        pool,
+        engine,
         &mut classifiers,
         &mut outs,
         &mut records,
@@ -850,7 +951,7 @@ fn submit_chunks(
     jobs: &[SlotJob<'_>],
     scans: &[SlotScan],
     shared: &Shared,
-    pool: &mut QplJobPool,
+    engine: &mut Engine<'_>,
     classifiers: &mut [Classifier],
     outs: &mut [PartOut],
     records: &mut [Vec<ChunkRecord>],
@@ -858,7 +959,8 @@ fn submit_chunks(
 ) -> Result<(), Error> {
     let chunk_size = shared.chunk_size;
     let part = u8::try_from(part).expect("at most 256 submitter threads");
-    let mut active: Vec<Option<(usize, Verdict)>> = (0..pool.capacity()).map(|_| None).collect();
+    let mut active: Vec<Option<(usize, Verdict)>> =
+        (0..engine.capacity()).map(|_| None).collect();
     let mut active_count = 0_usize;
     let mut staged = VecDeque::new();
     let mut producing = true;
@@ -949,14 +1051,14 @@ fn submit_chunks(
         //    to this thread's own part file of the slot
         for (index, entry) in active.iter_mut().enumerate() {
             if let Some((s, verdict)) = entry.as_ref() {
-                let Some(output_size) = pool.poll(index)? else {
+                let Some(output_size) = engine.poll(index)? else {
                     continue;
                 };
                 let compressed_length =
                     u32::try_from(output_size).map_err(|_| Error::ChunkTooLarge)?;
                 let out = &mut outs[*s];
                 out.file
-                    .write_all_at(pool.output(index, output_size), out.offset)
+                    .write_all_at(engine.output(index, output_size), out.offset)
                     .map_err(Error::Write)?;
                 records[*s].push(ChunkRecord {
                     uncompressed_offset: verdict.offset as u64,
@@ -998,7 +1100,7 @@ fn submit_chunks(
                     // SAFETY: the mappings outlive the pools and the VM is
                     // paused for the whole snapshot, so the input is stable
                     // until the job completes.
-                    unsafe { pool.submit_compress_from(index, input, verdict.length)? };
+                    unsafe { engine.submit_compress_from(index, input, verdict.length)? };
                     *entry = Some((s, verdict));
                     active_count += 1;
                     made_progress = true;
@@ -1097,7 +1199,7 @@ pub(crate) fn compress_mapped(
     };
     let mut stats = compress_slots(
         &[job],
-        slice::from_mut(pool),
+        &mut [Engine::Iaa(pool)],
         codec,
         chunk_size,
         chunk_size_u32,

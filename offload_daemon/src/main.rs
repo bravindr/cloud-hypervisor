@@ -368,6 +368,7 @@ fn default_workers() -> usize {
 
 /// CPUs the daemon may run on (`sched_getaffinity`), or 1 if that fails.
 fn affinity_cpus() -> usize {
+    // SAFETY: cpu_set_t is a plain bit array, for which all-zero is valid.
     let mut set: libc::cpu_set_t = unsafe { mem::zeroed() };
     // SAFETY: `set` is a valid, writable cpu_set_t of the size passed.
     if unsafe { libc::sched_getaffinity(0, mem::size_of::<libc::cpu_set_t>(), &mut set) } != 0 {
@@ -699,11 +700,17 @@ fn dump_memory_slots(
     }
     if let Some(options) = compression {
         #[cfg(feature = "qpl")]
-        if options.pipeline == Pipeline::Shared
-            && options.parent.is_none()
-            && let Some(huffman) = options.codec.async_huffman_mode()
-        {
-            return dump_shared(slots, config, output_dir, options, huffman);
+        if options.pipeline == Pipeline::Shared && options.parent.is_none() {
+            // Async QPL codecs run on IAA job pools, lz4/zstd on the
+            // submitter threads themselves (the CPU-only baseline); the
+            // sync QPL codecs keep the per-slot path below.
+            let engine = match options.codec {
+                Codec::Lz4 | Codec::Zstd => Some(None),
+                _ => options.codec.async_huffman_mode().map(Some),
+            };
+            if let Some(huffman) = engine {
+                return dump_shared(slots, config, output_dir, options, huffman);
+            }
         }
         let workers_per_slot = options.workers.div_ceil(slots.len().max(1)).max(1);
         let info = slot_info(config)?;
@@ -1495,20 +1502,23 @@ fn dump_shared(
     config: &VmMigrationConfig,
     output_dir: &Path,
     options: &CompressionOptions,
-    huffman: qpl::HuffmanMode,
+    huffman: Option<qpl::HuffmanMode>,
 ) -> Result<()> {
     let started = Instant::now();
     let info = slot_info(config)?;
     let submitters = options.submitters.max(1);
     let per_pool = options.workers.div_ceil(submitters).max(1);
+    // One IAA job pool per submitter, or none for a software codec.
+    let pool_count = if huffman.is_some() { submitters } else { 0 };
     // Map, find the data extents of and prefault every slot, and create the
     // IAA job pools, all concurrently: sequentially this cost a 4 KiB-page
     // guest 10-25 ms per slot plus ~10 ms per pool before compression could
     // start (the per-slot layout always overlapped both).
     let (mapped, mut pools) = thread::scope(|scope| {
-        let pool_handles: Vec<_> = (0..submitters)
+        let pool_handles: Vec<_> = (0..pool_count)
             .map(|_| {
                 scope.spawn(move || {
+                    let huffman = huffman.expect("pools are only created for IAA codecs");
                     qpl::JobPool::new(qpl::ExecutionPath::Hardware, huffman, per_pool)
                         .map_err(|error| Error::from(compression::Error::from(error)))
                 })
@@ -1562,19 +1572,31 @@ fn dump_shared(
         )
         .collect();
     let chunk_size_u32 = compression::validate_chunk_size(options.chunk_size)?;
+    let mut engines: Vec<compression::Engine<'_>> = if huffman.is_some() {
+        pools.iter_mut().map(compression::Engine::Iaa).collect()
+    } else {
+        (0..submitters)
+            .map(|_| {
+                compression::SoftwareEngine::new(options.codec, options.zstd_level)
+                    .map(compression::Engine::Software)
+                    .map_err(Error::from)
+            })
+            .collect::<Result<_>>()?
+    };
     let prepared = started.elapsed();
     let stats = compression::compress_slots(
         &jobs,
-        &mut pools,
+        &mut engines,
         options.codec,
         options.chunk_size,
         chunk_size_u32,
         options.accel,
     )?;
     info!(
-        "shared pipeline: prepare {:.1} ms (map+extents+prefault+pools), compress {:.1} ms, submitters={submitters}",
+        "shared pipeline: prepare {:.1} ms (map+extents+prefault+pools), compress {:.1} ms, submitters={submitters}, engine={}",
         prepared.as_secs_f64() * 1e3,
-        (started.elapsed() - prepared).as_secs_f64() * 1e3
+        (started.elapsed() - prepared).as_secs_f64() * 1e3,
+        if huffman.is_some() { "iaa" } else { "software" }
     );
     for ((slot, ..), stats) in mapped.iter().zip(&stats) {
         info!(
