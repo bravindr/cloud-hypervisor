@@ -67,6 +67,12 @@ case "$variant" in
     +dsacrc) daemon_args+=(--classify dsa --dsa-depth "${DSA_DEPTH:-32}" --crc) ;;
     *) echo "Unknown codec variant $variant" >&2; exit 2 ;;
 esac
+# Extra arguments for the dsa-integration daemon only (the base daemon does
+# not know them), e.g. OFFLOAD_EXTRA_ARGS="--submitters 2".
+if [[ -n "$variant" && -n ${OFFLOAD_EXTRA_ARGS:-} ]]; then
+    read -r -a extra_daemon_args <<<"$OFFLOAD_EXTRA_ARGS"
+    daemon_args+=("${extra_daemon_args[@]}")
+fi
 
 daemon_pid=
 cleanup() {
