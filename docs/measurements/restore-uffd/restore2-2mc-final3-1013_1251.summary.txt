@@ -1,0 +1,51 @@
+12:51:32 snapshot /mnt/chsnap/lifecycle-2mc/write-compressor_30b-2m/dsa/last disk /home/byrnedan/chlogs/lifecycle-scratch/write-compressor_30b-2m.run.ext4 console /home/byrnedan/chlogs/snaps-restore/write-compressor_30b-2m-20261013_060659/console.log binary /home/byrnedan/cloud-hypervisor/target-iaa2/release/offload_daemon
+12:51:32 == cell final: cpus=4,5 workers=32 uffd_dma=1 dcbm=0 args='--hugetlb --uffd-copy'
+12:51:37 final_r1 rc=0 wall 92 ms, daemon user/sys 0.01 0.09, guest ok=1 after 3986 ms
+    Decompressed offload-slot-0: chunks=1536, compressed=51374340 bytes, output=3221225472 bytes, ratio=0.016, throughput=71.336 GiB/s
+    Decompressed offload-slot-1: chunks=512, compressed=144894685 bytes, output=1073741824 bytes, ratio=0.135, throughput=13.423 GiB/s
+    cache: 0000:05:01.0 quantum_kb 128 covered_kb 116736 hits 0 misses 912 inserts 912 insert_fails 0 range_fallbacks 0 evictions 0 ref_skips 0
+    cache: 0000:0a:01.0 quantum_kb 128 covered_kb 116736 hits 0 misses 912 inserts 912 insert_fails 0 range_fallbacks 0 evictions 0 ref_skips 0
+    cache: 0000:0f:01.0 quantum_kb 128 covered_kb 98304 hits 0 misses 768 inserts 768 insert_fails 0 range_fallbacks 0 evictions 0 ref_skips 0
+    cache: 0000:00:01.0 quantum_kb 128 covered_kb 131072 hits 0 misses 1024 inserts 1024 insert_fails 0 range_fallbacks 0 evictions 0 ref_skips 0
+    counters: copies_done=226 bytes_dma=473956352 pin_us_total=34 map_us_total=12448 wait_ns_total=18528 src_contig=226 dst_cached_segs=3616 src_registered=226 src_map_us_total=8985 dst_map_us_total=3392
+12:51:44 final_r2 rc=0 wall 98 ms, daemon user/sys 0.01 0.09, guest ok=1 after 3990 ms
+    Decompressed offload-slot-0: chunks=1536, compressed=51374340 bytes, output=3221225472 bytes, ratio=0.016, throughput=71.480 GiB/s
+    Decompressed offload-slot-1: chunks=512, compressed=144894685 bytes, output=1073741824 bytes, ratio=0.135, throughput=13.819 GiB/s
+    cache: 0000:05:01.0 quantum_kb 128 covered_kb 116736 hits 912 misses 912 inserts 912 insert_fails 0 range_fallbacks 0 evictions 0 ref_skips 0
+    cache: 0000:0a:01.0 quantum_kb 128 covered_kb 116736 hits 912 misses 912 inserts 912 insert_fails 0 range_fallbacks 0 evictions 0 ref_skips 0
+    cache: 0000:0f:01.0 quantum_kb 128 covered_kb 98304 hits 768 misses 768 inserts 768 insert_fails 0 range_fallbacks 0 evictions 0 ref_skips 0
+    cache: 0000:00:01.0 quantum_kb 128 covered_kb 131072 hits 1024 misses 1024 inserts 1024 insert_fails 0 range_fallbacks 0 evictions 0 ref_skips 0
+    counters: copies_done=226 bytes_dma=473956352 pin_us_total=22 map_us_total=10451 wait_ns_total=18534 src_contig=226 dst_cached_segs=3616 src_registered=226 src_map_us_total=9590 dst_map_us_total=773
+12:51:50 final_r3 rc=0 wall 104 ms, daemon user/sys 0.01 0.09, guest ok=1 after 3988 ms
+    Decompressed offload-slot-0: chunks=1536, compressed=51374340 bytes, output=3221225472 bytes, ratio=0.016, throughput=64.041 GiB/s
+    Decompressed offload-slot-1: chunks=512, compressed=144894685 bytes, output=1073741824 bytes, ratio=0.135, throughput=12.766 GiB/s
+    cache: 0000:05:01.0 quantum_kb 128 covered_kb 116736 hits 1824 misses 912 inserts 912 insert_fails 0 range_fallbacks 0 evictions 0 ref_skips 0
+    cache: 0000:0a:01.0 quantum_kb 128 covered_kb 116736 hits 1824 misses 912 inserts 912 insert_fails 0 range_fallbacks 0 evictions 0 ref_skips 0
+    cache: 0000:0f:01.0 quantum_kb 128 covered_kb 98304 hits 1536 misses 768 inserts 768 insert_fails 0 range_fallbacks 0 evictions 0 ref_skips 0
+    cache: 0000:00:01.0 quantum_kb 128 covered_kb 131072 hits 2048 misses 1024 inserts 1024 insert_fails 0 range_fallbacks 0 evictions 0 ref_skips 0
+    counters: copies_done=226 bytes_dma=473956352 pin_us_total=52 map_us_total=10495 wait_ns_total=25265 src_contig=226 dst_cached_segs=3616 src_registered=226 src_map_us_total=9466 dst_map_us_total=935
+12:51:56 final_r4 rc=0 wall 94 ms, daemon user/sys 0.01 0.09, guest ok=1 after 3986 ms
+    Decompressed offload-slot-0: chunks=1536, compressed=51374340 bytes, output=3221225472 bytes, ratio=0.016, throughput=67.216 GiB/s
+    Decompressed offload-slot-1: chunks=512, compressed=144894685 bytes, output=1073741824 bytes, ratio=0.135, throughput=13.111 GiB/s
+    cache: 0000:05:01.0 quantum_kb 128 covered_kb 116736 hits 2736 misses 912 inserts 912 insert_fails 0 range_fallbacks 0 evictions 0 ref_skips 0
+    cache: 0000:0a:01.0 quantum_kb 128 covered_kb 116736 hits 2736 misses 912 inserts 912 insert_fails 0 range_fallbacks 0 evictions 0 ref_skips 0
+    cache: 0000:0f:01.0 quantum_kb 128 covered_kb 98304 hits 2304 misses 768 inserts 768 insert_fails 0 range_fallbacks 0 evictions 0 ref_skips 0
+    cache: 0000:00:01.0 quantum_kb 128 covered_kb 131072 hits 3072 misses 1024 inserts 1024 insert_fails 0 range_fallbacks 0 evictions 0 ref_skips 0
+    counters: copies_done=226 bytes_dma=473956352 pin_us_total=39 map_us_total=10772 wait_ns_total=20839 src_contig=226 dst_cached_segs=3616 src_registered=226 src_map_us_total=9834 dst_map_us_total=859
+12:52:02 final_r5 rc=0 wall 97 ms, daemon user/sys 0.00 0.09, guest ok=1 after 3988 ms
+    Decompressed offload-slot-0: chunks=1536, compressed=51374340 bytes, output=3221225472 bytes, ratio=0.016, throughput=72.273 GiB/s
+    Decompressed offload-slot-1: chunks=512, compressed=144894685 bytes, output=1073741824 bytes, ratio=0.135, throughput=13.584 GiB/s
+    cache: 0000:05:01.0 quantum_kb 128 covered_kb 116736 hits 3648 misses 912 inserts 912 insert_fails 0 range_fallbacks 0 evictions 0 ref_skips 0
+    cache: 0000:0a:01.0 quantum_kb 128 covered_kb 116736 hits 3648 misses 912 inserts 912 insert_fails 0 range_fallbacks 0 evictions 0 ref_skips 0
+    cache: 0000:0f:01.0 quantum_kb 128 covered_kb 98304 hits 3072 misses 768 inserts 768 insert_fails 0 range_fallbacks 0 evictions 0 ref_skips 0
+    cache: 0000:00:01.0 quantum_kb 128 covered_kb 131072 hits 4096 misses 1024 inserts 1024 insert_fails 0 range_fallbacks 0 evictions 0 ref_skips 0
+    counters: copies_done=226 bytes_dma=473956352 pin_us_total=33 map_us_total=10878 wait_ns_total=18634 src_contig=226 dst_cached_segs=3616 src_registered=226 src_map_us_total=9925 dst_map_us_total=873
+12:53:06 final_r6 rc=0 wall 96 ms, daemon user/sys 0.01 0.09, guest ok=0
+    Decompressed offload-slot-0: chunks=1536, compressed=51374340 bytes, output=3221225472 bytes, ratio=0.016, throughput=71.580 GiB/s
+    Decompressed offload-slot-1: chunks=512, compressed=144894685 bytes, output=1073741824 bytes, ratio=0.135, throughput=13.754 GiB/s
+    cache: 0000:05:01.0 quantum_kb 128 covered_kb 116736 hits 4560 misses 912 inserts 912 insert_fails 0 range_fallbacks 0 evictions 0 ref_skips 0
+    cache: 0000:0a:01.0 quantum_kb 128 covered_kb 116736 hits 4560 misses 912 inserts 912 insert_fails 0 range_fallbacks 0 evictions 0 ref_skips 0
+    cache: 0000:0f:01.0 quantum_kb 128 covered_kb 98304 hits 3840 misses 768 inserts 768 insert_fails 0 range_fallbacks 0 evictions 0 ref_skips 0
+    cache: 0000:00:01.0 quantum_kb 128 covered_kb 131072 hits 5120 misses 1024 inserts 1024 insert_fails 0 range_fallbacks 0 evictions 0 ref_skips 0
+    counters: copies_done=226 bytes_dma=473956352 pin_us_total=37 map_us_total=11137 wait_ns_total=19187 src_contig=226 dst_cached_segs=3616 src_registered=226 src_map_us_total=10232 dst_map_us_total=824
+12:53:06 DONE -> /home/byrnedan/chlogs/restore2-2mc-final3-1013_1251

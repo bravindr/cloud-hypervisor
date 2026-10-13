@@ -1,0 +1,15 @@
+12:44:04 snapshot /mnt/chsnap/lifecycle-2mc/write-compressor_30b-2m/dsa/last disk /home/byrnedan/chlogs/lifecycle-scratch/write-compressor_30b-2m.run.ext4 console /home/byrnedan/chlogs/snaps-restore/write-compressor_30b-2m-20261013_060659/console.log binary /home/byrnedan/cloud-hypervisor/target-iaa2/release/offload_daemon
+12:44:04 == cell nocache: cpus=4,5 workers=32 uffd_dma=1 dcbm=0 args='--hugetlb --uffd-copy'
+12:44:10 nocache_r1 rc=0 wall 101 ms, daemon user/sys 0.01 0.09, guest ok=1
+    Decompressed offload-slot-0: chunks=1536, compressed=51374340 bytes, output=3221225472 bytes, ratio=0.016, throughput=64.922 GiB/s
+    Decompressed offload-slot-1: chunks=512, compressed=144894685 bytes, output=1073741824 bytes, ratio=0.135, throughput=12.532 GiB/s
+    counters: copies_done=226 bytes_dma=473956352 pin_us_total=29 map_us_total=21772 wait_ns_total=17397 src_contig=226 dst_mapped_segs=226 src_registered=189 src_map_us_total=8633 dst_map_us_total=13047
+12:44:16 nocache_r2 rc=0 wall 95 ms, daemon user/sys 0.01 0.09, guest ok=1
+    Decompressed offload-slot-0: chunks=1536, compressed=51374340 bytes, output=3221225472 bytes, ratio=0.016, throughput=73.236 GiB/s
+    Decompressed offload-slot-1: chunks=512, compressed=144894685 bytes, output=1073741824 bytes, ratio=0.135, throughput=12.824 GiB/s
+    counters: copies_done=226 bytes_dma=473956352 pin_us_total=15 map_us_total=19020 wait_ns_total=15676 src_contig=226 dst_mapped_segs=226 src_registered=189 src_map_us_total=6026 dst_map_us_total=12902
+12:44:22 nocache_r3 rc=0 wall 105 ms, daemon user/sys 0.01 0.10, guest ok=1
+    Decompressed offload-slot-0: chunks=1536, compressed=51374340 bytes, output=3221225472 bytes, ratio=0.016, throughput=63.351 GiB/s
+    Decompressed offload-slot-1: chunks=512, compressed=144894685 bytes, output=1073741824 bytes, ratio=0.135, throughput=12.161 GiB/s
+    counters: copies_done=226 bytes_dma=473956352 pin_us_total=43 map_us_total=20576 wait_ns_total=21440 src_contig=226 dst_mapped_segs=226 src_registered=189 src_map_us_total=7244 dst_map_us_total=13134
+12:44:23 DONE -> /home/byrnedan/chlogs/restore2-2mc-final-nocache-1013_1244

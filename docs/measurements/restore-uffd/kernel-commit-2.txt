@@ -1,0 +1,55 @@
+uffd_dma: device by destination PFN, registered sources, refusal reasons
+
+Four changes to the copy provider, measured on a 4 GiB hugetlb guest
+restore (226 UFFDIO_COPYs of 2 MiB from an IAA-decompressing daemon on
+two cores), where the previous commit had taken the per-copy mapping
+cost of the DSA path from 44-72 ms per restore to 9-11 ms:
+
+Device by destination PFN. mm_offload_dma_claim_keyed() picks the device
+group by a key instead of by rotation, and uffd_dma keys on the
+destination's huge-page PFN (dev_by_pfn, default on, as dcbm does). A
+device's standing mappings then only ever cover its own share of the
+pool the destinations recycle through: the cache is warm after two
+restores instead of twenty-six, and the per-device entry count drops by
+the device count. Copies are not striped in this mode; striping gained
+nothing once the destination mapping was out of the way.
+
+Standing mapping segment size 128 KiB by default (map_quantum_kb=128,
+the IOVA rcache ceiling; 0 still means dma_opt_mapping_size). A cold
+cache with 2 MiB segments pays a 2 MiB IOVA allocation per miss; with
+the device chosen by PFN the cache is warm so soon that the smaller
+segment's cheaper misses are what matters.
+
+Registered sources. The source of a UFFDIO_COPY is user memory the
+provider pins, maps and releases per copy. /dev/uffd_dma lets the owning
+mm register a buffer once (UFFD_DMA_IOC_REGISTER/UNREGISTER, struct
+{u64 addr, len}): the pages are pinned FOLL_LONGTERM, charged to
+RLIMIT_MEMLOCK as io_uring's fixed buffers are, cut into physically
+contiguous runs, and the whole buffer is mapped on a device the first
+time that device copies from it, as one scatterlist so a buffer of many
+THPs costs one IOVA allocation per device. A copy whose source lies in
+one run of a registered buffer of the calling mm pins and maps nothing.
+Buffers are released on unregister or close, after in-flight copies.
+The contract is io_uring's - the buffer stays allocated and in place
+while registered - and because an owner that frees first would have the
+freed range served from the stale pinned pages (seen: a restore whose
+pool arena reused a freed fill buffer's address range and copied the
+fill pattern over two chunks), the registry holds an mmu_notifier on
+the mm and marks any registration an invalidation range overlaps as
+dead; copies then fall back to pinning. Counters src_registered,
+registered_bytes, regbufs_invalidated. The device node is 0600.
+
+Refusal reasons. copies_refused is split into refused_small,
+refused_unaligned, refused_stalled, refused_saturated and
+refused_noclaim; the 37 refusals per restore were the fill chunks,
+whose pattern buffer was a malloc'd Vec 16 bytes into a page.
+
+Also: the registered-source and standing-mapping lookups read their
+append-only tables without the mutex, and map_us_total is split into
+src_map_us_total and dst_map_us_total.
+
+With all of it, the same restore maps 1.6-1.9 ms per restore (0.8-1.0 ms
+source, 0.7-0.8 ms destination), all 226 copies go to DSA, the restored
+memory is identical to the mapping-write path's, and the restore wall is
+84-108 ms (median ~91) at 0.07-0.08 s of daemon CPU, against 107-113 ms
+for the kernel's CPU copy and 121-133 ms for mapping writes.

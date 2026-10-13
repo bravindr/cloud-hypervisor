@@ -1,0 +1,12 @@
+12:44:23 snapshot /mnt/chsnap/lifecycle-2mc/write-compressor_30b-2m/dsa/last disk /home/byrnedan/chlogs/lifecycle-scratch/write-compressor_30b-2m.run.ext4 console /home/byrnedan/chlogs/snaps-restore/write-compressor_30b-2m-20261013_060659/console.log binary /home/byrnedan/cloud-hypervisor/target-iaa2/release/offload_daemon
+12:44:23 == cell cpucopy: cpus=4,5 workers=32 uffd_dma=0 dcbm=0 args='--hugetlb --uffd-copy'
+12:44:28 cpucopy_r1 rc=0 wall 119 ms, daemon user/sys 0.00 0.13, guest ok=1
+    Decompressed offload-slot-0: chunks=1536, compressed=51374340 bytes, output=3221225472 bytes, ratio=0.016, throughput=54.540 GiB/s
+    Decompressed offload-slot-1: chunks=512, compressed=144894685 bytes, output=1073741824 bytes, ratio=0.135, throughput=10.324 GiB/s
+12:44:35 cpucopy_r2 rc=0 wall 98 ms, daemon user/sys 0.01 0.12, guest ok=1
+    Decompressed offload-slot-0: chunks=1536, compressed=51374340 bytes, output=3221225472 bytes, ratio=0.016, throughput=64.092 GiB/s
+    Decompressed offload-slot-1: chunks=512, compressed=144894685 bytes, output=1073741824 bytes, ratio=0.135, throughput=12.277 GiB/s
+12:44:41 cpucopy_r3 rc=0 wall 113 ms, daemon user/sys 0.01 0.12, guest ok=1
+    Decompressed offload-slot-0: chunks=1536, compressed=51374340 bytes, output=3221225472 bytes, ratio=0.016, throughput=62.868 GiB/s
+    Decompressed offload-slot-1: chunks=512, compressed=144894685 bytes, output=1073741824 bytes, ratio=0.135, throughput=11.052 GiB/s
+12:44:42 DONE -> /home/byrnedan/chlogs/restore2-2mc-final-cpu-1013_1244

@@ -1773,6 +1773,47 @@ round-robin, so each device's cache has to see the whole pool - choosing
 the device by PFN (as `dcbm` does) would cut the warm-up and the entry
 count by the device count.
 
+**Second round in the kernel** (`mm_offload_v1`, second commit after
+471d29348ecc) and the daemon (`--uffd-copy` registers its sources):
+
+- *Device by destination PFN.* `mm_offload_dma_claim_keyed()` picks the
+  device by the destination's huge-page PFN (`dev_by_pfn`, default on),
+  so each device's standing mappings cover a quarter of the pool: the
+  cache is warm after 2 restores instead of 26. Copies are not striped
+  in this mode; striping had nothing left to win.
+- *128 KiB segments by default* (`map_quantum_kb=128`): with a cache that
+  warms this fast, the cheaper cold misses beat 2 MiB segments.
+- *Registered sources.* `/dev/uffd_dma` (`UFFD_DMA_IOC_REGISTER`, 0600:
+  `chmod` it for the daemon's user) pins a buffer once and maps it per
+  device as one scatterlist. The daemon's IAA pool puts all its outputs
+  in one 2 MiB-aligned arena and registers it as one buffer, likewise
+  the fill pattern. The contract is io_uring's: never free a registered
+  buffer. The first version broke it (the fill thread freed its buffer,
+  a pool arena reused the address range, two chunks were copied from
+  the stale pinned pages: the guest panicked 1 restore in 4). The
+  daemon now unregisters through a guard before any free, and the
+  kernel marks a registration dead when an mmu_notifier invalidation
+  overlaps it (`regbufs_invalidated`). A page-by-page compare of the
+  restored memory against the mapping-write path (`cmp_restore.sh`)
+  is identical, bar the one page a restore rewrites; 8/8 guests resume.
+- *The refused copies* were the 37 fill chunks: their pattern buffer
+  was a `Vec`, 16 bytes into a page (`refused_unaligned`). Aligned and
+  registered, all 226 copies go to DSA.
+
+| cell (2 MiB chunks, provider on, warm) | map time / restore | device wait | wall | daemon CPU |
+|---|---|---|---|---|
+| striped, no cache (7c.2r start) | 44-72 ms | 8-12 ms | 127-144 | 0.01 / 0.14 |
+| striped, destination cache | 9-10 ms | 8 ms | 86-96 | 0.01 / 0.10 |
+| by PFN, cache, registered sources, aligned fills | **1.6-1.9 ms** (src 0.8-1.0, dst 0.7-0.8) | 18-19 ms (226 copies) | **84-108, median ~91** | **0.01 / 0.07-0.08** |
+| kernel CPU copy (provider off) | — | — | 107-113 | 0.01 / 0.12 |
+| mapping writes (7c.2r start) | — | — | 121-133 | 0.05 / 0.10 |
+
+What is left of the restore is no longer mapping: the device time
+(~80 µs per 2 MiB copy including completion), the daemon reading its
+compressed input (`_copy_to_iter`, ~20 % of its CPU), its own page
+faults on the input buffers, IAA decompression on one thread per slot,
+and the VMM's connect and replay.
+
 Restore follow-ups, in order of value: `--workers 8` as the restore default
 (the harness runs 32); the kernel clear offload on for hugetlb restores
 (per boot: `dcbm` `offloading=1`, kernel work queues from 7c.2b); a mapping
@@ -1832,10 +1873,10 @@ slower first cell in each sweep (`cpu` 492 vs 331 ms, `dsa` w8 473 vs 214 ms).
   (section 7c.2q).
 - Restore (section 7c.2r): `--workers 8` default; kernel clear offload on
   for hugetlb restores; `uffd_dma` should not stripe 2 MiB copies (set
-  `stripe_min_bytes` above the folio size) when its destinations are not
-  cached; with the shared cache (471d29348ecc) choose the device by PFN
-  and register the daemon's source buffers once instead of pinning and
-  mapping them per copy; mmap the compressed parts
+  `stripe_min_bytes` above the folio size) when `dev_by_pfn` is off and
+  its destinations are not cached; `/dev/uffd_dma` is root-only (0600)
+  and `vm.unprivileged_userfaultfd` is off by default, both per boot;
+  mmap the compressed parts
   instead of `pread`; hugetlb destinations for 4 KiB guests or a shmem
   `mfill` hook in the kernel.
 - `apply_diff` decompresses a chain one diff at a time on one thread
