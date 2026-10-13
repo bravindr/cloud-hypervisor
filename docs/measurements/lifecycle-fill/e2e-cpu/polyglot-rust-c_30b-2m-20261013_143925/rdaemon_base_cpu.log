@@ -1,0 +1,4 @@
+[2026-10-13T21:40:49.671819Z INFO  offload_daemon] Offload daemon connected to "/home/byrnedan/chlogs/e2e-cpu/polyglot-rust-c_30b-2m-20261013_143925/restore-data.sock" (ondemand=false)
+[2026-10-13T21:40:49.739713Z INFO  offload_daemon] Decompressed offload-slot-0: chunks=3072, compressed=53016213 bytes, output=3221225472 bytes, ratio=0.016, throughput=44.470 GiB/s
+[2026-10-13T21:40:49.821324Z INFO  offload_daemon] Decompressed offload-slot-1: chunks=1024, compressed=147287302 bytes, output=1073741824 bytes, ratio=0.137, throughput=6.707 GiB/s
+[2026-10-13T21:40:49.831414Z INFO  offload_daemon] Restore replay finished

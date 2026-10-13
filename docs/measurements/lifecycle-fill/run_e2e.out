@@ -1,0 +1,22 @@
+node 0 free: 81448 MB
+performance
+######## CPU-only run (lz4) start 14:14:08
+######## CPU-only run rc=0 end 14:45:50
+node 0 free: 81387 MB
+performance
+######## DSA+IAA run (qpl static) 4k start 14:45:51
+######## DSA+IAA 4k rc=0 end 15:01:47
+node 0 free: 81375 MB
+performance
+######## DSA+IAA run 2m (2 MiB chunks, --uffd-copy) start 15:01:48
+######## DSA+IAA 2m rc=0 end 15:17:35
+copies_done=8960
+copies_refused=0
+copies_failed=0
+regbufs_invalidated=0
+src_registered=8960
+0000:05:01.0 quantum_kb 128 covered_kb 3995648 hits 78960 misses 31216 inserts 31216 insert_fails 0 range_fallbacks 0 evictions 0 ref_skips 0
+0000:0a:01.0 quantum_kb 128 covered_kb 3948544 hits 76688 misses 30848 inserts 30848 insert_fails 0 range_fallbacks 0 evictions 0 ref_skips 0
+0000:0f:01.0 quantum_kb 128 covered_kb 3973120 hits 77808 misses 31040 inserts 31040 insert_fails 0 range_fallbacks 0 evictions 0 ref_skips 0
+0000:00:01.0 quantum_kb 128 covered_kb 3993600 hits 82480 misses 31200 inserts 31200 insert_fails 0 range_fallbacks 0 evictions 0 ref_skips 0
+RUN_E2E_DONE

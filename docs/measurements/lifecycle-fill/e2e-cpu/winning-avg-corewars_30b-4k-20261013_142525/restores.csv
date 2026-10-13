@@ -1,0 +1,5 @@
+session,pages,checkpoint,variant,restore_ms,user_s,sys_s,guest_ms,guest_ok,rc
+winning-avg-corewars_30b,4k,last,cpu,202,0.17,0.20,4072,1,0
+winning-avg-corewars_30b,4k,base,cpu,188,0.17,0.17,5902,1,0
+winning-avg-corewars_30b,4k,last,dsa,198,0.17,0.18,3666,1,0
+winning-avg-corewars_30b,4k,base,dsa,204,0.16,0.19,5495,1,0

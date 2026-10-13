@@ -1,0 +1,9 @@
+[2026-10-13T21:23:47.758472Z INFO  offload_daemon] submitters=2 (affinity: 2 cpus, cap 8 = --workers)
+[2026-10-13T21:23:47.758582Z INFO  offload_daemon] Offload daemon listening at "/home/byrnedan/chlogs/e2e-cpu/polyglot-rust-c_30b-4k-20261013_142339/offload.sock"
+[2026-10-13T21:23:47.808123Z INFO  offload_daemon] CH connected; starting snapshot receive
+[2026-10-13T21:23:48.084922Z INFO  offload_daemon::compression] classify=cpu prefault=9.8ms zero_chunks=2911/3072 fill_chunks=80 hole_chunks=2837 data_mib=231 dsa submitted=0 fallback=0 failed=0 cpu_scans=235 crc=false slots_sharing_pool=2 submitters=2 compress_ms=263.4 sync_ms=0.3
+[2026-10-13T21:23:48.085301Z INFO  offload_daemon::compression] classify=cpu prefault=10.6ms zero_chunks=741/1024 fill_chunks=0 hole_chunks=735 data_mib=284 dsa submitted=0 fallback=0 failed=0 cpu_scans=289 crc=false slots_sharing_pool=2 submitters=2 compress_ms=263.4 sync_ms=0.3
+[2026-10-13T21:23:48.085311Z INFO  offload_daemon] shared pipeline: prepare 10.9 ms (map+extents+prefault+pools), compress 265.3 ms, submitters=2, engine=software
+[2026-10-13T21:23:48.085313Z INFO  offload_daemon] Compressed slot 0: codec=lz4, chunks=3072, input=3221225472 bytes, output=53014223 bytes, ratio=0.016, throughput=11.390 GiB/s
+[2026-10-13T21:23:48.085317Z INFO  offload_daemon] Compressed slot 1: codec=lz4, chunks=1024, input=1073741824 bytes, output=148167137 bytes, ratio=0.138, throughput=3.797 GiB/s
+[2026-10-13T21:23:48.097428Z INFO  offload_daemon] Snapshot persisted to "/mnt/chsnap/lifecycle/polyglot-rust-c_30b-4k/cpu/base"

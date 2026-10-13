@@ -1,0 +1,5 @@
+session,pages,checkpoint,variant,restore_ms,user_s,sys_s,guest_ms,guest_ok,rc
+polyglot-rust-c_30b,2m,last,cpu,251,0.31,0.15,3869,1,0
+polyglot-rust-c_30b,2m,base,cpu,168,0.17,0.11,5903,1,0
+polyglot-rust-c_30b,2m,last,dsa,251,0.31,0.14,3258,1,0
+polyglot-rust-c_30b,2m,base,dsa,156,0.18,0.10,5289,1,0

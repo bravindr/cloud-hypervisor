@@ -1,0 +1,6 @@
+[2026-10-13T22:12:49.816740Z INFO  offload_daemon] Offload daemon connected to "/home/byrnedan/chlogs/e2e-acc/polyglot-rust-c_30b-2m-20261013_151111/restore-data.sock" (ondemand=false)
+[2026-10-13T22:12:49.828657Z INFO  offload_daemon::compression] registered 1 output arena(s) for 4 jobs with uffd_dma
+[2026-10-13T22:12:49.828984Z INFO  offload_daemon::compression] registered 1 output arena(s) for 4 jobs with uffd_dma
+[2026-10-13T22:12:49.849233Z INFO  offload_daemon] Decompressed offload-slot-0: chunks=1536, compressed=51373533 bytes, output=3221225472 bytes, ratio=0.016, throughput=107.430 GiB/s
+[2026-10-13T22:12:49.868534Z INFO  offload_daemon] Decompressed offload-slot-1: chunks=512, compressed=145108325 bytes, output=1073741824 bytes, ratio=0.135, throughput=19.513 GiB/s
+[2026-10-13T22:12:49.872826Z INFO  offload_daemon] Restore replay finished

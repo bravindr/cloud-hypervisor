@@ -1,0 +1,18 @@
+##### /home/byrnedan/chlogs/e2e-cpu
+== 4k: sessions=7 guest steps total 7.8 s (158 steps)
+variant      n ckpt wall s ckpt cpu s    out GiB |   restore ms  restore cpu
+cpu        177       58.3      109.6      35.45 |          212         0.37
+dsa        177       56.3      105.9      35.45 |          214         0.36
+== 2m: sessions=7 guest steps total 6.2 s (158 steps)
+variant      n ckpt wall s ckpt cpu s    out GiB |   restore ms  restore cpu
+cpu        177       75.7      144.4      35.42 |          174         0.30
+dsa        177       52.4      100.2      35.42 |          170         0.29
+##### /home/byrnedan/chlogs/e2e-acc
+== 4k: sessions=7 guest steps total 7.4 s (158 steps)
+variant      n ckpt wall s ckpt cpu s    out GiB |   restore ms  restore cpu
+cpu        177       14.9       19.5      34.75 |          142         0.15
+dsa        177       13.6       17.2      34.75 |          147         0.15
+== 2m: sessions=7 guest steps total 6.3 s (158 steps)
+variant      n ckpt wall s ckpt cpu s    out GiB |   restore ms  restore cpu
+cpu        177       31.9       52.5      34.39 |           82         0.06
+dsa        177       10.9       14.9      34.39 |           76         0.06

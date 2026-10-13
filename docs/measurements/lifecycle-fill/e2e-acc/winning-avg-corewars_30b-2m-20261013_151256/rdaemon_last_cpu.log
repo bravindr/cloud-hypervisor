@@ -1,0 +1,6 @@
+[2026-10-13T22:17:09.361406Z INFO  offload_daemon] Offload daemon connected to "/home/byrnedan/chlogs/e2e-acc/winning-avg-corewars_30b-2m-20261013_151256/restore-data.sock" (ondemand=false)
+[2026-10-13T22:17:09.371650Z INFO  offload_daemon::compression] registered 1 output arena(s) for 4 jobs with uffd_dma
+[2026-10-13T22:17:09.371684Z INFO  offload_daemon::compression] registered 1 output arena(s) for 4 jobs with uffd_dma
+[2026-10-13T22:17:09.383231Z INFO  offload_daemon] Decompressed offload-slot-0: chunks=1536, compressed=29882541 bytes, output=3221225472 bytes, ratio=0.009, throughput=148.505 GiB/s
+[2026-10-13T22:17:09.420200Z INFO  offload_daemon] Decompressed offload-slot-1: chunks=512, compressed=166579464 bytes, output=1073741824 bytes, ratio=0.155, throughput=18.164 GiB/s
+[2026-10-13T22:17:09.432144Z INFO  offload_daemon] Restore replay finished

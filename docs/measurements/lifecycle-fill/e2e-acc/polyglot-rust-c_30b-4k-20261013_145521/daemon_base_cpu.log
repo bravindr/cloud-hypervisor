@@ -1,0 +1,9 @@
+[2026-10-13T21:55:30.027451Z INFO  offload_daemon] submitters=2 (affinity: 2 cpus, cap 8 = --workers)
+[2026-10-13T21:55:30.027578Z INFO  offload_daemon] Offload daemon listening at "/home/byrnedan/chlogs/e2e-acc/polyglot-rust-c_30b-4k-20261013_145521/offload.sock"
+[2026-10-13T21:55:30.076904Z INFO  offload_daemon] CH connected; starting snapshot receive
+[2026-10-13T21:55:30.145791Z INFO  offload_daemon::compression] classify=cpu prefault=15.7ms zero_chunks=2911/3072 fill_chunks=80 hole_chunks=2837 data_mib=231 dsa submitted=0 fallback=0 failed=0 cpu_scans=235 crc=false slots_sharing_pool=2 submitters=2 compress_ms=45.3 sync_ms=0.2
+[2026-10-13T21:55:30.146164Z INFO  offload_daemon::compression] classify=cpu prefault=10.9ms zero_chunks=741/1024 fill_chunks=0 hole_chunks=735 data_mib=283 dsa submitted=0 fallback=0 failed=0 cpu_scans=289 crc=false slots_sharing_pool=2 submitters=2 compress_ms=45.3 sync_ms=0.2
+[2026-10-13T21:55:30.146173Z INFO  offload_daemon] shared pipeline: prepare 21.0 ms (map+extents+prefault+pools), compress 47.2 ms, submitters=2, engine=iaa
+[2026-10-13T21:55:30.146175Z INFO  offload_daemon] Compressed slot 0: codec=qpl-hardware-static-async, chunks=3072, input=3221225472 bytes, output=52175739 bytes, ratio=0.016, throughput=66.164 GiB/s
+[2026-10-13T21:55:30.146179Z INFO  offload_daemon] Compressed slot 1: codec=qpl-hardware-static-async, chunks=1024, input=1073741824 bytes, output=145361804 bytes, ratio=0.135, throughput=22.055 GiB/s
+[2026-10-13T21:55:30.155865Z INFO  offload_daemon] Snapshot persisted to "/mnt/chsnap/lifecycle/polyglot-rust-c_30b-4k/cpu/base"

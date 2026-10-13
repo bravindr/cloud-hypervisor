@@ -1823,6 +1823,86 @@ a shmem `mfill` hook; and the ~60-80 ms that remain after all of that:
 daemon start and connect (10-15 ms), IAA decompression of 450 MiB on one
 thread per slot, and CH's state replay (4-10 ms).
 
+### 7c.2s End to end: CPU only against DSA + IAA, restore included
+
+The whole agentic lifecycle of section 7c.2e once more, with the restore
+side of 7c.2r in it: the seven recorded sessions booted from their task
+images, every turn checkpointed from the paused VM, the final and the base
+checkpoints restored into fresh VMMs that must resume the guest. Two
+ladders, same day, same code (daemon `264cd5f19`, kernel `3184c97f255b`),
+performance governor, daemon on two cores, restore `--workers 8`:
+
+| | CPU only | DSA + IAA |
+|---|---|---|
+| classification | CPU word scan | DSA COMPVAL |
+| compression | lz4 on the two daemon cores | IAA, static Huffman |
+| chunk | 1 MiB | 1 MiB on 4 KiB guests; 2 MiB on 2 MiB guests (whole huge pages for `UFFDIO_COPY`) |
+| restore writes | `pwrite` (4 KiB) / mapping writes (2 MiB) | 4 KiB: `pwrite`; 2 MiB: `--uffd-copy`, DSA copy provider on, standing mappings, registered sources, kernel clear offload on |
+| run | `e2e-cpu` (`CODEC=lz4`) | `e2e-acc` (`CODEC=qpl-hardware-static-async`, 2 MiB: `CHUNK=2097152 RESTORE_EXTRA_ARGS=--uffd-copy`) |
+
+Both runs: 708 checkpoints, 0 failed; 56/56 restores resumed the guest.
+The DSA + IAA 2 MiB run made 8960 `UFFDIO_COPY`s through the provider,
+0 refused, 0 failed, every source registered, 79k standing-mapping hits
+against 31k inserts. Each run also carried the other classifier (`dsa`
+with lz4, `cpu` with IAA), so the intermediate rungs are in the
+measurements (`docs/measurements/lifecycle-fill/e2e-*`); the table shows
+the two ends.
+
+**Per stage** (medians; checkpoint over 170 turns, stage split from the
+last turn of each session, restores over 14 per cell; ms, core-s):
+
+| stage | 4 KiB: CPU only | DSA + IAA | 2 MiB: CPU only | DSA + IAA |
+|---|---|---|---|---|
+| boot to `AGENT_BASE_POINT` | 5970 | 6230 | 5440 | 5590 |
+| full checkpoint per turn (pause) | 294 / 0.55 | **75 / 0.10** | 385 / 0.74 | **61 / 0.08** |
+| checkpoint p95 | 447 | 91 | 515 | 70 |
+| of which prepare (map, extents, prefault, pools) | 13.0 | 22.8 | 1.5 | 9.3 |
+| of which classify + compress + write | 334 | 41 | 429 | 47 |
+| of which persist + VMM/protocol | 15.5 | 15.0 | 5.1 | 6.8 |
+| restore, last checkpoint (wall / daemon span / CPU) | 212 / 203 / 0.37 | **147 / 133 / 0.15** | 174 / 166 / 0.30 | **76 / 64 / 0.06** |
+| restore, base checkpoint (wall) | 196 | 148 | 168 | 73 |
+| output per checkpoint | 193 MiB | 190 MiB | 193 MiB | 188 MiB |
+
+**Whole sessions** (7 sessions, 170 turns, 177 checkpoints and 7 final
+restores per cell; boot and the guest's 158 steps, 6.2-7.8 s in all, are
+the same work in both ladders):
+
+| | 4 KiB: CPU only | DSA + IAA | 2 MiB: CPU only | DSA + IAA |
+|---|---|---|---|---|
+| Σ checkpoint pauses | 58.3 s | **13.6 s** | 75.7 s | **10.9 s** |
+| Σ final restores | 1.5 s | 1.0 s | 1.2 s | 0.5 s |
+| session total, cold boot | 109.4 s | **65.6 s (−40 %)** | 121.2 s | **56.8 s (−53 %)** |
+| session total, fork from the warm base | 69.0 s | **23.0 s (−67 %)** | 84.3 s | **18.2 s (−78 %)** |
+| daemon CPU, checkpoints | 109.6 core-s | **17.2** | 144.4 | **14.9** |
+| daemon CPU, 14 restores | 5.2 core-s | 2.1 | 4.2 | 0.8 |
+
+Reading:
+
+- **The checkpoint is where the accelerators pay**: 3.9× shorter pauses
+  on 4 KiB guests and 6.3× on 2 MiB, at 5.5-9× less CPU; the p95 moves
+  with the median. The 2 MiB chunk the `UFFDIO_COPY` restore needs cost
+  the 2 MiB checkpoint nothing (61 ms against 61 in 7c.2q with 1 MiB
+  chunks) and 1 % of output.
+- **The restore now pays too.** On 2 MiB guests the DSA path restores in
+  76 ms (daemon span 64 ms, 0.06 core-s) against 174 ms and 0.30 core-s
+  for the CPU path: 2.3× shorter, 5× less CPU, with the standing
+  destination mappings warm across the run (hits 2.5× inserts) and every
+  source registered. On 4 KiB guests only IAA decompression helps (212 →
+  147 ms, 0.37 → 0.15 core-s): the shmem memfd has no offloadable copy
+  (7c.2r).
+- **Boot is the same work in both ladders** and, cold, the largest
+  stage; forking from the warm base replaces it with a 73-148 ms restore
+  and is where the accelerated restore shows in the total (−67 % and
+  −78 % against −40 % and −53 %).
+- **Prepare is the one stage the accelerated ladder loses**: 9-10 ms of
+  IAA job-pool setup per one-shot checkpoint, which the resident daemon
+  removes (7c.2r: 53 / 55 ms full, 5 ms diffs).
+- What remains in a 61-75 ms accelerated checkpoint is 41-47 ms of
+  classify + compress + write and 15-24 ms of fixed cost; in a 76 ms
+  accelerated restore, ~65 ms of daemon span of which the device copies
+  are ~18 ms, the rest IAA decompression, reading the compressed parts
+  and the VMM's connect and replay.
+
 ### 7c.3 IOMMU first touch: measured, and the fix
 
 `dto-async-test` (fresh process, 2 GiB memfd filled by another mapping, then
@@ -1871,6 +1951,9 @@ slower first cell in each sweep (`cpu` 492 vs 331 ms, `dsa` w8 473 vs 214 ms).
 - Explain the first-mapping 270 ms.
 - Run the lifecycle with dynamic Huffman through the shared pipeline
   (section 7c.2q).
+- End to end with the resident daemon (full and diff) and the `UFFDIO_COPY`
+  restore in one run (sections 7c.2r, 7c.2s); chain restores through
+  `apply_diff` still write on the CPU.
 - Restore (section 7c.2r): `--workers 8` default; kernel clear offload on
   for hugetlb restores; `uffd_dma` should not stripe 2 MiB copies (set
   `stripe_min_bytes` above the folio size) when `dev_by_pfn` is off and

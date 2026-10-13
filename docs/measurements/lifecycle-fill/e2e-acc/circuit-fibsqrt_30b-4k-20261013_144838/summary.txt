@@ -1,0 +1,12 @@
+14:48:39 session circuit-fibsqrt_30b pages=4k turns=24 variants=cpu dsa workers=8 daemon_cpus=4,5 governor=performance
+14:48:45 boot to AGENT_BASE_POINT: 5699 ms
+14:49:08   checkpointed turn 5/24
+14:49:28   checkpointed turn 10/24
+14:49:48   checkpointed turn 15/24
+14:50:08   checkpointed turn 20/24
+14:50:25 session done; restoring
+14:50:29 restore last cpu: rc=0 139 ms, guest 'AGENT_DIFF_POINT' ok=1 after 3869 ms
+14:50:37 restore base cpu: rc=0 131 ms, guest 'AGENT_STEP_DONE 1 ' ok=1 after 6103 ms
+14:50:42 restore last dsa: rc=0 140 ms, guest 'AGENT_DIFF_POINT' ok=1 after 3664 ms
+14:50:49 restore base dsa: rc=0 148 ms, guest 'AGENT_STEP_DONE 1 ' ok=1 after 5899 ms
+14:50:50 DONE -> /home/byrnedan/chlogs/e2e-acc/circuit-fibsqrt_30b-4k-20261013_144838

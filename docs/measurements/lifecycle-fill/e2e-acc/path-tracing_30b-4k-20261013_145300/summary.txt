@@ -1,0 +1,12 @@
+14:53:02 session path-tracing_30b pages=4k turns=23 variants=cpu dsa workers=8 daemon_cpus=4,5 governor=performance
+14:53:10 boot to AGENT_BASE_POINT: 7325 ms
+14:53:32   checkpointed turn 5/23
+14:53:53   checkpointed turn 10/23
+14:54:14   checkpointed turn 15/23
+14:54:35   checkpointed turn 20/23
+14:54:48 session done; restoring
+14:54:54 restore last cpu: rc=0 167 ms, guest 'AGENT_DIFF_POINT' ok=1 after 3664 ms
+14:55:04 restore base cpu: rc=0 141 ms, guest 'AGENT_STEP_DONE 1 ' ok=1 after 6103 ms
+14:55:11 restore last dsa: rc=0 163 ms, guest 'AGENT_DIFF_POINT' ok=1 after 3867 ms
+14:55:21 restore base dsa: rc=0 447 ms, guest 'AGENT_STEP_DONE 1 ' ok=1 after 6104 ms
+14:55:21 DONE -> /home/byrnedan/chlogs/e2e-acc/path-tracing_30b-4k-20261013_145300

@@ -17,6 +17,8 @@
 # VM to VM_CPUS, so only the classifier differs.
 #
 # Output: $OUT/checkpoints.csv, $OUT/restores.csv, $OUT/steps.csv, logs.
+# RESTORE_EXTRA_ARGS adds restore flags for the dsa-integration variants
+# (e.g. --uffd-copy); RESTORE_WORKERS sets the restore job count.
 # KEEP_ALL=1 keeps every turn's checkpoint directory (default: only base and
 # last); SKIP_RESTORE=1 ends after the session without the restores.
 set -u
@@ -149,6 +151,7 @@ restore() { # checkpoint(base|last) variant disk marker timeout
 	if [ "$v" != base ]; then
 		args="--dsa-depth $DSA_DEPTH"; [ "$PAGES" = 2m ] && args="$args --hugetlb"
 		case $v in *crc) args="$args --verify-crc" ;; esac
+		args="$args ${RESTORE_EXTRA_ARGS:-}"
 	fi
 	t0=$(date +%s%N)
 	/usr/bin/time -f "%e %U %S" -o "$OUT/t.txt" taskset -c "$DAEMON_CPUS" "$(variant_bin "$v")" restore --socket "$RDATA" \

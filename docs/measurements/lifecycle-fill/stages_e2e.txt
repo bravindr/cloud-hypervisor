@@ -1,0 +1,30 @@
+##### /home/byrnedan/chlogs/e2e-cpu
+=== 4k: last-turn full checkpoint, medians over sessions (ms; cpu core-s; out MiB)
+variant    wall   cpu   out |  start prepare  (pf) compress fsync persist vmm+proto
+cpu         364  0.67   217 |   49.8    13.0  21.9    334.3   0.3    10.8       4.7
+dsa         349  0.66   217 |   49.8    13.1  22.4    319.5   0.3    10.6       4.5
+=== 4k: restores (ms; harness wall, daemon span connect->replay, daemon cpu core-s)
+cpu      wall    212  daemon    203  cpu  0.37  n=14
+dsa      wall    214  daemon    195  cpu  0.36  n=14
+=== 2m: last-turn full checkpoint, medians over sessions (ms; cpu core-s; out MiB)
+variant    wall   cpu   out |  start prepare  (pf) compress fsync persist vmm+proto
+cpu         437  0.85   216 |   49.9     1.5   1.4    429.0   0.3     0.5       4.6
+dsa         321  0.62   216 |   49.9     1.5   1.3    314.2   0.2     0.4       4.2
+=== 2m: restores (ms; harness wall, daemon span connect->replay, daemon cpu core-s)
+cpu      wall    174  daemon    166  cpu  0.30  n=14
+dsa      wall    170  daemon    161  cpu  0.29  n=14
+##### /home/byrnedan/chlogs/e2e-acc
+=== 4k: last-turn full checkpoint, medians over sessions (ms; cpu core-s; out MiB)
+variant    wall   cpu   out |  start prepare  (pf) compress fsync persist vmm+proto
+cpu          88  0.12   211 |   50.2    23.3  28.1     49.6   0.2     8.1       6.4
+dsa          80  0.10   211 |   50.4    22.8  24.5     41.1   0.2     8.4       6.6
+=== 4k: restores (ms; harness wall, daemon span connect->replay, daemon cpu core-s)
+cpu      wall    142  daemon    131  cpu  0.15  n=14
+dsa      wall    147  daemon    133  cpu  0.15  n=14
+=== 2m: last-turn full checkpoint, medians over sessions (ms; cpu core-s; out MiB)
+variant    wall   cpu   out |  start prepare  (pf) compress fsync persist vmm+proto
+cpu         172  0.29   209 |   50.3     8.8   0.9    156.6   0.2     0.8       5.5
+dsa          65  0.09   209 |   50.1     9.3   0.9     47.1   0.1     0.8       6.0
+=== 2m: restores (ms; harness wall, daemon span connect->replay, daemon cpu core-s)
+cpu      wall     82  daemon     70  cpu  0.06  n=14
+dsa      wall     76  daemon     64  cpu  0.06  n=14

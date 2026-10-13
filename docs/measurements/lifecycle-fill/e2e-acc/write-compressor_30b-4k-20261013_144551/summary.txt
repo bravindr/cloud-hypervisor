@@ -1,0 +1,10 @@
+14:45:53 session write-compressor_30b pages=4k turns=13 variants=cpu dsa workers=8 daemon_cpus=4,5 governor=performance
+14:45:59 boot to AGENT_BASE_POINT: 6512 ms
+14:46:22   checkpointed turn 5/13
+14:46:42   checkpointed turn 10/13
+14:46:55 session done; restoring
+14:47:01 restore last cpu: rc=0 145 ms, guest 'AGENT_DIFF_POINT' ok=1 after 3664 ms
+14:47:09 restore base cpu: rc=0 116 ms, guest 'AGENT_STEP_DONE 1 ' ok=1 after 6107 ms
+14:47:15 restore last dsa: rc=0 145 ms, guest 'AGENT_DIFF_POINT' ok=1 after 3870 ms
+14:47:23 restore base dsa: rc=0 155 ms, guest 'AGENT_STEP_DONE 1 ' ok=1 after 5701 ms
+14:47:24 DONE -> /home/byrnedan/chlogs/e2e-acc/write-compressor_30b-4k-20261013_144551

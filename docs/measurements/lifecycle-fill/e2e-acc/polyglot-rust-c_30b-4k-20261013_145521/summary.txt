@@ -1,0 +1,11 @@
+14:55:23 session polyglot-rust-c_30b pages=4k turns=16 variants=cpu dsa workers=8 daemon_cpus=4,5 governor=performance
+14:55:30 boot to AGENT_BASE_POINT: 6582 ms
+14:55:52   checkpointed turn 5/16
+14:56:13   checkpointed turn 10/16
+14:56:33   checkpointed turn 15/16
+14:56:38 session done; restoring
+14:56:44 restore last cpu: rc=0 167 ms, guest 'AGENT_DIFF_POINT' ok=1 after 3870 ms
+14:56:52 restore base cpu: rc=0 149 ms, guest 'AGENT_STEP_DONE 1 ' ok=1 after 5903 ms
+14:56:58 restore last dsa: rc=0 169 ms, guest 'AGENT_DIFF_POINT' ok=1 after 3665 ms
+14:57:05 restore base dsa: rc=0 122 ms, guest 'AGENT_STEP_DONE 1 ' ok=1 after 5697 ms
+14:57:06 DONE -> /home/byrnedan/chlogs/e2e-acc/polyglot-rust-c_30b-4k-20261013_145521

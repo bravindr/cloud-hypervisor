@@ -1,0 +1,20 @@
+14:57:08 session winning-avg-corewars_30b pages=4k turns=60 variants=cpu dsa workers=8 daemon_cpus=4,5 governor=performance
+14:57:14 boot to AGENT_BASE_POINT: 6512 ms
+14:57:37   checkpointed turn 5/60
+14:57:57   checkpointed turn 10/60
+14:58:17   checkpointed turn 15/60
+14:58:37   checkpointed turn 20/60
+14:58:57   checkpointed turn 25/60
+14:59:17   checkpointed turn 30/60
+14:59:37   checkpointed turn 35/60
+14:59:57   checkpointed turn 40/60
+15:00:17   checkpointed turn 45/60
+15:00:37   checkpointed turn 50/60
+15:00:58   checkpointed turn 55/60
+15:01:18   checkpointed turn 60/60
+15:01:18 session done; restoring
+15:01:24 restore last cpu: rc=0 161 ms, guest 'AGENT_DIFF_POINT' ok=1 after 4072 ms
+15:01:32 restore base cpu: rc=0 126 ms, guest 'AGENT_STEP_DONE 1 ' ok=1 after 5900 ms
+15:01:38 restore last dsa: rc=0 124 ms, guest 'AGENT_DIFF_POINT' ok=1 after 3866 ms
+15:01:46 restore base dsa: rc=0 128 ms, guest 'AGENT_STEP_DONE 1 ' ok=1 after 5697 ms
+15:01:47 DONE -> /home/byrnedan/chlogs/e2e-acc/winning-avg-corewars_30b-4k-20261013_145706

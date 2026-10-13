@@ -1,0 +1,6 @@
+[2026-10-13T22:06:24.811259Z INFO  offload_daemon] Offload daemon connected to "/home/byrnedan/chlogs/e2e-acc/circuit-fibsqrt_30b-2m-20261013_150433/restore-data.sock" (ondemand=false)
+[2026-10-13T22:06:24.822511Z INFO  offload_daemon::compression] registered 1 output arena(s) for 4 jobs with uffd_dma
+[2026-10-13T22:06:24.822515Z INFO  offload_daemon::compression] registered 1 output arena(s) for 4 jobs with uffd_dma
+[2026-10-13T22:06:24.839791Z INFO  offload_daemon] Decompressed offload-slot-0: chunks=1536, compressed=51374655 bytes, output=3221225472 bytes, ratio=0.016, throughput=108.457 GiB/s
+[2026-10-13T22:06:24.867206Z INFO  offload_daemon] Decompressed offload-slot-1: chunks=512, compressed=144932963 bytes, output=1073741824 bytes, ratio=0.135, throughput=19.296 GiB/s
+[2026-10-13T22:06:24.871418Z INFO  offload_daemon] Restore replay finished
