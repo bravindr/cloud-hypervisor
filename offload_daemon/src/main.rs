@@ -245,9 +245,12 @@ enum Mode {
         socket: PathBuf,
         #[arg(long)]
         output_root: PathBuf,
-        /// An async QPL codec.
+        /// An async QPL codec, lz4 or zstd.
         #[arg(long)]
         compression: Codec,
+        /// Zstd compression level.
+        #[arg(long, default_value_t = 1)]
+        zstd_level: i32,
         #[arg(long, default_value_t = 1 << 20)]
         chunk_size: usize,
         /// IAA jobs in flight, shared by all slots.
@@ -451,6 +454,7 @@ fn main() -> Result<()> {
             socket,
             output_root,
             compression,
+            zstd_level,
             chunk_size,
             workers,
             submitters,
@@ -468,6 +472,7 @@ fn main() -> Result<()> {
             &output_root,
             ServeOptions {
                 codec: compression,
+                zstd_level,
                 chunk_size,
                 workers,
                 accel: AccelOptions {
@@ -1404,6 +1409,7 @@ fn init_reference_slot(
 #[cfg_attr(not(feature = "qpl"), allow(dead_code))]
 struct ServeOptions {
     codec: Codec,
+    zstd_level: i32,
     chunk_size: usize,
     workers: usize,
     submitters: usize,
@@ -1424,6 +1430,7 @@ fn run_serve(socket_path: &Path, output_root: &Path, options: ServeOptions) -> R
     let listener = UnixListener::bind(socket_path).map_err(Error::BindSocket)?;
     let mut resident = Resident::new(ResidentConfig {
         codec: options.codec,
+        zstd_level: options.zstd_level,
         chunk_size: options.chunk_size,
         workers: options.workers,
         submitters: options.submitters,

@@ -30,8 +30,8 @@ use thiserror::Error;
 
 use crate::classify::AccelOptions;
 use crate::compression::{
-    ChunkRecord, Codec, Engine, Error as CompressionError, SlotJob, SlotManifest, compress_slots,
-    validate_chunk_size,
+    ChunkRecord, Codec, Engine, Error as CompressionError, SlotJob, SlotManifest, SoftwareEngine,
+    compress_slots, validate_chunk_size,
 };
 use crate::dedup::{self, DedupRun, Index};
 use crate::diff::{
@@ -40,7 +40,7 @@ use crate::diff::{
 #[cfg(feature = "dto")]
 use crate::dto::{Batch, BatchPoll, Submit};
 use crate::mapping::{Mapping, data_extents};
-use crate::qpl::{Error as QplError, ExecutionPath, HuffmanMode, JobPool};
+use crate::qpl::{Error as QplError, ExecutionPath, JobPool};
 
 #[derive(Debug, Error)]
 pub(crate) enum Error {
@@ -54,13 +54,14 @@ pub(crate) enum Error {
     Qpl(#[from] QplError),
     #[error("Resident checkpoint manifest")]
     Json(#[from] serde_json::Error),
-    #[error("Resident checkpoints need an async QPL codec")]
+    #[error("Resident checkpoints need an async QPL codec, lz4 or zstd")]
     Codec,
 }
 
 /// Configuration fixed for the daemon's lifetime.
 pub(crate) struct ResidentConfig {
     pub codec: Codec,
+    pub zstd_level: i32,
     pub chunk_size: usize,
     pub workers: usize,
     /// Submitter threads sharing the IAA jobs on full checkpoints.
@@ -126,7 +127,8 @@ struct SlotState {
 pub(crate) struct Resident {
     config: ResidentConfig,
     chunk_size_u32: u32,
-    /// One IAA job pool per submitter thread; diffs use the first.
+    /// One IAA job pool per submitter thread (diffs use the first); empty
+    /// for the software codecs, which compress on the submitter threads.
     pools: Vec<JobPool>,
     slots: Vec<SlotState>,
     last_dir: Option<PathBuf>,
@@ -175,21 +177,28 @@ fn file_id(file: &File) -> io::Result<(u64, u64)> {
 
 impl Resident {
     pub(crate) fn new(config: ResidentConfig) -> Result<Self, Error> {
-        let huffman: HuffmanMode = config.codec.async_huffman_mode().ok_or(Error::Codec)?;
         let chunk_size_u32 = validate_chunk_size(config.chunk_size)?;
         let submitters = config.submitters.max(1);
-        let pools = (0..submitters)
-            .map(|_| {
-                JobPool::new(
-                    ExecutionPath::Hardware,
-                    huffman,
-                    config.workers.div_ceil(submitters).max(1),
-                )
-            })
-            .collect::<Result<Vec<_>, _>>()?;
+        let pools = match config.codec.async_huffman_mode() {
+            Some(huffman) => (0..submitters)
+                .map(|_| {
+                    JobPool::new(
+                        ExecutionPath::Hardware,
+                        huffman,
+                        config.workers.div_ceil(submitters).max(1),
+                    )
+                })
+                .collect::<Result<Vec<_>, _>>()?,
+            None => {
+                // lz4/zstd: check the codec now, build the engines per checkpoint
+                SoftwareEngine::new(config.codec, config.zstd_level).map_err(|_| Error::Codec)?;
+                Vec::new()
+            }
+        };
         info!(
-            "resident: codec={} workers={} submitters={} diff={}",
+            "resident: codec={} engine={} workers={} submitters={} diff={}",
             config.codec,
+            if pools.is_empty() { "software" } else { "iaa" },
             config.workers,
             submitters,
             if config.reference_dir.is_some() {
@@ -343,7 +352,12 @@ impl Resident {
                 manifest_path: manifest,
             })
             .collect();
-        let mut engines: Vec<Engine<'_>> = self.pools.iter_mut().map(Engine::Iaa).collect();
+        let mut engines = engines(
+            &mut self.pools,
+            self.config.codec,
+            self.config.zstd_level,
+            self.config.submitters.max(1),
+        )?;
         let stats = compress_slots(
             &jobs,
             &mut engines,
@@ -467,7 +481,9 @@ impl Resident {
         }
 
         let t = Instant::now();
-        let compressed = compress_gathers(&mut self.pools[0], &items, dir, self.config.chunk_size)?;
+        let mut engine = engines(&mut self.pools, self.config.codec, self.config.zstd_level, 1)?
+            .swap_remove(0);
+        let compressed = compress_gathers(&mut engine, &items, dir, self.config.chunk_size)?;
         let dedup_image = self.index.as_ref().map(|i| i.image.clone());
         for (item, (chunks, bytes)) in items.iter().zip(compressed) {
             stats.output_bytes += bytes;
@@ -639,8 +655,25 @@ fn init_reference(
 
 /// Compress every slot's gather buffer through the one shared job pool.
 /// Returns per slot (chunk records, compressed bytes).
+/// One compression engine per submitter thread: the IAA job pools, or one
+/// software codec instance each when the codec is lz4 or zstd.
+fn engines<'a>(
+    pools: &'a mut [JobPool],
+    codec: Codec,
+    zstd_level: i32,
+    submitters: usize,
+) -> Result<Vec<Engine<'a>>, Error> {
+    if pools.is_empty() {
+        (0..submitters)
+            .map(|_| Ok(Engine::Software(SoftwareEngine::new(codec, zstd_level)?)))
+            .collect()
+    } else {
+        Ok(pools.iter_mut().map(Engine::Iaa).collect())
+    }
+}
+
 fn compress_gathers(
-    pool: &mut JobPool,
+    engine: &mut Engine<'_>,
     items: &[DiffItem],
     dir: &Path,
     chunk_size: usize,
@@ -663,16 +696,16 @@ fn compress_gathers(
         }
     }
     let mut results: Vec<(Vec<ChunkRecord>, u64)> = vec![(Vec::new(), 0); items.len()];
-    let mut active: Vec<Option<(usize, usize, usize)>> = vec![None; pool.capacity()];
+    let mut active: Vec<Option<(usize, usize, usize)>> = vec![None; engine.capacity()];
     let (mut next, mut live) = (0_usize, 0_usize);
     loop {
         for (index, entry) in active.iter_mut().enumerate() {
             if let Some((item, offset, length)) = *entry {
-                let Some(size) = pool.poll(index)? else {
+                let Some(size) = engine.poll(index)? else {
                     continue;
                 };
                 let (records, bytes) = &mut results[item];
-                outputs[item].write_all_at(pool.output(index, size), *bytes)?;
+                outputs[item].write_all_at(engine.output(index, size), *bytes)?;
                 records.push(ChunkRecord {
                     uncompressed_offset: offset as u64,
                     uncompressed_length: length as u32,
@@ -692,7 +725,7 @@ fn compress_gathers(
                 let src = items[item].gather.page(offset / PAGE);
                 // SAFETY: the gather buffers outlive the pool's use of them
                 // and are not written while jobs run.
-                unsafe { pool.submit_compress_from(index, src, length)? };
+                unsafe { engine.submit_compress_from(index, src, length)? };
                 *entry = Some((item, offset, length));
                 next += 1;
                 live += 1;

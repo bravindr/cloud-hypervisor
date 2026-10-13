@@ -575,7 +575,7 @@ pub(crate) enum Engine<'a> {
 
 #[cfg(feature = "qpl")]
 impl Engine<'_> {
-    fn capacity(&self) -> usize {
+    pub(crate) fn capacity(&self) -> usize {
         match self {
             Self::Iaa(pool) => pool.capacity(),
             Self::Software(_) => 1,
@@ -583,14 +583,14 @@ impl Engine<'_> {
     }
 
     /// Completed output length of slot `index`, if its chunk is done.
-    fn poll(&mut self, index: usize) -> Result<Option<usize>, Error> {
+    pub(crate) fn poll(&mut self, index: usize) -> Result<Option<usize>, Error> {
         match self {
             Self::Iaa(pool) => Ok(pool.poll(index)?),
             Self::Software(engine) => Ok(engine.pending.take()),
         }
     }
 
-    fn output(&self, index: usize, size: usize) -> &[u8] {
+    pub(crate) fn output(&self, index: usize, size: usize) -> &[u8] {
         match self {
             Self::Iaa(pool) => pool.output(index, size),
             Self::Software(engine) => &engine.output[..size],
@@ -602,7 +602,7 @@ impl Engine<'_> {
     /// # Safety
     /// The input must stay mapped and unchanged until `poll` reports the
     /// chunk complete.
-    unsafe fn submit_compress_from(
+    pub(crate) unsafe fn submit_compress_from(
         &mut self,
         index: usize,
         input: *const u8,
