@@ -1,0 +1,9 @@
+[2026-10-13T02:42:16.120671Z INFO  offload_daemon] submitters=2 (affinity: 2 cpus, cap 8 = --workers)
+[2026-10-13T02:42:16.120777Z INFO  offload_daemon] Offload daemon listening at "/home/byrnedan/chlogs/lifecycle-sw-lz4/winning-avg-corewars_30b-2m-20261012_194208/offload.sock"
+[2026-10-13T02:42:16.170496Z INFO  offload_daemon] CH connected; starting snapshot receive
+[2026-10-13T02:42:16.554323Z INFO  offload_daemon::compression] classify=cpu prefault=1.1ms zero_chunks=2911/3072 fill_chunks=80 hole_chunks=0 data_mib=3072 dsa submitted=0 fallback=0 failed=0 cpu_scans=3072 crc=true slots_sharing_pool=2 submitters=2 compress_ms=379.5 sync_ms=0.3
+[2026-10-13T02:42:16.554777Z INFO  offload_daemon::compression] classify=cpu prefault=0.4ms zero_chunks=741/1024 fill_chunks=1 hole_chunks=0 data_mib=1024 dsa submitted=0 fallback=0 failed=0 cpu_scans=1024 crc=true slots_sharing_pool=2 submitters=2 compress_ms=379.5 sync_ms=0.3
+[2026-10-13T02:42:16.554786Z INFO  offload_daemon] shared pipeline: prepare 1.7 ms (map+extents+prefault+pools), compress 381.6 ms, submitters=2, engine=software
+[2026-10-13T02:42:16.554788Z INFO  offload_daemon] Compressed slot 0: codec=lz4, chunks=3072, input=3221225472 bytes, output=53014794 bytes, ratio=0.016, throughput=7.905 GiB/s
+[2026-10-13T02:42:16.554793Z INFO  offload_daemon] Compressed slot 1: codec=lz4, chunks=1024, input=1073741824 bytes, output=147886267 bytes, ratio=0.138, throughput=2.635 GiB/s
+[2026-10-13T02:42:16.555390Z INFO  offload_daemon] Snapshot persisted to "/mnt/chsnap/lifecycle/winning-avg-corewars_30b-2m/cpucrc/base"

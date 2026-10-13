@@ -1,0 +1,9 @@
+[2026-10-13T02:57:39.341224Z INFO  offload_daemon] submitters=2 (affinity: 2 cpus, cap 8 = --workers)
+[2026-10-13T02:57:39.341300Z INFO  offload_daemon] Offload daemon listening at "/home/byrnedan/chlogs/lifecycle-sw-zstd/path-tracing_30b-4k-20261012_195551/offload.sock"
+[2026-10-13T02:57:39.391454Z INFO  offload_daemon] CH connected; starting snapshot receive
+[2026-10-13T02:57:39.889467Z INFO  offload_daemon::compression] classify=cpu prefault=10.1ms zero_chunks=633/1024 fill_chunks=0 hole_chunks=628 data_mib=396 dsa submitted=0 fallback=0 failed=0 cpu_scans=396 crc=false slots_sharing_pool=2 submitters=2 compress_ms=485.9 sync_ms=0.3
+[2026-10-13T02:57:39.890738Z INFO  offload_daemon::compression] classify=cpu prefault=7.1ms zero_chunks=2911/3072 fill_chunks=80 hole_chunks=2837 data_mib=235 dsa submitted=0 fallback=0 failed=0 cpu_scans=235 crc=false slots_sharing_pool=2 submitters=2 compress_ms=485.9 sync_ms=0.3
+[2026-10-13T02:57:39.890831Z INFO  offload_daemon] shared pipeline: prepare 10.4 ms (map+extents+prefault+pools), compress 488.1 ms, submitters=2, engine=software
+[2026-10-13T02:57:39.890833Z INFO  offload_daemon] Compressed slot 1: codec=zstd, chunks=1024, input=1073741824 bytes, output=139651377 bytes, ratio=0.130, throughput=2.058 GiB/s
+[2026-10-13T02:57:39.890836Z INFO  offload_daemon] Compressed slot 0: codec=zstd, chunks=3072, input=3221225472 bytes, output=47645020 bytes, ratio=0.015, throughput=6.174 GiB/s
+[2026-10-13T02:57:39.899162Z INFO  offload_daemon] Snapshot persisted to "/mnt/chsnap/lifecycle/path-tracing_30b-4k/cpu/last"

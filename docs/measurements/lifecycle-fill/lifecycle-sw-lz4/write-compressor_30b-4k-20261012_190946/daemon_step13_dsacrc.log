@@ -1,0 +1,9 @@
+[2026-10-13T02:10:50.658130Z INFO  offload_daemon] submitters=2 (affinity: 2 cpus, cap 8 = --workers)
+[2026-10-13T02:10:50.658230Z INFO  offload_daemon] Offload daemon listening at "/home/byrnedan/chlogs/lifecycle-sw-lz4/write-compressor_30b-4k-20261012_190946/offload.sock"
+[2026-10-13T02:10:50.707721Z INFO  offload_daemon] CH connected; starting snapshot receive
+[2026-10-13T02:10:50.973332Z INFO  offload_daemon::compression] classify=dsa prefault=10.3ms zero_chunks=2911/3072 fill_chunks=80 hole_chunks=2837 data_mib=235 dsa submitted=470 fallback=0 failed=0 cpu_scans=0 crc=true slots_sharing_pool=2 submitters=2 compress_ms=251.7 sync_ms=0.2
+[2026-10-13T02:10:50.973717Z INFO  offload_daemon::compression] classify=dsa prefault=11.0ms zero_chunks=741/1024 fill_chunks=0 hole_chunks=736 data_mib=288 dsa submitted=576 fallback=0 failed=0 cpu_scans=0 crc=true slots_sharing_pool=2 submitters=2 compress_ms=251.7 sync_ms=0.2
+[2026-10-13T02:10:50.973725Z INFO  offload_daemon] shared pipeline: prepare 11.3 ms (map+extents+prefault+pools), compress 253.6 ms, submitters=2, engine=software
+[2026-10-13T02:10:50.973727Z INFO  offload_daemon] Compressed slot 0: codec=lz4, chunks=3072, input=3221225472 bytes, output=53014551 bytes, ratio=0.016, throughput=11.919 GiB/s
+[2026-10-13T02:10:50.973731Z INFO  offload_daemon] Compressed slot 1: codec=lz4, chunks=1024, input=1073741824 bytes, output=148394297 bytes, ratio=0.138, throughput=3.973 GiB/s
+[2026-10-13T02:10:50.983207Z INFO  offload_daemon] Snapshot persisted to "/mnt/chsnap/lifecycle/write-compressor_30b-4k/dsacrc/last"

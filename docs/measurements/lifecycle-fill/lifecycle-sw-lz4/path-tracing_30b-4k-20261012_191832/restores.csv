@@ -1,0 +1,9 @@
+session,pages,checkpoint,variant,restore_ms,user_s,sys_s,guest_ms,guest_ok,rc
+path-tracing_30b,4k,last,cpu,286,0.26,0.27,3461,1,0
+path-tracing_30b,4k,base,cpu,235,0.17,0.23,5903,1,0
+path-tracing_30b,4k,last,dsa,290,0.26,0.27,2854,1,0
+path-tracing_30b,4k,base,dsa,215,0.16,0.21,5497,1,0
+path-tracing_30b,4k,last,cpucrc,311,0.29,0.26,2445,1,0
+path-tracing_30b,4k,base,cpucrc,236,0.16,0.25,5091,1,0
+path-tracing_30b,4k,last,dsacrc,306,0.28,0.28,3870,1,0
+path-tracing_30b,4k,base,dsacrc,217,0.18,0.21,4683,1,0

@@ -1,0 +1,4 @@
+[2026-10-13T02:46:36.615703Z INFO  offload_daemon] Offload daemon connected to "/home/byrnedan/chlogs/lifecycle-sw-lz4/winning-avg-corewars_30b-2m-20261012_194208/restore-data.sock" (ondemand=false)
+[2026-10-13T02:46:36.783009Z INFO  offload_daemon] Decompressed offload-slot-1: chunks=1024, compressed=148921572 bytes, output=1073741824 bytes, ratio=0.139, throughput=5.989 GiB/s
+[2026-10-13T02:46:36.786636Z INFO  offload_daemon] Decompressed offload-slot-0: chunks=3072, compressed=53014841 bytes, output=3221225472 bytes, ratio=0.016, throughput=27.167 GiB/s
+[2026-10-13T02:46:36.796049Z INFO  offload_daemon] Restore replay finished

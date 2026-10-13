@@ -1,0 +1,69 @@
+##### lifecycle-sw-lz4
+=== 4k: last-turn full checkpoint, medians over sessions (ms; cpu core-s; out MiB)
+variant    wall   cpu   out |  start prepare  (pf) compress fsync persist vmm+proto
+cpu         357  0.68   216 |   49.4    12.6  21.2    327.5   0.3    10.6       4.7
+cpucrc      366  0.69   216 |   49.5    12.5  20.0    336.2   0.3    11.0       4.8
+dsa         346  0.65   216 |   49.7    12.8  21.3    315.4   0.2     9.8       5.1
+dsacrc      346  0.66   216 |   49.8    12.8  21.5    315.7   0.2    10.1       4.5
+=== 4k: restores (ms; harness wall, daemon span connect->replay, daemon cpu core-s)
+cpu      wall    235  daemon    225  cpu  0.42  n=14
+cpucrc   wall    244  daemon    227  cpu  0.43  n=14
+dsa      wall    230  daemon    219  cpu  0.40  n=14
+dsacrc   wall    239  daemon    228  cpu  0.42  n=14
+=== 2m: last-turn full checkpoint, medians over sessions (ms; cpu core-s; out MiB)
+variant    wall   cpu   out |  start prepare  (pf) compress fsync persist vmm+proto
+cpu         442  0.85   214 |   50.0     1.4   1.2    433.9   0.2     0.5       5.0
+cpucrc      454  0.88   214 |   49.9     1.5   1.3    446.5   0.2     0.5       4.7
+dsa         322  0.62   214 |   49.5     1.5   1.3    315.3   0.2     0.4       4.2
+dsacrc      326  0.62   214 |   49.9     1.5   1.2    318.3   0.2     0.4       4.6
+=== 2m: restores (ms; harness wall, daemon span connect->replay, daemon cpu core-s)
+cpu      wall    197  daemon    186  cpu  0.33  n=14
+cpucrc   wall    199  daemon    188  cpu  0.34  n=14
+dsa      wall    192  daemon    181  cpu  0.32  n=14
+dsacrc   wall    201  daemon    188  cpu  0.35  n=14
+##### lifecycle-sw-zstd
+=== 4k: last-turn full checkpoint, medians over sessions (ms; cpu core-s; out MiB)
+variant    wall   cpu   out |  start prepare  (pf) compress fsync persist vmm+proto
+cpu         494  0.95   179 |   50.1    11.5  19.4    468.1   0.3     9.3       4.5
+cpucrc      507  0.97   179 |   50.2    10.8  19.0    479.6   0.2    10.3       4.7
+dsa         482  0.93   179 |   50.3    10.9  18.9    456.8   0.2     9.0       4.4
+dsacrc      487  0.93   179 |   50.3    11.6  20.1    460.7   0.3     9.3       4.5
+=== 4k: restores (ms; harness wall, daemon span connect->replay, daemon cpu core-s)
+cpu      wall    239  daemon    229  cpu  0.43  n=14
+cpucrc   wall    252  daemon    242  cpu  0.44  n=14
+dsa      wall    240  daemon    231  cpu  0.43  n=14
+dsacrc   wall    240  daemon    230  cpu  0.43  n=14
+=== 2m: last-turn full checkpoint, medians over sessions (ms; cpu core-s; out MiB)
+variant    wall   cpu   out |  start prepare  (pf) compress fsync persist vmm+proto
+cpu         593  1.15   180 |   50.0     1.3   1.0    585.7   0.3     0.7       4.3
+cpucrc      607  1.19   180 |   50.0     1.2   1.1    600.2   0.3     0.7       4.2
+dsa         477  0.93   180 |   49.8     1.2   1.1    469.8   0.3     0.5       4.1
+dsacrc      483  0.94   180 |   50.1     1.3   1.1    476.3   0.2     0.5       4.1
+=== 2m: restores (ms; harness wall, daemon span connect->replay, daemon cpu core-s)
+cpu      wall    203  daemon    193  cpu  0.35  n=14
+cpucrc   wall    212  daemon    201  cpu  0.37  n=14
+dsa      wall    202  daemon    190  cpu  0.36  n=14
+dsacrc   wall    214  daemon    201  cpu  0.38  n=14
+##### lifecycle-perf7
+=== 4k: last-turn full checkpoint, medians over sessions (ms; cpu core-s; out MiB)
+variant    wall   cpu   out |  start prepare  (pf) compress fsync persist vmm+proto
+cpu          86  0.12   210 |   50.1    20.5  23.7     50.1   0.1     7.5       6.7
+cpucrc      101  0.14   210 |   50.2    19.5  22.1     62.8   0.2     8.0       6.7
+dsa          78  0.10   210 |   50.3    19.8  23.3     41.6   0.2     7.5       6.2
+dsacrc       77  0.10   210 |   49.9    19.6  22.9     42.2   0.1     7.6       6.2
+=== 4k: restores (ms; harness wall, daemon span connect->replay, daemon cpu core-s)
+cpu      wall    154  daemon    141  cpu  0.18  n=14
+cpucrc   wall    145  daemon    135  cpu  0.18  n=14
+dsa      wall    144  daemon    130  cpu  0.17  n=14
+dsacrc   wall    144  daemon    134  cpu  0.18  n=14
+=== 2m: last-turn full checkpoint, medians over sessions (ms; cpu core-s; out MiB)
+variant    wall   cpu   out |  start prepare  (pf) compress fsync persist vmm+proto
+cpu         177  0.31   212 |   49.9     8.8   1.3    160.6   0.2     0.9       5.9
+cpucrc      186  0.33   212 |   50.0     8.1   0.8    170.8   0.2     0.9       5.7
+dsa          67  0.09   212 |   50.3     9.1   0.9     50.7   0.2     0.9       5.7
+dsacrc       75  0.12   212 |   50.0     8.2   0.8     59.7   0.1     0.9       5.9
+=== 2m: restores (ms; harness wall, daemon span connect->replay, daemon cpu core-s)
+cpu      wall    126  daemon    114  cpu  0.15  n=14
+cpucrc   wall    125  daemon    114  cpu  0.15  n=14
+dsa      wall    124  daemon    114  cpu  0.15  n=14
+dsacrc   wall    128  daemon    116  cpu  0.15  n=14

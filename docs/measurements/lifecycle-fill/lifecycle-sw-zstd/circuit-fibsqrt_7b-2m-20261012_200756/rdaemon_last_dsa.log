@@ -1,0 +1,4 @@
+[2026-10-13T03:08:59.951275Z INFO  offload_daemon] Offload daemon connected to "/home/byrnedan/chlogs/lifecycle-sw-zstd/circuit-fibsqrt_7b-2m-20261012_200756/restore-data.sock" (ondemand=false)
+[2026-10-13T03:09:00.155367Z INFO  offload_daemon] Decompressed offload-slot-1: chunks=1024, compressed=140743264 bytes, output=1073741824 bytes, ratio=0.131, throughput=4.908 GiB/s
+[2026-10-13T03:09:00.161658Z INFO  offload_daemon] Decompressed offload-slot-0: chunks=3072, compressed=47627031 bytes, output=3221225472 bytes, ratio=0.015, throughput=23.558 GiB/s
+[2026-10-13T03:09:00.166450Z INFO  offload_daemon] Restore replay finished

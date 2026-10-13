@@ -1,0 +1,9 @@
+[2026-10-13T03:13:47.203617Z INFO  offload_daemon] submitters=2 (affinity: 2 cpus, cap 8 = --workers)
+[2026-10-13T03:13:47.203696Z INFO  offload_daemon] Offload daemon listening at "/home/byrnedan/chlogs/lifecycle-sw-zstd/regex-chess_30b-2m-20261012_201201/offload.sock"
+[2026-10-13T03:13:47.253747Z INFO  offload_daemon] CH connected; starting snapshot receive
+[2026-10-13T03:13:47.750035Z INFO  offload_daemon::compression] classify=dsa prefault=1.0ms zero_chunks=675/1024 fill_chunks=0 hole_chunks=0 data_mib=1024 dsa submitted=1024 fallback=0 failed=0 cpu_scans=0 crc=false slots_sharing_pool=2 submitters=2 compress_ms=493.3 sync_ms=0.3
+[2026-10-13T03:13:47.751297Z INFO  offload_daemon::compression] classify=dsa prefault=0.9ms zero_chunks=2911/3072 fill_chunks=80 hole_chunks=0 data_mib=3072 dsa submitted=3072 fallback=0 failed=0 cpu_scans=0 crc=false slots_sharing_pool=2 submitters=2 compress_ms=493.3 sync_ms=0.3
+[2026-10-13T03:13:47.751314Z INFO  offload_daemon] shared pipeline: prepare 1.3 ms (map+extents+prefault+pools), compress 495.3 ms, submitters=2, engine=software
+[2026-10-13T03:13:47.751316Z INFO  offload_daemon] Compressed slot 1: codec=zstd, chunks=1024, input=1073741824 bytes, output=144662551 bytes, ratio=0.135, throughput=2.027 GiB/s
+[2026-10-13T03:13:47.751318Z INFO  offload_daemon] Compressed slot 0: codec=zstd, chunks=3072, input=3221225472 bytes, output=47649817 bytes, ratio=0.015, throughput=6.081 GiB/s
+[2026-10-13T03:13:47.751889Z INFO  offload_daemon] Snapshot persisted to "/mnt/chsnap/lifecycle/regex-chess_30b-2m/dsa/last"

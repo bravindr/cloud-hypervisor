@@ -1,0 +1,8 @@
+performance
+node 0 free: 85940 MB
+######## lz4 run start 19:09:46
+######## lz4 run rc=0 end 19:47:12
+node 0 free: 85880 MB
+######## zstd run start 19:47:13
+######## zstd run rc=0 end 20:24:24
+RUN_SW_DONE

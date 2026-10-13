@@ -1,0 +1,314 @@
+######## write-compressor_30b 4k start 19:47:13
+19:47:15 session write-compressor_30b pages=4k turns=13 variants=cpu dsa cpucrc dsacrc workers=8 daemon_cpus=4,5 governor=performance
+19:47:21 boot to AGENT_BASE_POINT: 6516 ms
+19:47:46   checkpointed turn 5/13
+19:48:06   checkpointed turn 10/13
+19:48:20 session done; restoring
+19:48:24 restore last cpu: rc=0 341 ms, guest 'AGENT_DIFF_POINT' ok=1 after 2242 ms
+19:48:32 restore base cpu: rc=0 232 ms, guest 'AGENT_STEP_DONE 1 ' ok=1 after 5904 ms
+19:48:38 restore last dsa: rc=0 246 ms, guest 'AGENT_DIFF_POINT' ok=1 after 3869 ms
+19:48:46 restore base dsa: rc=0 240 ms, guest 'AGENT_STEP_DONE 1 ' ok=1 after 5496 ms
+19:48:51 restore last cpucrc: rc=0 252 ms, guest 'AGENT_DIFF_POINT' ok=1 after 3259 ms
+19:48:59 restore base cpucrc: rc=0 251 ms, guest 'AGENT_STEP_DONE 1 ' ok=1 after 4886 ms
+19:49:04 restore last dsacrc: rc=0 234 ms, guest 'AGENT_DIFF_POINT' ok=1 after 2853 ms
+19:49:11 restore base dsacrc: rc=0 239 ms, guest 'AGENT_STEP_DONE 1 ' ok=1 after 4481 ms
+19:49:12 DONE -> /home/byrnedan/chlogs/lifecycle-sw-zstd/write-compressor_30b-4k-20261012_194713
+######## write-compressor_30b 4k rc=0 end 19:49:12
+######## circuit-fibsqrt_7b 4k start 19:49:12
+19:49:13 session circuit-fibsqrt_7b pages=4k turns=10 variants=cpu dsa cpucrc dsacrc workers=8 daemon_cpus=4,5 governor=performance
+19:49:18 boot to AGENT_BASE_POINT: 5701 ms
+19:49:43   checkpointed turn 5/10
+19:50:03   checkpointed turn 10/10
+19:50:04 session done; restoring
+19:50:07 restore last cpu: rc=0 287 ms, guest 'AGENT_DIFF_POINT' ok=1 after 2650 ms
+19:50:15 restore base cpu: rc=0 241 ms, guest 'AGENT_STEP_DONE 1 ' ok=1 after 5902 ms
+19:50:18 restore last dsa: rc=0 278 ms, guest 'AGENT_DIFF_POINT' ok=1 after 2038 ms
+19:50:25 restore base dsa: rc=0 236 ms, guest 'AGENT_STEP_DONE 1 ' ok=1 after 5295 ms
+19:50:30 restore last cpucrc: rc=0 285 ms, guest 'AGENT_DIFF_POINT' ok=1 after 3871 ms
+19:50:37 restore base cpucrc: rc=0 271 ms, guest 'AGENT_STEP_DONE 1 ' ok=1 after 4887 ms
+19:50:42 restore last dsacrc: rc=0 282 ms, guest 'AGENT_DIFF_POINT' ok=1 after 3261 ms
+19:50:47 restore base dsacrc: rc=0 257 ms, guest 'AGENT_STEP_DONE 1 ' ok=1 after 4274 ms
+19:50:48 DONE -> /home/byrnedan/chlogs/lifecycle-sw-zstd/circuit-fibsqrt_7b-4k-20261012_194912
+######## circuit-fibsqrt_7b 4k rc=0 end 19:50:48
+######## circuit-fibsqrt_30b 4k start 19:50:48
+19:50:49 session circuit-fibsqrt_30b pages=4k turns=24 variants=cpu dsa cpucrc dsacrc workers=8 daemon_cpus=4,5 governor=performance
+19:50:55 boot to AGENT_BASE_POINT: 5698 ms
+19:51:19   checkpointed turn 5/24
+19:51:39   checkpointed turn 10/24
+19:51:59   checkpointed turn 15/24
+19:52:20   checkpointed turn 20/24
+19:52:36 session done; restoring
+19:52:41 restore last cpu: rc=0 273 ms, guest 'AGENT_DIFF_POINT' ok=1 after 4074 ms
+19:52:49 restore base cpu: rc=0 233 ms, guest 'AGENT_STEP_DONE 1 ' ok=1 after 5905 ms
+19:52:54 restore last dsa: rc=0 256 ms, guest 'AGENT_DIFF_POINT' ok=1 after 3463 ms
+19:53:00 restore base dsa: rc=0 241 ms, guest 'AGENT_STEP_DONE 1 ' ok=1 after 5293 ms
+19:53:05 restore last cpucrc: rc=0 283 ms, guest 'AGENT_DIFF_POINT' ok=1 after 2853 ms
+19:53:11 restore base cpucrc: rc=0 242 ms, guest 'AGENT_STEP_DONE 1 ' ok=1 after 4886 ms
+19:53:15 restore last dsacrc: rc=0 288 ms, guest 'AGENT_DIFF_POINT' ok=1 after 2243 ms
+19:53:20 restore base dsacrc: rc=0 238 ms, guest 'AGENT_STEP_DONE 1 ' ok=1 after 4279 ms
+19:53:21 DONE -> /home/byrnedan/chlogs/lifecycle-sw-zstd/circuit-fibsqrt_30b-4k-20261012_195048
+######## circuit-fibsqrt_30b 4k rc=0 end 19:53:21
+######## regex-chess_30b 4k start 19:53:21
+19:53:21 session regex-chess_30b pages=4k turns=24 variants=cpu dsa cpucrc dsacrc workers=8 daemon_cpus=4,5 governor=performance
+19:53:26 boot to AGENT_BASE_POINT: 5090 ms
+19:53:51   checkpointed turn 5/24
+19:54:13   checkpointed turn 10/24
+19:54:33   checkpointed turn 15/24
+19:54:53   checkpointed turn 20/24
+19:55:10 session done; restoring
+19:55:15 restore last cpu: rc=0 298 ms, guest 'AGENT_DIFF_POINT' ok=1 after 3866 ms
+19:55:22 restore base cpu: rc=0 221 ms, guest 'AGENT_STEP_DONE 1 ' ok=1 after 5900 ms
+19:55:26 restore last dsa: rc=0 274 ms, guest 'AGENT_DIFF_POINT' ok=1 after 3258 ms
+19:55:32 restore base dsa: rc=0 222 ms, guest 'AGENT_STEP_DONE 1 ' ok=1 after 5495 ms
+19:55:36 restore last cpucrc: rc=0 282 ms, guest 'AGENT_DIFF_POINT' ok=1 after 2648 ms
+19:55:42 restore base cpucrc: rc=0 237 ms, guest 'AGENT_STEP_DONE 1 ' ok=1 after 5088 ms
+19:55:45 restore last dsacrc: rc=0 293 ms, guest 'AGENT_DIFF_POINT' ok=1 after 1837 ms
+19:55:50 restore base dsacrc: rc=0 227 ms, guest 'AGENT_STEP_DONE 1 ' ok=1 after 4479 ms
+19:55:51 DONE -> /home/byrnedan/chlogs/lifecycle-sw-zstd/regex-chess_30b-4k-20261012_195321
+######## regex-chess_30b 4k rc=0 end 19:55:51
+######## path-tracing_30b 4k start 19:55:51
+19:55:53 session path-tracing_30b pages=4k turns=23 variants=cpu dsa cpucrc dsacrc workers=8 daemon_cpus=4,5 governor=performance
+19:56:00 boot to AGENT_BASE_POINT: 7122 ms
+19:56:24   checkpointed turn 5/23
+19:56:47   checkpointed turn 10/23
+19:57:08   checkpointed turn 15/23
+19:57:29   checkpointed turn 20/23
+19:57:42 session done; restoring
+19:57:48 restore last cpu: rc=0 358 ms, guest 'AGENT_DIFF_POINT' ok=1 after 3259 ms
+19:57:57 restore base cpu: rc=0 230 ms, guest 'AGENT_STEP_DONE 1 ' ok=1 after 5899 ms
+19:58:03 restore last dsa: rc=0 291 ms, guest 'AGENT_DIFF_POINT' ok=1 after 2648 ms
+19:58:12 restore base dsa: rc=0 234 ms, guest 'AGENT_STEP_DONE 1 ' ok=1 after 5495 ms
+19:58:19 restore last cpucrc: rc=0 765 ms, guest 'AGENT_DIFF_POINT' ok=1 after 2038 ms
+19:58:27 restore base cpucrc: rc=0 251 ms, guest 'AGENT_STEP_DONE 1 ' ok=1 after 4888 ms
+19:58:35 restore last dsacrc: rc=0 315 ms, guest 'AGENT_DIFF_POINT' ok=1 after 3869 ms
+19:58:43 restore base dsacrc: rc=0 241 ms, guest 'AGENT_STEP_DONE 1 ' ok=1 after 4482 ms
+19:58:44 DONE -> /home/byrnedan/chlogs/lifecycle-sw-zstd/path-tracing_30b-4k-20261012_195551
+######## path-tracing_30b 4k rc=0 end 19:58:44
+######## polyglot-rust-c_30b 4k start 19:58:44
+19:58:45 session polyglot-rust-c_30b pages=4k turns=16 variants=cpu dsa cpucrc dsacrc workers=8 daemon_cpus=4,5 governor=performance
+19:58:52 boot to AGENT_BASE_POINT: 6512 ms
+19:59:17   checkpointed turn 5/16
+19:59:38   checkpointed turn 10/16
+19:59:58   checkpointed turn 15/16
+20:00:03 session done; restoring
+20:00:09 restore last cpu: rc=0 763 ms, guest 'AGENT_DIFF_POINT' ok=1 after 3869 ms
+20:00:18 restore base cpu: rc=0 231 ms, guest 'AGENT_STEP_DONE 1 ' ok=1 after 5900 ms
+20:00:24 restore last dsa: rc=0 378 ms, guest 'AGENT_DIFF_POINT' ok=1 after 3055 ms
+20:00:32 restore base dsa: rc=0 230 ms, guest 'AGENT_STEP_DONE 1 ' ok=1 after 5495 ms
+20:00:38 restore last cpucrc: rc=0 379 ms, guest 'AGENT_DIFF_POINT' ok=1 after 3664 ms
+20:00:46 restore base cpucrc: rc=0 235 ms, guest 'AGENT_STEP_DONE 1 ' ok=1 after 5088 ms
+20:00:49 restore last dsacrc: rc=0 378 ms, guest 'AGENT_DIFF_POINT' ok=1 after 1224 ms
+20:00:56 restore base dsacrc: rc=0 236 ms, guest 'AGENT_STEP_DONE 1 ' ok=1 after 4477 ms
+20:00:57 DONE -> /home/byrnedan/chlogs/lifecycle-sw-zstd/polyglot-rust-c_30b-4k-20261012_195844
+######## polyglot-rust-c_30b 4k rc=0 end 20:00:57
+######## winning-avg-corewars_30b 4k start 20:00:57
+20:00:58 session winning-avg-corewars_30b pages=4k turns=60 variants=cpu dsa cpucrc dsacrc workers=8 daemon_cpus=4,5 governor=performance
+20:01:05 boot to AGENT_BASE_POINT: 6312 ms
+20:01:29   checkpointed turn 5/60
+20:01:49   checkpointed turn 10/60
+20:02:09   checkpointed turn 15/60
+20:02:29   checkpointed turn 20/60
+20:02:49   checkpointed turn 25/60
+20:03:09   checkpointed turn 30/60
+20:03:30   checkpointed turn 35/60
+20:03:50   checkpointed turn 40/60
+20:04:10   checkpointed turn 45/60
+20:04:30   checkpointed turn 50/60
+20:04:50   checkpointed turn 55/60
+20:05:10   checkpointed turn 60/60
+20:05:11 session done; restoring
+20:05:17 restore last cpu: rc=0 237 ms, guest 'AGENT_DIFF_POINT' ok=1 after 3870 ms
+20:05:25 restore base cpu: rc=0 233 ms, guest 'AGENT_STEP_DONE 1 ' ok=1 after 5904 ms
+20:05:31 restore last dsa: rc=0 236 ms, guest 'AGENT_DIFF_POINT' ok=1 after 3259 ms
+20:05:38 restore base dsa: rc=0 229 ms, guest 'AGENT_STEP_DONE 1 ' ok=1 after 5497 ms
+20:05:43 restore last cpucrc: rc=0 234 ms, guest 'AGENT_DIFF_POINT' ok=1 after 2852 ms
+20:05:51 restore base cpucrc: rc=0 235 ms, guest 'AGENT_STEP_DONE 1 ' ok=1 after 4886 ms
+20:05:55 restore last dsacrc: rc=0 237 ms, guest 'AGENT_DIFF_POINT' ok=1 after 2243 ms
+20:06:02 restore base dsacrc: rc=0 236 ms, guest 'AGENT_STEP_DONE 1 ' ok=1 after 4478 ms
+20:06:03 DONE -> /home/byrnedan/chlogs/lifecycle-sw-zstd/winning-avg-corewars_30b-4k-20261012_200057
+######## winning-avg-corewars_30b 4k rc=0 end 20:06:03
+######## write-compressor_30b 2m start 20:06:03
+20:06:03 session write-compressor_30b pages=2m turns=13 variants=cpu dsa cpucrc dsacrc workers=8 daemon_cpus=4,5 governor=performance
+20:06:09 boot to AGENT_BASE_POINT: 6106 ms
+20:06:33   checkpointed turn 5/13
+20:06:53   checkpointed turn 10/13
+20:07:06 session done; restoring
+20:07:11 restore last cpu: rc=0 210 ms, guest 'AGENT_DIFF_POINT' ok=1 after 2446 ms
+20:07:19 restore base cpu: rc=0 189 ms, guest 'AGENT_STEP_DONE 1 ' ok=1 after 5904 ms
+20:07:25 restore last dsa: rc=0 200 ms, guest 'AGENT_DIFF_POINT' ok=1 after 3867 ms
+20:07:32 restore base dsa: rc=0 200 ms, guest 'AGENT_STEP_DONE 1 ' ok=1 after 4885 ms
+20:07:38 restore last cpucrc: rc=0 207 ms, guest 'AGENT_DIFF_POINT' ok=1 after 3462 ms
+20:07:45 restore base cpucrc: rc=0 199 ms, guest 'AGENT_STEP_DONE 1 ' ok=1 after 4478 ms
+20:07:50 restore last dsacrc: rc=0 204 ms, guest 'AGENT_DIFF_POINT' ok=1 after 2850 ms
+20:07:56 restore base dsacrc: rc=0 202 ms, guest 'AGENT_STEP_DONE 1 ' ok=1 after 3868 ms
+20:07:56 DONE -> /home/byrnedan/chlogs/lifecycle-sw-zstd/write-compressor_30b-2m-20261012_200603
+######## write-compressor_30b 2m rc=0 end 20:07:56
+######## circuit-fibsqrt_7b 2m start 20:07:56
+20:07:57 session circuit-fibsqrt_7b pages=2m turns=10 variants=cpu dsa cpucrc dsacrc workers=8 daemon_cpus=4,5 governor=performance
+20:08:02 boot to AGENT_BASE_POINT: 5090 ms
+20:08:26   checkpointed turn 5/10
+20:08:47   checkpointed turn 10/10
+20:08:47 session done; restoring
+20:08:51 restore last cpu: rc=0 236 ms, guest 'AGENT_DIFF_POINT' ok=1 after 2649 ms
+20:08:58 restore base cpu: rc=0 192 ms, guest 'AGENT_STEP_DONE 1 ' ok=1 after 6107 ms
+20:09:02 restore last dsa: rc=0 225 ms, guest 'AGENT_DIFF_POINT' ok=1 after 2039 ms
+20:09:08 restore base dsa: rc=0 196 ms, guest 'AGENT_STEP_DONE 1 ' ok=1 after 5090 ms
+20:09:13 restore last cpucrc: rc=0 249 ms, guest 'AGENT_DIFF_POINT' ok=1 after 3870 ms
+20:09:19 restore base cpucrc: rc=0 203 ms, guest 'AGENT_STEP_DONE 1 ' ok=1 after 4683 ms
+20:09:25 restore last dsacrc: rc=0 614 ms, guest 'AGENT_DIFF_POINT' ok=1 after 3259 ms
+20:09:31 restore base dsacrc: rc=0 209 ms, guest 'AGENT_STEP_DONE 1 ' ok=1 after 4074 ms
+20:09:31 DONE -> /home/byrnedan/chlogs/lifecycle-sw-zstd/circuit-fibsqrt_7b-2m-20261012_200756
+######## circuit-fibsqrt_7b 2m rc=0 end 20:09:31
+######## circuit-fibsqrt_30b 2m start 20:09:31
+20:09:31 session circuit-fibsqrt_30b pages=2m turns=24 variants=cpu dsa cpucrc dsacrc workers=8 daemon_cpus=4,5 governor=performance
+20:09:37 boot to AGENT_BASE_POINT: 5297 ms
+20:10:01   checkpointed turn 5/24
+20:10:22   checkpointed turn 10/24
+20:10:42   checkpointed turn 15/24
+20:11:02   checkpointed turn 20/24
+20:11:19 session done; restoring
+20:11:23 restore last cpu: rc=0 231 ms, guest 'AGENT_DIFF_POINT' ok=1 after 3872 ms
+20:11:31 restore base cpu: rc=0 200 ms, guest 'AGENT_STEP_DONE 1 ' ok=1 after 5902 ms
+20:11:35 restore last dsa: rc=0 234 ms, guest 'AGENT_DIFF_POINT' ok=1 after 3056 ms
+20:11:41 restore base dsa: rc=0 199 ms, guest 'AGENT_STEP_DONE 1 ' ok=1 after 5089 ms
+20:11:45 restore last cpucrc: rc=0 237 ms, guest 'AGENT_DIFF_POINT' ok=1 after 2649 ms
+20:11:51 restore base cpucrc: rc=0 206 ms, guest 'AGENT_STEP_DONE 1 ' ok=1 after 4684 ms
+20:11:55 restore last dsacrc: rc=0 244 ms, guest 'AGENT_DIFF_POINT' ok=1 after 1836 ms
+20:12:00 restore base dsacrc: rc=0 201 ms, guest 'AGENT_STEP_DONE 1 ' ok=1 after 4073 ms
+20:12:01 DONE -> /home/byrnedan/chlogs/lifecycle-sw-zstd/circuit-fibsqrt_30b-2m-20261012_200931
+######## circuit-fibsqrt_30b 2m rc=0 end 20:12:01
+######## regex-chess_30b 2m start 20:12:01
+20:12:01 session regex-chess_30b pages=2m turns=24 variants=cpu dsa cpucrc dsacrc workers=8 daemon_cpus=4,5 governor=performance
+20:12:05 boot to AGENT_BASE_POINT: 4685 ms
+20:12:30   checkpointed turn 5/24
+20:12:52   checkpointed turn 10/24
+20:13:12   checkpointed turn 15/24
+20:13:33   checkpointed turn 20/24
+20:13:49 session done; restoring
+20:13:54 restore last cpu: rc=0 256 ms, guest 'AGENT_DIFF_POINT' ok=1 after 3872 ms
+20:14:00 restore base cpu: rc=0 198 ms, guest 'AGENT_STEP_DONE 1 ' ok=1 after 5903 ms
+20:14:05 restore last dsa: rc=0 251 ms, guest 'AGENT_DIFF_POINT' ok=1 after 3260 ms
+20:14:11 restore base dsa: rc=0 203 ms, guest 'AGENT_STEP_DONE 1 ' ok=1 after 5090 ms
+20:14:14 restore last cpucrc: rc=0 259 ms, guest 'AGENT_DIFF_POINT' ok=1 after 2650 ms
+20:14:20 restore base cpucrc: rc=0 204 ms, guest 'AGENT_STEP_DONE 1 ' ok=1 after 4481 ms
+20:14:22 restore last dsacrc: rc=0 258 ms, guest 'AGENT_DIFF_POINT' ok=1 after 1835 ms
+20:14:27 restore base dsacrc: rc=0 210 ms, guest 'AGENT_STEP_DONE 1 ' ok=1 after 4073 ms
+20:14:28 DONE -> /home/byrnedan/chlogs/lifecycle-sw-zstd/regex-chess_30b-2m-20261012_201201
+######## regex-chess_30b 2m rc=0 end 20:14:28
+######## path-tracing_30b 2m start 20:14:28
+20:14:29 session path-tracing_30b pages=2m turns=23 variants=cpu dsa cpucrc dsacrc workers=8 daemon_cpus=4,5 governor=performance
+20:14:35 boot to AGENT_BASE_POINT: 6919 ms
+20:15:00   checkpointed turn 5/23
+20:15:21   checkpointed turn 10/23
+20:15:42   checkpointed turn 15/23
+20:16:03   checkpointed turn 20/23
+20:16:16 session done; restoring
+20:16:22 restore last cpu: rc=0 262 ms, guest 'AGENT_DIFF_POINT' ok=1 after 3260 ms
+20:16:31 restore base cpu: rc=0 200 ms, guest 'AGENT_STEP_DONE 1 ' ok=1 after 5901 ms
+20:16:37 restore last dsa: rc=0 267 ms, guest 'AGENT_DIFF_POINT' ok=1 after 2648 ms
+20:16:45 restore base dsa: rc=0 196 ms, guest 'AGENT_STEP_DONE 1 ' ok=1 after 4886 ms
+20:16:50 restore last cpucrc: rc=0 270 ms, guest 'AGENT_DIFF_POINT' ok=1 after 2040 ms
+20:16:59 restore base cpucrc: rc=0 213 ms, guest 'AGENT_STEP_DONE 1 ' ok=1 after 4478 ms
+20:17:06 restore last dsacrc: rc=0 272 ms, guest 'AGENT_DIFF_POINT' ok=1 after 3869 ms
+20:17:13 restore base dsacrc: rc=0 216 ms, guest 'AGENT_STEP_DONE 1 ' ok=1 after 3871 ms
+20:17:14 DONE -> /home/byrnedan/chlogs/lifecycle-sw-zstd/path-tracing_30b-2m-20261012_201428
+######## path-tracing_30b 2m rc=0 end 20:17:14
+######## polyglot-rust-c_30b 2m start 20:17:14
+20:17:14 session polyglot-rust-c_30b pages=2m turns=16 variants=cpu dsa cpucrc dsacrc workers=8 daemon_cpus=4,5 governor=performance
+20:17:20 boot to AGENT_BASE_POINT: 5905 ms
+20:17:45   checkpointed turn 5/16
+20:18:07   checkpointed turn 10/16
+20:18:28   checkpointed turn 15/16
+20:18:32 session done; restoring
+20:18:38 restore last cpu: rc=0 330 ms, guest 'AGENT_DIFF_POINT' ok=1 after 3869 ms
+20:18:46 restore base cpu: rc=0 201 ms, guest 'AGENT_STEP_DONE 1 ' ok=1 after 5903 ms
+20:18:52 restore last dsa: rc=0 313 ms, guest 'AGENT_DIFF_POINT' ok=1 after 3055 ms
+20:18:59 restore base dsa: rc=0 196 ms, guest 'AGENT_STEP_DONE 1 ' ok=1 after 5091 ms
+20:19:03 restore last cpucrc: rc=0 334 ms, guest 'AGENT_DIFF_POINT' ok=1 after 2242 ms
+20:19:10 restore base cpucrc: rc=0 211 ms, guest 'AGENT_STEP_DONE 1 ' ok=1 after 4480 ms
+20:19:14 restore last dsacrc: rc=0 338 ms, guest 'AGENT_DIFF_POINT' ok=1 after 1225 ms
+20:19:20 restore base dsacrc: rc=0 213 ms, guest 'AGENT_STEP_DONE 1 ' ok=1 after 3871 ms
+20:19:21 DONE -> /home/byrnedan/chlogs/lifecycle-sw-zstd/polyglot-rust-c_30b-2m-20261012_201714
+######## polyglot-rust-c_30b 2m rc=0 end 20:19:21
+######## winning-avg-corewars_30b 2m start 20:19:21
+20:19:21 session winning-avg-corewars_30b pages=2m turns=60 variants=cpu dsa cpucrc dsacrc workers=8 daemon_cpus=4,5 governor=performance
+20:19:27 boot to AGENT_BASE_POINT: 5903 ms
+20:19:51   checkpointed turn 5/60
+20:20:12   checkpointed turn 10/60
+20:20:32   checkpointed turn 15/60
+20:20:52   checkpointed turn 20/60
+20:21:12   checkpointed turn 25/60
+20:21:32   checkpointed turn 30/60
+20:21:52   checkpointed turn 35/60
+20:22:12   checkpointed turn 40/60
+20:22:33   checkpointed turn 45/60
+20:22:53   checkpointed turn 50/60
+20:23:13   checkpointed turn 55/60
+20:23:33   checkpointed turn 60/60
+20:23:34 session done; restoring
+20:23:39 restore last cpu: rc=0 205 ms, guest 'AGENT_DIFF_POINT' ok=1 after 4070 ms
+20:23:47 restore base cpu: rc=0 193 ms, guest 'AGENT_STEP_DONE 1 ' ok=1 after 5907 ms
+20:23:53 restore last dsa: rc=0 590 ms, guest 'AGENT_DIFF_POINT' ok=1 after 3463 ms
+20:24:01 restore base dsa: rc=0 195 ms, guest 'AGENT_STEP_DONE 1 ' ok=1 after 5093 ms
+20:24:07 restore last cpucrc: rc=0 213 ms, guest 'AGENT_DIFF_POINT' ok=1 after 3728 ms
+20:24:13 restore base cpucrc: rc=0 209 ms, guest 'AGENT_STEP_DONE 1 ' ok=1 after 4478 ms
+20:24:18 restore last dsacrc: rc=0 214 ms, guest 'AGENT_DIFF_POINT' ok=1 after 2242 ms
+20:24:24 restore base dsacrc: rc=0 200 ms, guest 'AGENT_STEP_DONE 1 ' ok=1 after 3868 ms
+20:24:24 DONE -> /home/byrnedan/chlogs/lifecycle-sw-zstd/winning-avg-corewars_30b-2m-20261012_201921
+######## winning-avg-corewars_30b 2m rc=0 end 20:24:24
+checkpoints: 1416 (0 failed); restores: 112; guest turns: 340
+
+=== 2m pages: checkpoint cost per variant (all sessions) ===
+variant   base ms turn ms med    p95 turn cpu-s med    p95 total cpu-s MiB/turn med dsa fb
+cpu           796         496    667           0.97   1.30       191.1          162      0
+dsa           371         377    545           0.73   1.07       147.4          162      0
+cpucrc        498         508    678           0.99   1.33       193.1          162      0
+dsacrc        375         383    550           0.74   1.08       148.7          162      0
+
+=== 2m pages: per session  (turn checkpoint median ms / session daemon cpu-s) ===
+session                      turns            base             cpu             dsa          cpucrc          dsacrc
+circuit-fibsqrt_30b             24               -     590/  27.9s     468/  21.8s     599/  28.2s     476/  22.0s
+circuit-fibsqrt_7b              10               -     521/  11.7s     398/   8.7s     532/  11.6s     402/   8.8s
+path-tracing_30b                23               -     602/  27.3s     486/  21.4s     616/  27.6s     492/  21.6s
+polyglot-rust-c_30b             16               -     719/  22.9s     597/  18.7s     730/  23.1s     602/  18.7s
+regex-chess_30b                 24               -     618/  28.5s     501/  22.4s     631/  28.8s     504/  22.4s
+winning-avg-corewars_30b        60               -     494/  59.0s     375/  44.4s     505/  60.1s     380/  44.9s
+write-compressor_30b            13               -     491/  13.7s     374/  10.2s     502/  13.7s     380/  10.3s
+
+=== 2m pages: restores (median over sessions) ===
+  last cpu     restore     236 ms  daemon cpu  0.43 s  guest progressed 7/7
+  last dsa     restore     251 ms  daemon cpu  0.43 s  guest progressed 7/7
+  last cpucrc  restore     249 ms  daemon cpu  0.44 s  guest progressed 7/7
+  last dsacrc  restore     258 ms  daemon cpu  0.43 s  guest progressed 7/7
+  base cpu     restore     198 ms  daemon cpu  0.34 s  guest progressed 7/7
+  base dsa     restore     196 ms  daemon cpu  0.35 s  guest progressed 7/7
+  base cpucrc  restore     206 ms  daemon cpu  0.36 s  guest progressed 7/7
+  base dsacrc  restore     209 ms  daemon cpu  0.36 s  guest progressed 7/7
+
+=== 4k pages: checkpoint cost per variant (all sessions) ===
+variant   base ms turn ms med    p95 turn cpu-s med    p95 total cpu-s MiB/turn med dsa fb
+cpu           398         398    673           0.76   1.11       153.7          162      0
+dsa           384         391    630           0.75   1.10       150.7          162      0
+cpucrc        404         411    692           0.79   1.14       158.0          162      0
+dsacrc        385         391    582           0.75   1.09       150.8          162      0
+
+=== 4k pages: per session  (turn checkpoint median ms / session daemon cpu-s) ===
+session                      turns            base             cpu             dsa          cpucrc          dsacrc
+circuit-fibsqrt_30b             24               -     484/  22.3s     478/  21.8s     503/  22.8s     480/  21.8s
+circuit-fibsqrt_7b              10               -     435/   9.3s     425/   9.1s     446/   9.6s     425/   9.2s
+path-tracing_30b                23               -     516/  22.5s     507/  22.1s     532/  23.1s     508/  22.1s
+polyglot-rust-c_30b             16               -     621/  19.4s     614/  19.1s     637/  19.8s     618/  19.1s
+regex-chess_30b                 24               -     537/  23.4s     529/  23.1s     550/  24.1s     530/  23.0s
+winning-avg-corewars_30b        60               -     395/  46.1s     388/  45.1s     408/  47.5s     388/  45.2s
+write-compressor_30b            13               -     398/  10.7s     389/  10.4s     410/  11.0s     389/  10.4s
+
+=== 4k pages: restores (median over sessions) ===
+  last cpu     restore     298 ms  daemon cpu  0.50 s  guest progressed 7/7
+  last dsa     restore     274 ms  daemon cpu  0.49 s  guest progressed 7/7
+  last cpucrc  restore     283 ms  daemon cpu  0.51 s  guest progressed 7/7
+  last dsacrc  restore     288 ms  daemon cpu  0.52 s  guest progressed 7/7
+  base cpu     restore     232 ms  daemon cpu  0.41 s  guest progressed 7/7
+  base dsa     restore     234 ms  daemon cpu  0.42 s  guest progressed 7/7
+  base cpucrc  restore     242 ms  daemon cpu  0.42 s  guest progressed 7/7
+  base dsacrc  restore     238 ms  daemon cpu  0.42 s  guest progressed 7/7
+LIFECYCLE_ALL_DONE

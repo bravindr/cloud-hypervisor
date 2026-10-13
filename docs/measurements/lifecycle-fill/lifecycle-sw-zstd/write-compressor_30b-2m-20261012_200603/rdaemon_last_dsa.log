@@ -1,0 +1,4 @@
+[2026-10-13T03:07:21.267253Z INFO  offload_daemon] Offload daemon connected to "/home/byrnedan/chlogs/lifecycle-sw-zstd/write-compressor_30b-2m-20261012_200603/restore-data.sock" (ondemand=false)
+[2026-10-13T03:07:21.445401Z INFO  offload_daemon] Decompressed offload-slot-0: chunks=3072, compressed=29206066 bytes, output=3221225472 bytes, ratio=0.009, throughput=23.420 GiB/s
+[2026-10-13T03:07:21.448277Z INFO  offload_daemon] Decompressed offload-slot-1: chunks=1024, compressed=140901709 bytes, output=1073741824 bytes, ratio=0.131, throughput=5.535 GiB/s
+[2026-10-13T03:07:21.453492Z INFO  offload_daemon] Restore replay finished

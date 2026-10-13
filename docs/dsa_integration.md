@@ -1379,6 +1379,199 @@ running has nothing to overlap. The whole sub7 → sub8 move (572 / 563 →
 same 551 / 549. The affinity default (one thread per pinned core) is the
 right choice here.
 
+### 7c.2q Lifecycle stages: CPU only → DSA → IAA → DSA + IAA
+
+Section 7b showed, for one snapshot, what each accelerator bought the
+in-VMM chain stage by stage. This section does the same for the daemon
+over the whole microVM lifecycle, against a **CPU-only baseline that runs
+the same pipeline**. For that, `lz4` and `zstd` now go through the shared
+full-checkpoint pipeline (3503c000a): the same mapped input, `SEEK_DATA`
+hole map, CPU or DSA classification, per-thread output parts and 16 MiB
+writeback as the IAA codecs, with a software engine that compresses each
+chunk synchronously on the submitter thread. Only the compressor differs
+between the cells.
+
+Four cells, each with and without a per-chunk CRC, on the seven agent
+sessions of section 7c.2e (170 turns, 177 checkpoints per cell including
+the base), every variant checkpointing the same paused image, performance
+governor, daemon pinned to two cores (so two submitter threads, which for
+the software cells are the two compression threads), 1 MiB chunks,
+`--workers 8`:
+
+| cell | classification | compression | run |
+|---|---|---|---|
+| CPU only | CPU word scan | lz4 (or zstd −1) on the 2 daemon cores | `lifecycle-sw-lz4` / `-zstd`, `cpu` |
+| DSA only | DSA COMPVAL | lz4 (or zstd −1) | same runs, `dsa` |
+| IAA only | CPU word scan | IAA, static Huffman (`qpl-hardware-static-async`) | `lifecycle-perf7` (7c.2p), `cpu` |
+| DSA + IAA | DSA COMPVAL | IAA, static Huffman | `lifecycle-perf7`, `dsa` |
+
+The software runs took 1416 checkpoints each (0 failed), 112/112 restores
+resumed the guest; lz4 and IAA static Huffman write the same amount
+(193 vs 189 MiB per checkpoint, median), zstd −1 writes 162 MiB (−16 %) and
+is the slower CPU codec, so lz4 is the CPU baseline below and zstd is given
+where it differs. Results in `docs/measurements/lifecycle-fill/lifecycle-sw-*`;
+`stages.py` and `totals.py` there produce every table.
+
+**Full checkpoint per turn** (median over 170 turns; harness wall ms /
+daemon core-s; the unmodified `iaa-integration` daemon from 7c.2p for scale):
+
+| cell | 4 KiB | 4 KiB + CRC | 2 MiB | 2 MiB + CRC |
+|---|---|---|---|---|
+| CPU only, lz4 | 294 / 0.55 | 305 / 0.57 | 389 / 0.75 | 398 / 0.77 |
+| CPU only, zstd | 398 / 0.76 | 411 / 0.79 | 496 / 0.97 | 508 / 0.99 |
+| DSA only, lz4 | 284 / 0.53 | 284 / 0.53 | 266 / 0.51 | 271 / 0.52 |
+| DSA only, zstd | 391 / 0.75 | 391 / 0.75 | 377 / 0.73 | 383 / 0.74 |
+| IAA only | 82 / 0.11 | 93 / 0.13 | 175 / 0.30 | 184 / 0.32 |
+| DSA + IAA | **74 / 0.09** | **73 / 0.09** | **61 / 0.09** | **74 / 0.11** |
+| unmodified daemon | 1129 / 1.46 | | 1392 / 1.77 | |
+
+**Stages of a full checkpoint** (last turn of each session, median over the
+seven sessions, ms; the daemon's own timers, harness wall and CPU; lz4 for
+the software cells, zstd in brackets where it matters). The pipeline
+overlaps classification with compression, so the classification row is the
+difference between the CPU and DSA columns of the same codec:
+
+| stage | 4 KiB: CPU only | DSA only | IAA only | DSA + IAA | 2 MiB: CPU only | DSA only | IAA only | DSA + IAA |
+|---|---|---|---|---|---|---|---|---|
+| prepare (map, extents, prefault, job pools) | 12.6 | 12.8 | 20.5 | 19.8 | 1.4 | 1.5 | 8.8 | 9.1 |
+| classify + compress + write parts | 327.5 (468) | 315.4 (457) | 50.1 | 41.6 | 433.9 (586) | 315.3 (470) | 160.6 | 50.7 |
+| of which CPU classification | ~12 | — | ~9 | — | ~119 | — | ~110 | — |
+| fsync | 0.3 | 0.2 | 0.1 | 0.2 | 0.2 | 0.2 | 0.2 | 0.2 |
+| persist (manifest, snapshot files) | 10.6 | 9.8 | 7.5 | 7.5 | 0.5 | 0.4 | 0.9 | 0.9 |
+| VMM + protocol | 4.7 | 5.1 | 6.7 | 6.2 | 5.0 | 4.2 | 5.9 | 5.7 |
+| **harness wall** | **357 (494)** | **346 (482)** | **86** | **78** | **442 (593)** | **322 (477)** | **177** | **67** |
+| daemon CPU, core-s | 0.68 (0.95) | 0.65 (0.93) | 0.12 | 0.10 | 0.85 (1.15) | 0.62 (0.93) | 0.31 | 0.09 |
+| output, MiB | 216 (179) | 216 (179) | 210 | 210 | 214 (180) | 214 (180) | 212 | 212 |
+
+Reading, stage by stage:
+
+- **Classification is where DSA pays, and its value does not depend on the
+  codec.** On 2 MiB hugetlb guests (no holes, all 4 GiB scanned) the CPU
+  word scan costs 110-120 ms on two cores whether the compressor is lz4,
+  zstd or IAA; DSA COMPVAL removes all of it from the critical path (the
+  `dsa` column's compress time is the same as the 4 KiB column's, i.e. the
+  scan of 4 GiB is fully hidden behind compression) and 0.23 core-s. As a
+  share that is 27 % of a CPU-only checkpoint and 63 % of an IAA
+  checkpoint. On 4 KiB guests `SEEK_DATA` already drops ~90 % of the guest
+  before anything is read, the scan is ~10 ms, and DSA saves 3 %.
+- **Compression is where IAA pays.** With classification on DSA, the kept
+  chunks (0.45-1.1 GiB per checkpoint, by session) take 315 ms through lz4
+  on two threads and 457-470 ms through zstd −1, against 42-51 ms on IAA at
+  lz4's output size: 6-7× shorter and 0.62-0.65 → 0.09-0.10 core-s. The
+  chain is multiplicative: IAA alone takes a 2 MiB checkpoint from 442 to
+  177 ms, DSA alone to 322 ms, both together to 67 ms (6.6×; 5.3× on
+  4 KiB where there is little to classify).
+- **CRC is free on DSA** (the DSA cells with and without CRC are equal in
+  every table) and costs 3-4 % on the CPU cells, 11-13 % on IAA-only.
+- **Fixed costs** are 13-17 ms per checkpoint in the DSA + IAA cell, 20-25 %
+  of it: IAA job-pool creation is ~8 ms of `prepare` (20.5 vs 12.6 ms,
+  8.8 vs 1.4 ms against the software cells, which have no pools), the
+  manifest `persist` 7.5-10 ms at 4 KiB, VMM and protocol 5-7 ms. The
+  resident daemon (7c.2g) removes the pool setup.
+
+**Restore and boot** (14 restores per cell: the last and the base
+checkpoint of each session; harness wall / daemon span from connect to
+replay / daemon core-s, ms):
+
+| cell | 4 KiB | 2 MiB |
+|---|---|---|
+| CPU only, lz4 | 235 / 225 / 0.42 | 197 / 186 / 0.33 |
+| CPU only, zstd | 239 / 229 / 0.43 | 203 / 193 / 0.35 |
+| DSA only, lz4 | 230 / 219 / 0.40 | 192 / 181 / 0.32 |
+| IAA only | 154 / 141 / 0.18 | 126 / 114 / 0.15 |
+| DSA + IAA | 144 / 130 / 0.17 | 124 / 114 / 0.15 |
+| boot to `AGENT_BASE_POINT` (median of 7) | 6190 | 5670 |
+
+DSA has no part in restore (the ±10 ms between the CPU and DSA rows is
+run-to-run scatter; the CRC verify of a software-codec checkpoint is a CPU
+pass in every cell). IAA decompression saves 80-95 ms (4 KiB) and 70-80 ms
+(2 MiB) and 2.2-2.5× daemon CPU against lz4. The 115-130 ms that remain are
+the receive path and the copy into guest memory, which is the DSA
+MEMMOVE / `uffd_dma` lever of 7c.2b, not yet in this branch. Restoring a
+warm base instead of booting saves 5.5-6 s per session in every cell; it is
+the largest stage lever and it is codec-independent.
+
+**Diff checkpoints** (resident daemon, 7c.2g, on-demand governor): CPU
+compare + copy 10 / 11 ms pause and 4.9 / 5.8 ms CPU (4 KiB / 2 MiB), DSA
+COMPARE + DUALCAST 9 / 10 ms and 3.7 / 4.6 ms, IAA compressing ~3.6 MiB of
+changed pages in 0.7-0.8 ms in both. A CPU-only diff cell cannot be run
+(`serve` requires an async QPL codec); at lz4's rate on the gather buffer
+it would add 3-7 ms per turn, i.e. 13-18 ms pause, so DSA + IAA is worth
+about 1.5× on a diff checkpoint and 3-4× on its CPU, against 5-7× on a
+full one.
+
+**Whole sessions.** Replayed sessions have no LLM latency, so the session's
+execution time is boot (or restore) + guest steps + checkpoint pauses +
+the final restore. Over the seven sessions and both page sizes the guest
+steps total 7.5-7.8 s (4 KiB) and 6.1-7.7 s (2 MiB) and seven boots
+43.4 s / 39.7 s; the checkpoint column is the sum of the 177 harness walls
+per cell:
+
+| cell | 4 KiB: Σ checkpoints | session total | vs CPU only | daemon core-s | 2 MiB: Σ checkpoints | session total | vs CPU only | daemon core-s |
+|---|---|---|---|---|---|---|---|---|
+| CPU only, lz4 | 58.1 s | 110.6 s | — | 109 | 76.4 s | 125.2 s | — | 146 |
+| CPU only, zstd | 80.4 s | 133.0 s | +20 % | 154 | 98.9 s | 147.7 s | +18 % | 191 |
+| DSA only, lz4 | 56.1 s | 108.6 s | −2 % | 106 | 52.7 s | 101.4 s | −19 % | 101 |
+| IAA only | 14.8 s | 66.8 s | −40 % | 19 | 34.2 s | 82.5 s | −34 % | 56 |
+| DSA + IAA | **13.3 s** | **65.2 s** | **−41 %** | **17** | **11.1 s** | **59.4 s** | **−53 %** | **15.5** |
+| unmodified daemon | 200.2 s | 252.0 s | +128 % | 258 | 244.3 s | 292.7 s | +134 % | 311 |
+
+Estimates for the two configurations the branch is heading to, same
+components (fork from the warm base = restore instead of boot; resident
+diff from 7c.2g, 3.3 / 3.5 s of pauses and 0.25 s chain restores):
+
+| configuration | 4 KiB | vs CPU-only cold | 2 MiB | vs CPU-only cold |
+|---|---|---|---|---|
+| CPU only lz4, cold boot, full checkpoints | 110.6 s | — | 125.2 s | — |
+| DSA + IAA, cold boot, full checkpoints | 65.2 s | −41 % | 59.4 s | −53 % |
+| CPU only lz4, fork from base, full checkpoints | 68.9 s | −38 % | 86.9 s | −31 % |
+| DSA + IAA, fork from base, full checkpoints | 22.8 s | −79 % | 20.5 s | −84 % |
+| DSA + IAA, fork from base, resident diffs | ~14 s | −88 % | ~14 s | −89 % |
+
+Per turn the picture is: the agents' commands run 47 ms on average
+(7.5 s / 158 steps). A CPU-only full checkpoint pauses the guest 6-8× that
+(294-389 ms), DSA + IAA 1.3-1.6× (61-74 ms), a resident DSA diff 0.2×
+(9-10 ms). With real LLM latency of seconds per turn the pause matters
+less than its cost, and there the ladder is 109-146 → 15.5-17 core-s per
+seven sessions (6.5-9.4× less CPU), i.e. ~0.09 core-s per full checkpoint
+and ~0.004 per diff.
+
+**Where gaps remain:**
+
+- **No measured CPU-only diff cell.** `offload_daemon serve` requires an
+  async QPL codec; the software engine is not wired into the resident
+  diff compressor (`resident.rs` builds `Engine::Iaa` only). It is a small
+  change and would replace the 13-18 ms estimate above.
+- **Resident full checkpoints were not re-measured** with the shared
+  pipeline and the performance governor (7c.2g predates both); the one-shot
+  daemon still pays ~8 ms of IAA job-pool setup per checkpoint, 10-13 % of
+  a DSA + IAA checkpoint.
+- **Restore gets nothing from DSA**, and after IAA decompression 115-130 ms
+  remain, mostly the copy into guest memory; DSA MEMMOVE / `uffd_dma`
+  populate (7c.2b) is the lever, and one in thirty restores takes >400 ms
+  on the VMM side (7c.2o).
+- **4 KiB guests leave DSA little to do** (3 %) because `SEEK_DATA` removes
+  the holes first. Hugetlbfs reports no holes, so 2 MiB guests scan all
+  4 GiB; a reserved-vs-faulted map of the huge pages (the resident daemon's
+  populate bitmap is a start) would let the daemon skip untouched huge
+  pages without any scan, CPU or DSA.
+- **Fixed floor**: 13-17 ms of prepare, persist and VMM per checkpoint, and
+  the harness's 50 ms socket poll before connect (outside the measured
+  wall, but a real controller would see it unless it blocks on the socket).
+- **Codec**: static Huffman matches lz4's size; zstd −1 is 16 % smaller.
+  Dynamic Huffman beat static through the shared pipeline on NVMe (7c.2p)
+  and has not been run in the lifecycle; it may give both the smaller
+  output and a shorter pause.
+- **The CPU-only cell has two compression threads** because the daemon is
+  pinned to two cores. A CPU-only deployment spending more cores narrows
+  the wall gap (lz4 scales) but not the core-seconds, which is what the
+  tenant pays for.
+- Operational, from 7c.4: the governor does not survive a reboot, an
+  unpinned daemon gets one submitter per host CPU, the NVMe drive is not in
+  fstab, COMPVAL is not used in the diff path, and KVM dirty logging's cost
+  to a 2 MiB guest under diff checkpoints is unmeasured (guest time is tiny
+  in these sessions).
+
 ### 7c.3 IOMMU first touch: measured, and the fix
 
 `dto-async-test` (fresh process, 2 GiB memfd filled by another mapping, then
@@ -1425,6 +1618,12 @@ slower first cell in each sweep (`cpu` 492 vs 331 ms, `dsa` w8 473 vs 214 ms).
   kept chunks and 4 jobs; slot 1 had 997 and 4 jobs).
 - Auto-select `--hugetlb` from the migration config's memory zones.
 - Explain the first-mapping 270 ms.
+- Wire the software compression engine into the resident diff path so a
+  CPU-only diff cell can be measured (section 7c.2q).
+- Run the lifecycle with dynamic Huffman through the shared pipeline
+  (section 7c.2q).
+- Re-measure resident full checkpoints with the shared pipeline and the
+  performance governor (section 7c.2q).
 - Classify granularity below the 1 MiB chunk is not needed (§3), so the
   in-VMM 64 KiB batching stays out.
 - ~~Push `ch-async-ops` to a DTO fork~~: pushed to https://github.com/byrnedj/DTO branch
