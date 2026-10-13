@@ -1711,7 +1711,13 @@ Reading:
   admission gate, not alignment. A standing mapping of the daemon's
   (reused) output buffers, or the `dcbm` map cache applied to this
   provider, is what would make the DSA copy win; the copy itself is
-  ~50 µs per 2 MiB.
+  ~50 µs per 2 MiB. **Confirmed by turning striping off**
+  (`stripe_min_bytes=4194304`, so a 2 MiB copy uses one device and two
+  mappings instead of four devices and eight): `map_us_total` 20-37 ms,
+  device wait unchanged at ~12 ms, wall **99-116 ms** and daemon CPU
+  0.01 / 0.09-0.10 s, now ahead of the kernel's CPU copy (107-113 ms).
+  Striping a 2 MiB copy over four devices saves ~50 µs of transfer and
+  costs six extra mappings of ~30-45 µs each.
 - **2 MiB chunks cost ~10 ms on the plain path** (121-133 vs 117-122 ms
   with 1 MiB chunks: fewer, longer IAA jobs per slot thread), which the
   `UFFDIO_COPY` path wins back. A `UFFDIO_COPY` of two 1 MiB chunks would
@@ -1778,8 +1784,10 @@ slower first cell in each sweep (`cpu` 492 vs 331 ms, `dsa` w8 473 vs 214 ms).
 - Run the lifecycle with dynamic Huffman through the shared pipeline
   (section 7c.2q).
 - Restore (section 7c.2r): `--workers 8` default; kernel clear offload on
-  for hugetlb restores; a mapping cache in `uffd_dma` so `--uffd-copy` with
-  the DSA provider beats the kernel's CPU copy; mmap the compressed parts
+  for hugetlb restores; `uffd_dma` should not stripe 2 MiB copies (set
+  `stripe_min_bytes` above the folio size, or make the default depend on
+  the mapping cost) and wants standing mappings for its destinations and
+  registered source buffers; mmap the compressed parts
   instead of `pread`; hugetlb destinations for 4 KiB guests or a shmem
   `mfill` hook in the kernel.
 - `apply_diff` decompresses a chain one diff at a time on one thread
