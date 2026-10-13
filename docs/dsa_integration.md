@@ -1726,6 +1726,53 @@ Reading:
   cells (`pread` of ~200 MiB into the pool's input buffers); mapping the
   parts and feeding IAA from the page cache would remove it.
 
+**Standing destination mappings in the kernel** (byrnedj/linux
+`mm_offload_v1` @ 471d29348ecc). dcbm's PFN-keyed cache of standing DMA
+mappings was private to `dcbm.c` and its safety argument (the provider
+owns both folios for the life of the entry) does not cover `uffd_dma`'s
+pinned user source. The cache now lives in the shared `mm_offload_dma`
+layer with a small API (`mm_offload_dma_map_quantum/get/put/flush`), its
+parameters moved with it (`/sys/module/mm_offload_dma/parameters/map_cache*`;
+`dcbm` keeps `map_cache_clear`), the caches live as long as the pool has
+a user, and `uffd_dma` resolves its **destinations** through it: a
+UFFDIO_COPY destination is a folio nobody else can see yet, the same
+ownership a migration destination has. Each 2 MiB copy is cut at the
+cache's segment size (128 KiB, `dma_opt_mapping_size`) and every
+segment looked up, in the single-device and the striped path; the
+source stays mapped per request. Knob `dst_map_cache`, counters
+`dst_cached_segs` / `dst_mapped_segs`. `dcbm`'s clears run on the same
+cache (hits grow across restores, `folios_cleared` unchanged).
+
+The same restore, 30 times in a row with the provider on and
+`map_cache_cap_mb=8192` (the hugetlb pool is 6 GiB per node and its
+free list cycles, so the cache is warm once it has seen every page: the
+per-device insert count stops growing at restore ~26):
+
+| cell | map time per restore | device wait | wall (3 reps) |
+|---|---|---|---|
+| striped, no cache (7c.2r above) | 44-72 ms | 8-12 ms | 127-144 |
+| striped, cache cold (first restore) | 11-14 ms | 8 ms | 91-98 |
+| **striped, cache warm** | **9.0-9.9 ms** | 8 ms | **86-96** |
+| one device, no cache | 20-37 ms | 12 ms | 99-116 |
+| one device, cache cold | 22-26 ms | 12 ms | 105-109 |
+| one device, cache warm | 16.5-17.5 ms | 12 ms | 95-108 |
+| kernel CPU copy (provider off) | — | — | 107-113 |
+
+Reading: with the destination out of the way, striping over four
+devices is cheap again (four 512 KiB source maps replace one 2 MiB
+one) and is the best restore measured, 86-96 ms, 20 % under the
+kernel's CPU copy and 30 % under the mapping-write path. What is left
+of the mapping time is the **source**: pinned user memory, one
+`dma_map_page` per copy and device, which the cache must not keep.
+A 2 MiB segment size (`map_quantum_kb=2048`) is slower while the cache
+is cold (every miss is a 2 MiB IOVA allocation from the rbtree) and
+only pays once warm. Open: the restore's 37 of 226 copies the provider
+refuses (not the node: `cross_node=1` changes nothing; not alignment);
+and a warm-up of ~26 restores per device because channels are claimed
+round-robin, so each device's cache has to see the whole pool - choosing
+the device by PFN (as `dcbm` does) would cut the warm-up and the entry
+count by the device count.
+
 Restore follow-ups, in order of value: `--workers 8` as the restore default
 (the harness runs 32); the kernel clear offload on for hugetlb restores
 (per boot: `dcbm` `offloading=1`, kernel work queues from 7c.2b); a mapping
@@ -1785,9 +1832,10 @@ slower first cell in each sweep (`cpu` 492 vs 331 ms, `dsa` w8 473 vs 214 ms).
   (section 7c.2q).
 - Restore (section 7c.2r): `--workers 8` default; kernel clear offload on
   for hugetlb restores; `uffd_dma` should not stripe 2 MiB copies (set
-  `stripe_min_bytes` above the folio size, or make the default depend on
-  the mapping cost) and wants standing mappings for its destinations and
-  registered source buffers; mmap the compressed parts
+  `stripe_min_bytes` above the folio size) when its destinations are not
+  cached; with the shared cache (471d29348ecc) choose the device by PFN
+  and register the daemon's source buffers once instead of pinning and
+  mapping them per copy; mmap the compressed parts
   instead of `pread`; hugetlb destinations for 4 KiB guests or a shmem
   `mfill` hook in the kernel.
 - `apply_diff` decompresses a chain one diff at a time on one thread

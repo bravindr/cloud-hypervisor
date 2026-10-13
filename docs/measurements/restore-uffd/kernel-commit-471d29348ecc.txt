@@ -1,0 +1,30 @@
+mm_offload_dma: shared standing mapping cache; uffd_dma destinations use it
+
+Move dcbm's PFN-keyed cache of standing DMA mappings into the shared
+mm_offload_dma layer, where every provider can use it, and give it a
+small API: mm_offload_dma_map_quantum() for the segment size to cut
+ranges at, mm_offload_dma_map_get()/_put() for a cached range, and
+mm_offload_dma_map_flush(). The caches live as long as the pool has a
+user and are freed, before the channels, on the last pool_put(). The
+map_cache, map_cache_cap_mb, map_cache_min_kb, map_quantum_kb and
+map_cache_stats parameters move to mm_offload_dma; dcbm keeps
+map_cache_clear as its own policy and otherwise only calls the API.
+
+uffd_dma maps its destinations through it. A UFFDIO_COPY destination is
+a folio the caller has just allocated and nobody else can see, the same
+ownership a migration destination has, so a standing mapping is safe
+there; the pinned user source is not the provider's to keep and stays
+mapped per request. A destination that is one folio (hugetlb, a large
+anon folio) is cut at the cache's segment size and each segment
+resolved from the cache, in both the single-device and the striped
+path; a run of split order-0 pages is mapped per request as before.
+New sysfs knob dst_map_cache and counters dst_cached_segs,
+dst_mapped_segs.
+
+Measured on a 4 GiB hugetlb guest restore (226 UFFDIO_COPYs of 2 MiB
+from an IAA-decompressing daemon pinned to two cores): mapping had been
+the whole cost of the DSA path - 44-72 ms per restore striped over four
+devices, 8 dma_map_page calls per copy, more than the copy itself
+(8-12 ms of device time). With destinations from the cache the striped
+path maps in 9-11 ms per restore and the restore wall drops from
+127-144 ms to 88-96 ms, ahead of the kernel's CPU copy (107-113 ms).

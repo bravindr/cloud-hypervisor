@@ -1,0 +1,15 @@
+10:21:13 snapshot /mnt/chsnap/lifecycle-2mc/write-compressor_30b-2m/dsa/last disk /home/byrnedan/chlogs/lifecycle-scratch/write-compressor_30b-2m.run.ext4 console /home/byrnedan/chlogs/snaps-restore/write-compressor_30b-2m-20261013_060659/console.log binary /home/byrnedan/cloud-hypervisor/target-iaa2/release/offload_daemon
+10:21:13 == cell uffddma: cpus=4,5 workers=32 uffd_dma=1 dcbm=0 args='--hugetlb --uffd-copy'
+10:21:18 uffddma_r1 rc=0 wall 98 ms, daemon user/sys 0.00 0.10, guest ok=1
+    Decompressed offload-slot-0: chunks=1536, compressed=51374340 bytes, output=3221225472 bytes, ratio=0.016, throughput=74.176 GiB/s
+    Decompressed offload-slot-1: chunks=512, compressed=144894685 bytes, output=1073741824 bytes, ratio=0.135, throughput=13.591 GiB/s
+    counters: copies_done=189 copies_refused=37 bytes_dma=396361728 pin_us_total=4 map_us_total=10728 wait_ns_total=8495 striped_copies=189
+10:21:24 uffddma_r2 rc=0 wall 94 ms, daemon user/sys 0.01 0.09, guest ok=1
+    Decompressed offload-slot-0: chunks=1536, compressed=51374340 bytes, output=3221225472 bytes, ratio=0.016, throughput=73.199 GiB/s
+    Decompressed offload-slot-1: chunks=512, compressed=144894685 bytes, output=1073741824 bytes, ratio=0.135, throughput=13.989 GiB/s
+    counters: copies_done=189 copies_refused=37 bytes_dma=396361728 map_us_total=10313 wait_ns_total=8145 striped_copies=189
+10:21:30 uffddma_r3 rc=0 wall 90 ms, daemon user/sys 0.01 0.10, guest ok=1
+    Decompressed offload-slot-0: chunks=1536, compressed=51374340 bytes, output=3221225472 bytes, ratio=0.016, throughput=75.690 GiB/s
+    Decompressed offload-slot-1: chunks=512, compressed=144894685 bytes, output=1073741824 bytes, ratio=0.135, throughput=13.859 GiB/s
+    counters: copies_done=189 copies_refused=37 bytes_dma=396361728 map_us_total=10413 wait_ns_total=8145 striped_copies=189
+10:21:31 DONE -> /home/byrnedan/chlogs/restore2-2mc-cache-striped-1013_1021

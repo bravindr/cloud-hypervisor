@@ -1,0 +1,27 @@
+10:23:29 snapshot /mnt/chsnap/lifecycle/write-compressor_30b-2m/dsa/last disk /home/byrnedan/chlogs/lifecycle-scratch/write-compressor_30b-2m.run.ext4 console /home/byrnedan/chlogs/snaps-restore/write-compressor_30b-2m-20261013_060557/console.log binary /home/byrnedan/cloud-hypervisor/target-iaa2/release/offload_daemon
+10:23:29 == cell w8clr: cpus=4,5 workers=8 uffd_dma=0 dcbm=1 args='--hugetlb'
+10:23:35 w8clr_r1 rc=0 wall 85 ms, daemon user/sys 0.03 0.06, guest ok=1
+    Decompressed offload-slot-0: chunks=3072, compressed=52173657 bytes, output=3221225472 bytes, ratio=0.016, throughput=93.029 GiB/s
+    Decompressed offload-slot-1: chunks=1024, compressed=146081832 bytes, output=1073741824 bytes, ratio=0.136, throughput=14.251 GiB/s
+    cache: 0000:0a:01.0 quantum_kb 128 covered_kb 116736 hits 0 misses 912 inserts 912 insert_fails 0 range_fallbacks 0 evictions 0 ref_skips 0
+    cache: 0000:0f:01.0 quantum_kb 128 covered_kb 116736 hits 0 misses 912 inserts 912 insert_fails 0 range_fallbacks 0 evictions 0 ref_skips 0
+    cache: 0000:00:01.0 quantum_kb 128 covered_kb 114688 hits 0 misses 896 inserts 896 insert_fails 0 range_fallbacks 0 evictions 0 ref_skips 0
+    cache: 0000:05:01.0 quantum_kb 128 covered_kb 114688 hits 0 misses 896 inserts 896 insert_fails 0 range_fallbacks 0 evictions 0 ref_skips 0
+    counters: dcbm_cleared=226
+10:23:41 w8clr_r2 rc=0 wall 89 ms, daemon user/sys 0.03 0.06, guest ok=1
+    Decompressed offload-slot-0: chunks=3072, compressed=52173657 bytes, output=3221225472 bytes, ratio=0.016, throughput=96.381 GiB/s
+    Decompressed offload-slot-1: chunks=1024, compressed=146081832 bytes, output=1073741824 bytes, ratio=0.136, throughput=14.157 GiB/s
+    cache: 0000:0a:01.0 quantum_kb 128 covered_kb 219136 hits 96 misses 1712 inserts 1712 insert_fails 0 range_fallbacks 0 evictions 0 ref_skips 0
+    cache: 0000:0f:01.0 quantum_kb 128 covered_kb 217088 hits 112 misses 1696 inserts 1696 insert_fails 0 range_fallbacks 0 evictions 0 ref_skips 0
+    cache: 0000:00:01.0 quantum_kb 128 covered_kb 225280 hits 48 misses 1760 inserts 1760 insert_fails 0 range_fallbacks 0 evictions 0 ref_skips 0
+    cache: 0000:05:01.0 quantum_kb 128 covered_kb 221184 hits 80 misses 1728 inserts 1728 insert_fails 0 range_fallbacks 0 evictions 0 ref_skips 0
+    counters: dcbm_cleared=226
+10:23:47 w8clr_r3 rc=0 wall 85 ms, daemon user/sys 0.04 0.05, guest ok=1
+    Decompressed offload-slot-0: chunks=3072, compressed=52173657 bytes, output=3221225472 bytes, ratio=0.016, throughput=94.520 GiB/s
+    Decompressed offload-slot-1: chunks=1024, compressed=146081832 bytes, output=1073741824 bytes, ratio=0.136, throughput=14.302 GiB/s
+    cache: 0000:0a:01.0 quantum_kb 128 covered_kb 313344 hits 272 misses 2448 inserts 2448 insert_fails 0 range_fallbacks 0 evictions 0 ref_skips 0
+    cache: 0000:0f:01.0 quantum_kb 128 covered_kb 313344 hits 272 misses 2448 inserts 2448 insert_fails 0 range_fallbacks 0 evictions 0 ref_skips 0
+    cache: 0000:00:01.0 quantum_kb 128 covered_kb 303104 hits 336 misses 2368 inserts 2368 insert_fails 0 range_fallbacks 0 evictions 0 ref_skips 0
+    cache: 0000:05:01.0 quantum_kb 128 covered_kb 301056 hits 352 misses 2352 inserts 2352 insert_fails 0 range_fallbacks 0 evictions 0 ref_skips 0
+    counters: dcbm_cleared=226
+10:23:47 DONE -> /home/byrnedan/chlogs/restore2-2m-dcbm-shared-1013_1023
