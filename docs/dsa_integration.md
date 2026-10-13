@@ -1863,6 +1863,27 @@ last turn of each session, restores over 14 per cell; ms, core-s):
 | restore, base checkpoint (wall) | 196 | 148 | 168 | 73 |
 | output per checkpoint | 193 MiB | 190 MiB | 193 MiB | 188 MiB |
 
+**Tail latency** (the 170 turn checkpoints per cell; pause ms p50 / p95 /
+p99 / max, and the p99 of daemon CPU per checkpoint; resident diffs from
+7c.2r's runs for comparison):
+
+| cell | 4 KiB | 2 MiB |
+|---|---|---|
+| full, CPU only | 294 / 447 / 477 / 489, 0.91 core-s | 385 / 515 / 554 / 567, 1.08 |
+| full, DSA + IAA | **75 / 91 / 94 / 95, 0.12** | **61 / 70 / 73 / 80, 0.10** |
+| full, IAA only (CPU classify) | 82 / 95 / 100 / 102 | 172 / 193 / 280 / 288 |
+| resident diff, CPU only (lz4) | 10 / 78 / 228 / 349, 224 ms | 11 / 77 / 229 / 349, 226 ms |
+| resident diff, DSA + IAA | **5 / 21 / 53 / 67, 50 ms** | **5 / 24 / 51 / 59, 49 ms** |
+
+The accelerated full checkpoint's p99 is 1.25× its median (94 / 75,
+73 / 61) against 1.6× (477 / 294) and 1.4× (554 / 385) for the CPU-only
+one, and its p99 (73-94 ms) sits below the CPU-only *median*. The diff
+checkpoints' tail is the turns that dirty the most pages: p99 228 ms on
+one lz4 thread against 51-53 ms with DSA + IAA (4.4×), the gap widening
+from 2× at the median. Restores: 14 per cell, so the max stands for the
+p99: CPU only 251-369 ms, DSA + IAA 127-129 ms on 2 MiB and 171 ms on
+4 KiB, with one 447 ms VMM-side outlier (the 1-in-30 of 7c.2o).
+
 **Whole sessions** (7 sessions, 170 turns, 177 checkpoints and 7 final
 restores per cell; boot and the guest's 158 steps, 6.2-7.8 s in all, are
 the same work in both ladders):
