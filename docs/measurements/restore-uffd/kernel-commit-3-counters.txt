@@ -1,0 +1,29 @@
+mm_offload_dma: usage counters per operation class, with the DSA perfmon view
+
+Two views of what the pool's devices do, under /sys/kernel/mm_offload_dma/.
+
+The software view is per operation class, the mm_offload function the
+bytes served: folio clears (dcbm memset), migration copies (dcbm memcpy
+and memcpy_sg) and UFFDIO_COPY fills (uffd_dma). Providers report every
+descriptor through mm_offload_dma_stat_submit() and _complete() with its
+byte count and submit-to-completion time, so each class has running
+totals of operations, bytes, failures, in-flight descriptors and a mean
+device latency.
+
+The hardware view is the devices' own perfmon counters, read in-kernel
+through the idxd PMU as pinned kernel perf events, one set per device
+the pool holds a channel on: data processed and written (EV_CL_PROCESSED,
+EV_CL_WRITE: the engine category has no work-queue filter, so these
+include user-space submitters such as DTO and are the device totals),
+and EV_MEM_MOVE / EV_FILL / EV_NUM_CPL_SUCC descriptor counts both on
+the pool's own work queues (filter_wq from the channels' WQ ids) and on
+every queue. Two small idxd exports provide the WQ id and the PMU type of
+a dmaengine channel (include/linux/idxd_dma.h); the events live as long
+as the pool has a user and go with the channels.
+
+`totals` prints both as running totals; `window` prints the deltas and
+rates (MiB/s, ops/s, mean us) since it was last written to, so a caller
+can bracket any interval. Verified against each other on the restore
+path: 1184 UFFDIO_COPY descriptors of 128 KiB counted by the software
+side are 1184 EV_MEM_MOVE on the pool's queues split over the four
+node-0 devices, and 9360 clear descriptors are 9360 EV_FILL.

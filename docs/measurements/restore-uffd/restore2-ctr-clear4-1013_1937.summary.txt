@@ -1,0 +1,52 @@
+19:37:11 snapshot /mnt/chsnap/lifecycle/write-compressor_30b-2m/dsa/last disk /home/byrnedan/chlogs/lifecycle-scratch/write-compressor_30b-2m.run.ext4 console /home/byrnedan/chlogs/e2e-acc/write-compressor_30b-2m-20261013_150148/console.log binary /home/byrnedan/cloud-hypervisor/target-iaa2/release/offload_daemon
+19:37:11 == cell w8clr: cpus=4,5 workers=8 uffd_dma=0 dcbm=1 args='--hugetlb'
+19:37:16 w8clr_r1 rc=0 wall 97 ms, daemon user/sys 0.04 0.05, guest ok=1 after 3885 ms
+    Decompressed offload-slot-0: chunks=1536, compressed=29882557 bytes, output=3221225472 bytes, ratio=0.009, throughput=124.577 GiB/s
+    Decompressed offload-slot-1: chunks=512, compressed=164516089 bytes, output=1073741824 bytes, ratio=0.153, throughput=12.349 GiB/s
+    cache: 0000:0f:01.0 quantum_kb 128 covered_kb 235520 hits 0 misses 1840 inserts 1840 insert_fails 0 range_fallbacks 0 evictions 0 ref_skips 0
+    cache: 0000:0a:01.0 quantum_kb 128 covered_kb 233472 hits 0 misses 1824 inserts 1824 insert_fails 0 range_fallbacks 0 evictions 0 ref_skips 0
+    cache: 0000:05:01.0 quantum_kb 128 covered_kb 231424 hits 0 misses 1808 inserts 1808 insert_fails 0 range_fallbacks 0 evictions 0 ref_skips 0
+    cache: 0000:00:01.0 quantum_kb 128 covered_kb 231424 hits 0 misses 1808 inserts 1808 insert_fails 0 range_fallbacks 0 evictions 0 ref_skips 0
+    cache: 0000:8f:01.0 quantum_kb 128 covered_kb 16384 hits 0 misses 128 inserts 128 insert_fails 0 range_fallbacks 0 evictions 0 ref_skips 0
+    cache: 0000:8a:01.0 quantum_kb 128 covered_kb 18432 hits 0 misses 144 inserts 144 insert_fails 0 range_fallbacks 0 evictions 0 ref_skips 0
+    cache: 0000:85:01.0 quantum_kb 128 covered_kb 18432 hits 0 misses 144 inserts 144 insert_fails 0 range_fallbacks 0 evictions 0 ref_skips 0
+    cache: 0000:80:01.0 quantum_kb 128 covered_kb 14336 hits 0 misses 112 inserts 112 insert_fails 0 range_fallbacks 0 evictions 0 ref_skips 0
+    counters: dcbm_cleared=488
+19:37:23 w8clr_r2 rc=0 wall 91 ms, daemon user/sys 0.03 0.06, guest ok=1 after 3886 ms
+    Decompressed offload-slot-0: chunks=1536, compressed=29882557 bytes, output=3221225472 bytes, ratio=0.009, throughput=129.540 GiB/s
+    Decompressed offload-slot-1: chunks=512, compressed=164516089 bytes, output=1073741824 bytes, ratio=0.153, throughput=13.197 GiB/s
+    cache: 0000:0f:01.0 quantum_kb 128 covered_kb 337920 hits 80 misses 2640 inserts 2640 insert_fails 0 range_fallbacks 0 evictions 0 ref_skips 0
+    cache: 0000:0a:01.0 quantum_kb 128 covered_kb 339968 hits 48 misses 2656 inserts 2656 insert_fails 0 range_fallbacks 0 evictions 0 ref_skips 0
+    cache: 0000:05:01.0 quantum_kb 128 covered_kb 331776 hits 96 misses 2592 inserts 2592 insert_fails 0 range_fallbacks 0 evictions 0 ref_skips 0
+    cache: 0000:00:01.0 quantum_kb 128 covered_kb 329728 hits 112 misses 2576 inserts 2576 insert_fails 0 range_fallbacks 0 evictions 0 ref_skips 0
+    cache: 0000:8f:01.0 quantum_kb 128 covered_kb 16384 hits 0 misses 128 inserts 128 insert_fails 0 range_fallbacks 0 evictions 0 ref_skips 0
+    cache: 0000:8a:01.0 quantum_kb 128 covered_kb 18432 hits 0 misses 144 inserts 144 insert_fails 0 range_fallbacks 0 evictions 0 ref_skips 0
+    cache: 0000:85:01.0 quantum_kb 128 covered_kb 18432 hits 0 misses 144 inserts 144 insert_fails 0 range_fallbacks 0 evictions 0 ref_skips 0
+    cache: 0000:80:01.0 quantum_kb 128 covered_kb 14336 hits 0 misses 112 inserts 112 insert_fails 0 range_fallbacks 0 evictions 0 ref_skips 0
+    counters: dcbm_cleared=220
+19:37:29 w8clr_r3 rc=0 wall 97 ms, daemon user/sys 0.03 0.06, guest ok=1 after 3889 ms
+    Decompressed offload-slot-0: chunks=1536, compressed=29882557 bytes, output=3221225472 bytes, ratio=0.009, throughput=132.404 GiB/s
+    Decompressed offload-slot-1: chunks=512, compressed=164516089 bytes, output=1073741824 bytes, ratio=0.153, throughput=12.998 GiB/s
+    cache: 0000:0f:01.0 quantum_kb 128 covered_kb 401408 hits 464 misses 3136 inserts 3136 insert_fails 0 range_fallbacks 0 evictions 0 ref_skips 0
+    cache: 0000:0a:01.0 quantum_kb 128 covered_kb 397312 hits 480 misses 3104 inserts 3104 insert_fails 0 range_fallbacks 0 evictions 0 ref_skips 0
+    cache: 0000:05:01.0 quantum_kb 128 covered_kb 385024 hits 560 misses 3008 inserts 3008 insert_fails 0 range_fallbacks 0 evictions 0 ref_skips 0
+    cache: 0000:00:01.0 quantum_kb 128 covered_kb 378880 hits 608 misses 2960 inserts 2960 insert_fails 0 range_fallbacks 0 evictions 0 ref_skips 0
+    cache: 0000:8f:01.0 quantum_kb 128 covered_kb 16384 hits 0 misses 128 inserts 128 insert_fails 0 range_fallbacks 0 evictions 0 ref_skips 0
+    cache: 0000:8a:01.0 quantum_kb 128 covered_kb 18432 hits 0 misses 144 inserts 144 insert_fails 0 range_fallbacks 0 evictions 0 ref_skips 0
+    cache: 0000:85:01.0 quantum_kb 128 covered_kb 18432 hits 0 misses 144 inserts 144 insert_fails 0 range_fallbacks 0 evictions 0 ref_skips 0
+    cache: 0000:80:01.0 quantum_kb 128 covered_kb 14336 hits 0 misses 112 inserts 112 insert_fails 0 range_fallbacks 0 evictions 0 ref_skips 0
+    counters: dcbm_cleared=220
+    -- mm_offload_dma window over the cell:
+    window_ms 18804
+    clear      ops 14848 bytes 1938046976 MiB/s 98 ops/s 789 mean_us 33
+    migrate    ops 0 bytes 0 MiB/s 0 ops/s 0 mean_us 0
+    uffd_copy  ops 0 bytes 0 MiB/s 0 ops/s 0 mean_us 0
+    0000:80:01.0 processed MiB/s 0 written MiB/s 0 memmove_pool 0 fill_pool 112 completions_pool 112 memmove_all 0 fill_all 112
+    0000:0f:01.0 processed MiB/s 0 written MiB/s 23 memmove_pool 0 fill_pool 3600 completions_pool 3600 memmove_all 0 fill_all 3600
+    0000:0a:01.0 processed MiB/s 0 written MiB/s 23 memmove_pool 0 fill_pool 3584 completions_pool 3584 memmove_all 0 fill_all 3584
+    0000:05:01.0 processed MiB/s 0 written MiB/s 23 memmove_pool 0 fill_pool 3568 completions_pool 3568 memmove_all 0 fill_all 3568
+    0000:8f:01.0 processed MiB/s 0 written MiB/s 0 memmove_pool 0 fill_pool 128 completions_pool 128 memmove_all 0 fill_all 128
+    0000:8a:01.0 processed MiB/s 0 written MiB/s 0 memmove_pool 0 fill_pool 144 completions_pool 144 memmove_all 0 fill_all 144
+    0000:85:01.0 processed MiB/s 0 written MiB/s 0 memmove_pool 0 fill_pool 144 completions_pool 144 memmove_all 0 fill_all 144
+    0000:00:01.0 processed MiB/s 0 written MiB/s 23 memmove_pool 0 fill_pool 3568 completions_pool 3568 memmove_all 0 fill_all 3568
+19:37:29 DONE -> /home/byrnedan/chlogs/restore2-ctr-clear4-1013_1937

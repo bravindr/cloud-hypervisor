@@ -17,7 +17,7 @@ DISK=$(cfg "c['disks'][0]['path']"); CONSOLE=$(cfg "c['serial']['file']")
 SESSION=$(basename "$DISK" | sed 's/-\(4k\|2m\)\.run\.ext4$//')
 TEMPLATE=$HOME/vmbench/rootfs_traj_$SESSION.ext4
 log "snapshot $SNAPDIR disk $DISK console $CONSOLE binary $OD"
-ctr() { for a in copies_done copies_refused copies_failed copies_efault bytes_dma bytes_cpu pin_us_total map_us_total wait_ns_total src_contig striped_copies; do printf "%s=%s " "$a" "$(cat /sys/kernel/uffd_dma/$a)"; done; printf "dcbm_cleared=%s" "$(cat /sys/module/dcbm/parameters/folios_cleared)"; echo; }
+ctr() { for a in copies_done copies_refused copies_failed bytes_dma pin_us_total map_us_total wait_ns_total src_contig striped_copies dst_cached_segs dst_mapped_segs src_registered refused_small refused_unaligned refused_stalled refused_saturated refused_noclaim src_map_us_total dst_map_us_total regbufs_invalidated; do printf "%s=%s " "$a" "$(cat /sys/kernel/uffd_dma/$a)"; done; printf "dcbm_cleared=%s" "$(cat /sys/module/dcbm/parameters/folios_cleared)"; echo; }
 knob() { echo "$2" | sudo tee "$1" >/dev/null; }
 restore_one() { # name cpus workers args...
   local name=$1 cpus=$2 workers=$3; shift 3
@@ -34,11 +34,12 @@ restore_one() { # name cpus workers args...
   local t0=$(date +%s%N)
   $pfx /usr/bin/time -f "%e %U %S" -o "$OUT/t_$name.txt" taskset -c "$cpus" "$OD" restore --socket "$RDATA" --input-dir "$SNAPDIR" --resume --workers "$workers" "$@" > "$OUT/d_$name.log" 2>&1
   local rc=$? t1=$(date +%s%N); wait "$recv" 2>/dev/null
-  local gok=0; for _ in $(seq 1 300); do grep -aq "AGENT_DIFF_POINT" "$CONSOLE" 2>/dev/null && { gok=1; break; }; sleep 0.1; done
+  local gok=0 g0=$(date +%s%N) gms=""; for _ in $(seq 1 600); do grep -aq "AGENT_DIFF_POINT" "$CONSOLE" 2>/dev/null && { gok=1; gms=$(( ($(date +%s%N) - g0) / 1000000 )); break; }; sleep 0.1; done
   local tm; tm=$(tail -1 "$OUT/t_$name.txt")
-  log "$name rc=$rc wall $(( (t1 - t0) / 1000000 )) ms, daemon user/sys $(echo "$tm" | cut -d" " -f2,3), guest ok=$gok"
+  log "$name rc=$rc wall $(( (t1 - t0) / 1000000 )) ms, daemon user/sys $(echo "$tm" | cut -d" " -f2,3), guest ok=$gok${gms:+ after $gms ms}"
   grep -hE "Decompressed|Populated|Applied|crc verify|rror" "$OUT/d_$name.log" | sed -E "s/^.*offload_daemon(::[a-z_]+)?\] /    /" | cut -c1-200 | tee -a "$OUT/summary.txt"
   local after; after=$(ctr)
+  grep -v "^none" /sys/module/mm_offload_dma/parameters/map_cache_stats 2>/dev/null | sed "s/^/    cache: /" | tee -a "$OUT/summary.txt"
   python3 - "$before" "$after" <<'PY' | tee -a "$OUT/summary.txt"
 import sys
 b=dict(x.split("=") for x in sys.argv[1].split()); a=dict(x.split("=") for x in sys.argv[2].split())
@@ -51,7 +52,9 @@ for cell in "$@"; do
   IFS=: read -r name cpus workers uffd dcbm args <<<"$cell"
   knob /sys/kernel/uffd_dma/offloading "$uffd"; knob /sys/module/dcbm/parameters/offloading "$dcbm"
   log "== cell $name: cpus=$cpus workers=$workers uffd_dma=$uffd dcbm=$dcbm args='$args'"
+  echo 1 | sudo tee /sys/kernel/mm_offload_dma/window >/dev/null 2>&1
   for r in $(seq 1 "$REPS"); do restore_one "${name}_r$r" "$cpus" "$workers" $args; done
+  { echo "    -- mm_offload_dma window over the cell:"; sed "s/^/    /" /sys/kernel/mm_offload_dma/window 2>/dev/null; } | tee -a "$OUT/summary.txt"
 done
 knob /sys/kernel/uffd_dma/offloading 0; knob /sys/module/dcbm/parameters/offloading 0
 log "DONE -> $OUT"

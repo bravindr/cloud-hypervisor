@@ -2025,6 +2025,57 @@ pages; (3) the DSA CRC index against the template rootfs for dedup; all
 behind a feature flag because of the hardware caveat. The daemon,
 memfd and live-migration machinery of this branch would not move.
 
+### 7c.2u DSA usage counters in the mm_offload kernel
+
+Kernel `mm_offload_v1` @ `f3063c77d7b0`: `/sys/kernel/mm_offload_dma/`
+reports what the pool's devices do, in two views that cross-check each
+other.
+
+- **Software, per operation class** = the mm_offload function the bytes
+  served: `clear` (dcbm memset), `migrate` (dcbm memcpy / memcpy_sg),
+  `uffd_copy` (uffd_dma). Providers report every descriptor at submit and
+  completion (`mm_offload_dma_stat_submit/_complete`, with the byte count
+  and submit-to-completion time), giving running totals of operations,
+  bytes, failures, in-flight descriptors and the mean device latency.
+- **Hardware, per device** = the DSA perfmon counters (spec §6 and
+  Appendix D; this host's PMU: `dsa<N>/event_category=<cat>,event=<mask>/`
+  with `filter_wq`), read in-kernel as pinned kernel perf events on the
+  idxd PMU: `EV_CL_PROCESSED` and `EV_CL_WRITE` (data in 32-byte units;
+  the engine category has no work-queue filter, so these are device totals
+  including user-space submitters such as DTO), and `EV_MEM_MOVE`,
+  `EV_FILL`, `EV_NUM_CPL_SUCC` on the pool's own work queues (WQ filter
+  from the channels' ids, via two new idxd exports in
+  `include/linux/idxd_dma.h`) and on every queue. The events live as long
+  as the pool has a user.
+- `totals` is both views as running totals; `window` is the deltas and
+  rates (MiB/s, ops/s, mean µs) since it was last written to, so any
+  interval can be bracketed: `echo 1 > window; ...; cat window`.
+
+Measured on the restore path (write-compressor_30b, 2 MiB guest, three
+restores per cell, window over the cell, `restore_cells2.sh` prints it):
+
+| cell | software view | hardware view (pool WQs, node-0 devices) |
+|---|---|---|
+| `--uffd-copy`, DSA provider | `uffd_copy` 10848 ops, 1.42 GB, mean 47 µs per 128 KiB descriptor | `memmove_pool` 3168 + 2832 + 2544 + 2304 = 10848; processed = written 15-21 MiB/s per device |
+| mapping writes + clear offload | `clear` 14848 ops, 1.94 GB, mean 33 µs | `fill_pool` 3600 + 3584 + 3568 + 3568 (the rest on node 1); processed 0 (a fill reads nothing), written 23 MiB/s per device |
+
+Operation counts agree exactly between the two views; bytes agree to the
+descriptor granularity (the rates are averaged over the whole window,
+which here is mostly VMM start and guest check: inside a restore the
+copies run at ~5 GB/s). What the hardware view adds is the device total
+against the pool's share, and the perfmon decode itself: during one
+offloaded restore dsa0 sees 1024 `EV_MEM_MOVE` of 128 KiB and 1024 MSI-X
+completions, i.e. 16 descriptors and 16 interrupts per 2 MiB copy, the
+price of the 128 KiB standing-mapping segments (7c.2r).
+
+**Operational note.** Reloading `idxd` to pick up the two exports needs
+`iaa_crypto` out first (it held `wq9.0`/`wq15.0`), and the restored
+queue configuration (`accel-config save-config` / `load-config`) came
+back without two things the daemon depends on: the IAA user queues'
+`max_transfer_size` (default 2 MiB; a 2 MiB job then times out, QPL
+status 319) and world-readable device nodes. `~/chlogs/iax_user_wqs.sh`
+repairs both; the full configuration is `~/accel-qual1-20261013b.conf`.
+
 ### 7c.3 IOMMU first touch: measured, and the fix
 
 `dto-async-test` (fresh process, 2 GiB memfd filled by another mapping, then
