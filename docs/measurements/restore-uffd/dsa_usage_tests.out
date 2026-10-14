@@ -1,0 +1,102 @@
+pool: mm_offload_dma: 20 channel(s) in 8 group(s), 2 user(s)
+hugepages free node0/node1: 3072 0 
+== clear: THP faults, 8 threads x 1 GiB on node 0
+   cmd: numactl -N0 -m0 /home/byrnedan/chlogs/mmbench/thp_zero_bench -t 8 -s 1024
+   | threads=8 mb/thread=1024 faults=4096 thp_mb=8192 wall=0.052s user=0.00s sys=0.31s us/fault=12.8 GB/s=152.70
+   wall 75 ms
+    window_ms 78
+    clear      ops 69824 bytes 8635482112 MiB/s 104386 ops/s 885035 mean_us 28
+    0000:80:01.0 processed MiB/s 0 written MiB/s 151 memmove_pool 0 fill_pool 96 completions_pool 96 memmove_all 0 fill_all 96
+    0000:0f:01.0 processed MiB/s 0 written MiB/s 25887 memmove_pool 0 fill_pool 17357 completions_pool 17357 memmove_all 0 fill_all 17357
+    0000:0a:01.0 processed MiB/s 0 written MiB/s 25893 memmove_pool 0 fill_pool 17362 completions_pool 17362 memmove_all 0 fill_all 17362
+    0000:05:01.0 processed MiB/s 0 written MiB/s 25861 memmove_pool 0 fill_pool 17366 completions_pool 17366 memmove_all 0 fill_all 17366
+    0000:8f:01.0 processed MiB/s 0 written MiB/s 151 memmove_pool 0 fill_pool 96 completions_pool 96 memmove_all 0 fill_all 96
+    0000:8a:01.0 processed MiB/s 0 written MiB/s 176 memmove_pool 0 fill_pool 112 completions_pool 112 memmove_all 0 fill_all 112
+    0000:85:01.0 processed MiB/s 0 written MiB/s 151 memmove_pool 0 fill_pool 96 completions_pool 96 memmove_all 0 fill_all 96
+    0000:00:01.0 processed MiB/s 0 written MiB/s 25863 memmove_pool 0 fill_pool 17339 completions_pool 17339 memmove_all 0 fill_all 17339
+== clear: hugetlb faults, 4 threads x 1 GiB on node 0
+   cmd: numactl -N0 -m0 /home/byrnedan/chlogs/mmbench/thp_zero_bench -t 4 -s 1024 -H
+   | threads=4 mb/thread=1024 faults=2048 thp_mb=0 wall=0.041s user=0.01s sys=0.09s us/fault=19.9 GB/s=98.30
+   wall 46 ms
+    window_ms 49
+    clear      ops 34816 bytes 4253024256 MiB/s 81361 ops/s 698391 mean_us 24
+    0000:0f:01.0 processed MiB/s 0 written MiB/s 20249 memmove_pool 0 fill_pool 8704 completions_pool 8704 memmove_all 0 fill_all 8704
+    0000:0a:01.0 processed MiB/s 0 written MiB/s 20262 memmove_pool 0 fill_pool 8704 completions_pool 8704 memmove_all 0 fill_all 8704
+    0000:05:01.0 processed MiB/s 0 written MiB/s 20265 memmove_pool 0 fill_pool 8704 completions_pool 8704 memmove_all 0 fill_all 8704
+    0000:00:01.0 processed MiB/s 0 written MiB/s 20264 memmove_pool 0 fill_pool 8704 completions_pool 8704 memmove_all 0 fill_all 8704
+== migrate: move_pages THP 2 GiB node0->node1, 4 threads, 2 iters
+   cmd: numactl -C 16-31 /home/byrnedan/chlogs/mmbench/migbench -s 2048 -f 0 -t 1 -T 4 -i 2 -H -v
+   | migbench: 2048 MiB node 0 -> 1, 4 threads, order 9, stride 2048 KiB, 256 addrs/thread, THP
+   | iter 0: 0->1 wall 0.026 s (max thread 0.026) = 77.80 GiB/s, sys 0.069 s usr 0.002 s, fails 0, bad 0
+   | iter 1: 1->0 wall 0.024 s (max thread 0.024) = 82.68 GiB/s, sys 0.064 s usr 0.002 s, fails 0, bad 0
+   wall 1928 ms
+    window_ms 1931
+    clear      ops 14832 bytes 1944059904 MiB/s 959 ops/s 7677 mean_us 31
+    migrate    ops 1587 bytes 4294967296 MiB/s 2120 ops/s 821 mean_us 337
+    0000:80:01.0 processed MiB/s 269 written MiB/s 269 memmove_pool 4176 fill_pool 0 completions_pool 4428 memmove_all 4176 fill_all 0
+    0000:0f:01.0 processed MiB/s 254 written MiB/s 493 memmove_pool 3936 fill_pool 3712 completions_pool 7790 memmove_all 3936 fill_all 3712
+    0000:0a:01.0 processed MiB/s 291 written MiB/s 531 memmove_pool 4512 fill_pool 3712 completions_pool 8381 memmove_all 4512 fill_all 3712
+    0000:05:01.0 processed MiB/s 241 written MiB/s 479 memmove_pool 3728 fill_pool 3696 completions_pool 7557 memmove_all 3728 fill_all 3696
+    0000:8f:01.0 processed MiB/s 274 written MiB/s 274 memmove_pool 4256 fill_pool 0 completions_pool 4508 memmove_all 4256 fill_all 0
+    0000:8a:01.0 processed MiB/s 255 written MiB/s 255 memmove_pool 3952 fill_pool 0 completions_pool 4204 memmove_all 3952 fill_all 0
+    0000:85:01.0 processed MiB/s 258 written MiB/s 258 memmove_pool 4000 fill_pool 0 completions_pool 4252 memmove_all 4000 fill_all 0
+    0000:00:01.0 processed MiB/s 272 written MiB/s 511 memmove_pool 4208 fill_pool 3712 completions_pool 8067 memmove_all 4208 fill_all 3712
+hugepages free node0/node1: 3072 1024 
+== migrate: move_pages hugetlb 1 GiB node0->node1, 2 threads, 2 iters
+   cmd: numactl -C 16-31 /home/byrnedan/chlogs/mmbench/migbench -s 1024 -f 0 -t 1 -T 2 -i 2 -L -v
+   | migbench: 1024 MiB node 0 -> 1, 2 threads, order 9, stride 2048 KiB, 256 addrs/thread, hugetlb anon
+   | iter 0: 0->1 wall 0.012 s (max thread 0.012) = 84.65 GiB/s, sys 0.015 s usr 0.000 s, fails 0, bad 0
+   | iter 1: 1->0 wall 0.014 s (max thread 0.014) = 73.07 GiB/s, sys 0.015 s usr 0.001 s, fails 0, bad 0
+   wall 960 ms
+    window_ms 964
+    clear      ops 8192 bytes 1067450368 MiB/s 1055 ops/s 8495 mean_us 28
+    migrate    ops 798 bytes 2147483648 MiB/s 2123 ops/s 827 mean_us 234
+    0000:80:01.0 processed MiB/s 277 written MiB/s 277 memmove_pool 2144 fill_pool 0 completions_pool 2272 memmove_all 2144 fill_all 0
+    0000:0f:01.0 processed MiB/s 277 written MiB/s 540 memmove_pool 2144 fill_pool 2048 completions_pool 4264 memmove_all 2144 fill_all 2048
+    0000:0a:01.0 processed MiB/s 286 written MiB/s 549 memmove_pool 2208 fill_pool 2048 completions_pool 4333 memmove_all 2208 fill_all 2048
+    0000:05:01.0 processed MiB/s 203 written MiB/s 465 memmove_pool 1568 fill_pool 2048 completions_pool 3674 memmove_all 1568 fill_all 2048
+    0000:8f:01.0 processed MiB/s 285 written MiB/s 285 memmove_pool 2208 fill_pool 0 completions_pool 2336 memmove_all 2208 fill_all 0
+    0000:8a:01.0 processed MiB/s 246 written MiB/s 246 memmove_pool 1904 fill_pool 0 completions_pool 2032 memmove_all 1904 fill_all 0
+    0000:85:01.0 processed MiB/s 250 written MiB/s 250 memmove_pool 1936 fill_pool 0 completions_pool 2064 memmove_all 1936 fill_all 0
+    0000:00:01.0 processed MiB/s 294 written MiB/s 557 memmove_pool 2272 fill_pool 2048 completions_pool 4399 memmove_all 2272 fill_all 2048
+== uffd_copy: UFFDIO_COPY restore x3 (restore_cells2.sh prints the window over the cell)
+19:51:56 final_r1 rc=0 wall 91 ms, daemon user/sys 0.02 0.07, guest ok=1 after 3984 ms
+    cache: 0000:0f:01.0 quantum_kb 128 covered_kb 4847616 hits 5712 misses 37872 inserts 37872 insert_fails 0 range_fallbacks 0 evictions 0 ref_skips 0
+    cache: 0000:0a:01.0 quantum_kb 128 covered_kb 4956160 hits 6224 misses 38720 inserts 38720 insert_fails 0 range_fallbacks 0 evictions 0 ref_skips 0
+    cache: 0000:05:01.0 quantum_kb 128 covered_kb 4771840 hits 4416 misses 37280 inserts 37280 insert_fails 0 range_fallbacks 0 evictions 0 ref_skips 0
+    cache: 0000:00:01.0 quantum_kb 128 covered_kb 4878336 hits 6240 misses 38112 inserts 38112 insert_fails 0 range_fallbacks 0 evictions 0 ref_skips 0
+    cache: 0000:8a:01.0 quantum_kb 128 covered_kb 1546240 hits 3840 misses 12080 inserts 12080 insert_fails 0 range_fallbacks 0 evictions 0 ref_skips 0
+    cache: 0000:85:01.0 quantum_kb 128 covered_kb 1570816 hits 3792 misses 12272 inserts 12272 insert_fails 0 range_fallbacks 0 evictions 0 ref_skips 0
+    cache: 0000:80:01.0 quantum_kb 128 covered_kb 1617920 hits 4192 misses 12640 inserts 12640 insert_fails 0 range_fallbacks 0 evictions 0 ref_skips 0
+    cache: 0000:8f:01.0 quantum_kb 128 covered_kb 1656832 hits 4176 misses 12944 inserts 12944 insert_fails 0 range_fallbacks 0 evictions 0 ref_skips 0
+19:52:02 final_r2 rc=0 wall 90 ms, daemon user/sys 0.01 0.08, guest ok=1 after 3985 ms
+    cache: 0000:0f:01.0 quantum_kb 128 covered_kb 4847616 hits 6672 misses 37872 inserts 37872 insert_fails 0 range_fallbacks 0 evictions 0 ref_skips 0
+    cache: 0000:0a:01.0 quantum_kb 128 covered_kb 4956160 hits 7264 misses 38720 inserts 38720 insert_fails 0 range_fallbacks 0 evictions 0 ref_skips 0
+    cache: 0000:05:01.0 quantum_kb 128 covered_kb 4771840 hits 5088 misses 37280 inserts 37280 insert_fails 0 range_fallbacks 0 evictions 0 ref_skips 0
+    cache: 0000:00:01.0 quantum_kb 128 covered_kb 4878336 hits 7184 misses 38112 inserts 38112 insert_fails 0 range_fallbacks 0 evictions 0 ref_skips 0
+    cache: 0000:8a:01.0 quantum_kb 128 covered_kb 1546240 hits 3840 misses 12080 inserts 12080 insert_fails 0 range_fallbacks 0 evictions 0 ref_skips 0
+    cache: 0000:85:01.0 quantum_kb 128 covered_kb 1570816 hits 3792 misses 12272 inserts 12272 insert_fails 0 range_fallbacks 0 evictions 0 ref_skips 0
+    cache: 0000:80:01.0 quantum_kb 128 covered_kb 1617920 hits 4192 misses 12640 inserts 12640 insert_fails 0 range_fallbacks 0 evictions 0 ref_skips 0
+    cache: 0000:8f:01.0 quantum_kb 128 covered_kb 1656832 hits 4176 misses 12944 inserts 12944 insert_fails 0 range_fallbacks 0 evictions 0 ref_skips 0
+19:52:09 final_r3 rc=0 wall 86 ms, daemon user/sys 0.01 0.07, guest ok=1 after 3988 ms
+    cache: 0000:0f:01.0 quantum_kb 128 covered_kb 4847616 hits 7632 misses 37872 inserts 37872 insert_fails 0 range_fallbacks 0 evictions 0 ref_skips 0
+    cache: 0000:0a:01.0 quantum_kb 128 covered_kb 4956160 hits 8304 misses 38720 inserts 38720 insert_fails 0 range_fallbacks 0 evictions 0 ref_skips 0
+    cache: 0000:05:01.0 quantum_kb 128 covered_kb 4771840 hits 5760 misses 37280 inserts 37280 insert_fails 0 range_fallbacks 0 evictions 0 ref_skips 0
+    cache: 0000:00:01.0 quantum_kb 128 covered_kb 4878336 hits 8128 misses 38112 inserts 38112 insert_fails 0 range_fallbacks 0 evictions 0 ref_skips 0
+    cache: 0000:8a:01.0 quantum_kb 128 covered_kb 1546240 hits 3840 misses 12080 inserts 12080 insert_fails 0 range_fallbacks 0 evictions 0 ref_skips 0
+    cache: 0000:85:01.0 quantum_kb 128 covered_kb 1570816 hits 3792 misses 12272 inserts 12272 insert_fails 0 range_fallbacks 0 evictions 0 ref_skips 0
+    cache: 0000:80:01.0 quantum_kb 128 covered_kb 1617920 hits 4192 misses 12640 inserts 12640 insert_fails 0 range_fallbacks 0 evictions 0 ref_skips 0
+    cache: 0000:8f:01.0 quantum_kb 128 covered_kb 1656832 hits 4176 misses 12944 inserts 12944 insert_fails 0 range_fallbacks 0 evictions 0 ref_skips 0
+    window_ms 19054
+    clear      ops 0 bytes 0 MiB/s 0 ops/s 0 mean_us 0
+    migrate    ops 0 bytes 0 MiB/s 0 ops/s 0 mean_us 0
+    uffd_copy  ops 10848 bytes 1421869056 MiB/s 71 ops/s 569 mean_us 53
+    0000:0f:01.0 processed MiB/s 18 written MiB/s 18 memmove_pool 2880 fill_pool 0 completions_pool 2880 memmove_all 2880 fill_all 0
+    0000:0a:01.0 processed MiB/s 20 written MiB/s 20 memmove_pool 3120 fill_pool 0 completions_pool 3120 memmove_all 3120 fill_all 0
+    0000:05:01.0 processed MiB/s 13 written MiB/s 13 memmove_pool 2016 fill_pool 0 completions_pool 2016 memmove_all 2016 fill_all 0
+    0000:00:01.0 processed MiB/s 18 written MiB/s 18 memmove_pool 2832 fill_pool 0 completions_pool 2832 memmove_all 2832 fill_all 0
+== running totals
+clear      ops 174240 bytes 21992833024 failed 0 inflight 0 mean_us 28
+migrate    ops 2385 bytes 6442450944 failed 0 inflight 0 mean_us 303
+uffd_copy  ops 27024 bytes 3542089728 failed 0 inflight 0 mean_us 65
+hw none (pool not acquired or no idxd PMU)

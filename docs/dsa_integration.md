@@ -2068,6 +2068,34 @@ offloaded restore dsa0 sees 1024 `EV_MEM_MOVE` of 128 KiB and 1024 MSI-X
 completions, i.e. 16 descriptors and 16 interrupts per 2 MiB copy, the
 price of the 128 KiB standing-mapping segments (7c.2r).
 
+**Every offloaded function, with a tight window** (`dsa_usage_tests.sh`:
+the kernel's `tools/mm_offload` microbenchmarks for clears and
+migrations, the daemon's restore for `UFFDIO_COPY`; `echo 1 > window`
+right before, `cat window` right after; node-0 memory; the pool held by
+both providers so the hardware events persist):
+
+| function, test | software view over the window | hardware view (sum over the devices used) | bandwidth |
+|---|---|---|---|
+| **clear**, THP faults: 8 threads × 1 GiB, 4096 faults in 52 ms | 69824 ops, 8.64 GB, mean 28 µs | `fill_pool` 69.5k on the 4 node-0 devices (+0.4k node 1), written 25.9 GB/s per device | **104 GB/s** over the 78 ms window (bench: 153 GB/s over its 52 ms) |
+| **clear**, hugetlb faults: 4 × 1 GiB, 2048 faults in 41 ms | 34816 ops, 4.25 GB, mean 24 µs | `fill_pool` 8704 on each node-0 device, written 20.2 GB/s each | **81 GB/s** over 49 ms (bench 98 GB/s) |
+| **migrate**, `move_pages` THP 2 GiB node 0 → 1 → 0, 4 threads | 1587 transactions, 4.29 GB, mean 337 µs | `memmove_pool` 32768 spread over all 8 devices (migration stripes across nodes), ~270 MB/s each over the window | bench **78-83 GiB/s** during the 50 ms of moves; the window (1.9 s) is mostly the bench's fill and verify |
+| **migrate**, `move_pages` hugetlb 1 GiB there and back, 2 threads | 798 transactions, 2.15 GB, mean 234 µs | `memmove_pool` 16384 over 8 devices | bench **73-85 GiB/s** |
+| **uffd_copy**, 3 offloaded restores | 10848 ops, 1.42 GB, mean 53 µs | `memmove_pool` 2880 + 3120 + 2016 + 2832 = 10848 on the node-0 devices | ~5 GB/s inside a restore (474 MB in ~90 ms); 71 MiB/s over the 19 s window of VMM starts and guest checks |
+
+Running totals after the session: clear 174240 ops / 22.0 GB, migrate
+2385 / 6.44 GB, uffd_copy 27024 / 3.54 GB, 0 failed.
+
+Reading the two views together: the software side counts what a provider
+submits (for dcbm's migration, one `memcpy_sg` transaction of up to 32
+folios), the hardware side counts descriptors the engines executed (each
+batch element), so `migrate` shows 1587 against 32768 and both are
+right. Everything else lines up exactly. The counts also put a number
+on the standing-mapping segment size: every 2 MiB folio is cleared or
+copied as 16-17 descriptors of 128 KiB, 885k descriptors/s during the
+THP clear test, each with its own completion. With the device chosen by
+PFN the caches warm in two passes, so a larger quantum (`map_quantum_kb`)
+is worth re-measuring against these counters.
+
 **Operational note.** Reloading `idxd` to pick up the two exports needs
 `iaa_crypto` out first (it held `wq9.0`/`wq15.0`), and the restored
 queue configuration (`accel-config save-config` / `load-config`) came
