@@ -3,6 +3,16 @@
 #   init=/agent_init agent_wl=<idle|py|shell|pyc|mixed>
 # Prints AGENT_BASE_POINT (host takes full snapshot), runs the workload,
 # prints AGENT_DIFF_POINT (host takes diff snapshot), then reboots.
+#
+# Fleet knobs (all optional, legacy behaviour when absent):
+#   agent_think=<secs|real>  pause after each step: a fixed number of seconds
+#                            (legacy 4) or "real" = the recorded LLM latency of
+#                            the turn (/traj/<name>/<turn>.think, seconds),
+#                            falling back to 4 when the file is missing
+#   agent_think_scale=<f>    multiply the real think time (awk float)
+#   agent_think_cap=<secs>   clamp the real think time
+#   agent_exit=reboot|idle   after AGENT_DIFF_POINT: reboot (legacy) or sleep
+#                            forever so a fleet harness can end the cell itself
 export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin HOME=/root
 mount -t proc proc /proc 2>/dev/null
 mount -t sysfs sys /sys 2>/dev/null
@@ -11,7 +21,11 @@ mount -t tmpfs -o size=3g tmpfs /tmp 2>/dev/null
 WL=$(sed -n 's/.*agent_wl=\([^ ]*\).*/\1/p' /proc/cmdline); WL=${WL:-py}
 WARM=$(sed -n 's/.*agent_warm=\([^ ]*\).*/\1/p' /proc/cmdline)
 STEPS=$(sed -n 's/.*agent_steps=\([^ ]*\).*/\1/p' /proc/cmdline)
-echo "AGENT_BOOTED wl=$WL warm=$WARM"
+THINK=$(sed -n 's/.*agent_think=\([^ ]*\).*/\1/p' /proc/cmdline); THINK=${THINK:-4}
+THINK_SCALE=$(sed -n 's/.*agent_think_scale=\([^ ]*\).*/\1/p' /proc/cmdline); THINK_SCALE=${THINK_SCALE:-1}
+THINK_CAP=$(sed -n 's/.*agent_think_cap=\([^ ]*\).*/\1/p' /proc/cmdline); THINK_CAP=${THINK_CAP:-0}
+EXIT=$(sed -n 's/.*agent_exit=\([^ ]*\).*/\1/p' /proc/cmdline); EXIT=${EXIT:-reboot}
+echo "AGENT_BOOTED wl=$WL warm=$WARM think=$THINK"
 run_shell() {
 	(cd /usr && find . -type f | wc -l) > /tmp/nfiles
 	ls -lR /usr/lib > /tmp/lsout 2>/dev/null
@@ -37,6 +51,20 @@ case $1 in
 	traj-*) if [ -x /agent_traj.sh ]; then /agent_traj.sh "${1#traj-}" "$2"; else python3 /agent_traj.py "${1#traj-}" "$2"; fi ;;
 	*)     python3 /agent_wl2.py $1 $2 ;;
 esac
+}
+# think_secs <step> <seed> -> seconds to pause after this step
+think_secs() {
+	local f
+	case $THINK in
+		real)
+			f=/traj/${1#traj-}/$2.think
+			if [ -s "$f" ]; then
+				awk -v s="$THINK_SCALE" -v c="$THINK_CAP" '{t=$1*s; if (c>0 && t>c) t=c; printf "%.3f", t}' "$f"
+			else
+				echo 4
+			fi ;;
+		*) echo "$THINK" ;;
+	esac
 }
 sleep 2
 export PYTHONPYCACHEPREFIX=/tmp/pyc
@@ -70,19 +98,25 @@ if [ -n "$STEPS" ]; then
 		t0=$(date +%s.%N)
 		run_wl $st $sd
 		t1=$(date +%s.%N); sync
-		echo "AGENT_STEP_DONE $k $st seed=$sd secs=$(echo "$t1 $t0" | awk '{printf "%.2f",$1-$2}')"
-		sleep 4
+		# 0.1 ms resolution: a tail-latency harness reads these lines and a
+		# real agent turn is often tens of milliseconds.
+		echo "AGENT_STEP_DONE $k $st seed=$sd secs=$(echo "$t1 $t0" | awk '{printf "%.4f",$1-$2}')"
+		sleep "$(think_secs "$st" "$sd")"
 	done
 else
 	t0=$(date +%s.%N)
 	run_wl $WL 2
 	t1=$(date +%s.%N)
-	echo "AGENT_WL_SECS=$(echo "$t1 $t0" | awk '{printf "%.2f",$1-$2}')"
+	echo "AGENT_WL_SECS=$(echo "$t1 $t0" | awk '{printf "%.4f",$1-$2}')"
 fi
 grep -E "MemTotal|MemFree|AnonPages|^Cached|Shmem:" /proc/meminfo
 sync
 echo AGENT_DIFF_POINT
 sleep 6
 echo AGENT_EXIT
+if [ "$EXIT" = idle ]; then
+	# the harness ends the cell; a reboot here would replay the session
+	while :; do sleep 3600; done
+fi
 echo b > /proc/sysrq-trigger
 sleep 60
