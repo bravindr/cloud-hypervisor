@@ -13,6 +13,8 @@
 #   agent_think_cap=<secs>   clamp the real think time
 #   agent_exit=reboot|idle   after AGENT_DIFF_POINT: reboot (legacy) or sleep
 #                            forever so a fleet harness can end the cell itself
+#   agent_first_wait=<secs>  pause between AGENT_BASE_POINT and the first turn
+#                            (legacy 6; a fleet staggers its sessions with it)
 export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin HOME=/root
 mount -t proc proc /proc 2>/dev/null
 mount -t sysfs sys /sys 2>/dev/null
@@ -25,6 +27,7 @@ THINK=$(sed -n 's/.*agent_think=\([^ ]*\).*/\1/p' /proc/cmdline); THINK=${THINK:
 THINK_SCALE=$(sed -n 's/.*agent_think_scale=\([^ ]*\).*/\1/p' /proc/cmdline); THINK_SCALE=${THINK_SCALE:-1}
 THINK_CAP=$(sed -n 's/.*agent_think_cap=\([^ ]*\).*/\1/p' /proc/cmdline); THINK_CAP=${THINK_CAP:-0}
 EXIT=$(sed -n 's/.*agent_exit=\([^ ]*\).*/\1/p' /proc/cmdline); EXIT=${EXIT:-reboot}
+FIRST_WAIT=$(sed -n 's/.*agent_first_wait=\([^ ]*\).*/\1/p' /proc/cmdline); FIRST_WAIT=${FIRST_WAIT:-6}
 echo "AGENT_BOOTED wl=$WL warm=$WARM think=$THINK"
 run_shell() {
 	(cd /usr && find . -type f | wc -l) > /tmp/nfiles
@@ -71,7 +74,7 @@ export PYTHONPYCACHEPREFIX=/tmp/pyc
 if [ -n "$WARM" ]; then run_wl $WARM 1; echo "AGENT_WARM_DONE"; sleep 1; fi
 sync
 echo AGENT_BASE_POINT
-sleep 6
+sleep "$FIRST_WAIT"
 if [ -n "$STEPS" ]; then
 	k=0
 	# Expand compact ranges first: "traj-<name>:0-59" -> 60 tokens. A 60-turn
