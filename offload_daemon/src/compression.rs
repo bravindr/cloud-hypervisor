@@ -1320,8 +1320,13 @@ pub(crate) fn decompress_file(
         .max()
         .unwrap_or(0)
         + 1;
+    // A part a submitter never wrote to is dropped by the writer (no chunk
+    // references it), so an absent part file past part 0 is an empty one.
     let inputs: Vec<File> = (0..parts)
-        .map(|part| File::open(part_path(data_path, part)))
+        .map(|part| match File::open(part_path(data_path, part)) {
+            Err(e) if part != 0 && e.kind() == io::ErrorKind::NotFound => File::open("/dev/null"),
+            other => other,
+        })
         .collect::<io::Result<_>>()
         .map_err(Error::Read)?;
     let compressed_sizes: Vec<u64> = inputs
