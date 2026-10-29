@@ -2449,8 +2449,10 @@ slower first cell in each sweep (`cpu` 492 vs 331 ms, `dsa` w8 473 vs 214 ms).
 - Run the lifecycle with dynamic Huffman through the shared pipeline
   (section 7c.2q).
 - End to end with the resident daemon (full and diff) and the `UFFDIO_COPY`
-  restore in one run (sections 7c.2r, 7c.2s); chain restores through
-  `apply_diff` still write on the CPU.
+  restore in one run (sections 7c.2r, 7c.2s); chain restores still write
+  on the CPU, and `UFFDIO_COPY` refuses the 4 KiB runs of a diff, so a
+  diff chain on a hugetlb guest needs the ordered mapping writes after the
+  huge-page copies (or a per-page `UFFDIO_COPY` for the chain's pages).
 - Restore (section 7c.2r): `--workers 8` default; kernel clear offload on
   for hugetlb restores; `uffd_dma` should not stripe 2 MiB copies (set
   `stripe_min_bytes` above the folio size) when `dev_by_pfn` is off and
@@ -2459,8 +2461,12 @@ slower first cell in each sweep (`cpu` 492 vs 331 ms, `dsa` w8 473 vs 214 ms).
   mmap the compressed parts
   instead of `pread`; hugetlb destinations for 4 KiB guests or a shmem
   `mfill` hook in the kernel.
-- `apply_diff` decompresses a chain one diff at a time on one thread
-  (450-512 ms for 60 lz4 diffs, 217-257 ms on IAA; section 7c.2r).
+- ~~`apply_diff` decompresses a chain one diff at a time on one thread
+  (450-512 ms for 60 lz4 diffs, 217-257 ms on IAA; section 7c.2r)~~:
+  `apply_chain` decodes every diff in parallel and writes each page once
+  (section 7c.2v, −11..−24 % on a 23-diff chain); what remains of the
+  chain's cost is one `CodecWorker` per diff and page-granular writes: one
+  shared IAA pool for all diffs' chunks and run-coalesced writes.
 - Classify granularity below the 1 MiB chunk is not needed (§3), so the
   in-VMM 64 KiB batching stays out.
 - ~~Push `ch-async-ops` to a DTO fork~~: pushed to https://github.com/byrnedj/DTO branch
@@ -2468,6 +2474,54 @@ slower first cell in each sweep (`cpu` 492 vs 331 ms, `dsa` w8 473 vs 214 ms).
   named by `DTO_SRC_DIR` and pins that revision.
 - On-demand restore of compressed snapshots: decompress the faulting chunk
   into the memfd mapping with IAA and let CH `UFFDIO_CONTINUE` (§7c.2b).
+
+**DSA review items (section 7c.2v), in the daemon:**
+
+- Restore from the resident reference: the diff daemon's sparse per-slot
+  reference is the current guest image (DSA DUALCAST keeps it current), so
+  a fork of the latest state can copy its data extents with DSA (or
+  `UFFDIO_COPY` on hugetlb) and skip decompression and the chain.
+- Skip never-touched hugetlb chunks in full checkpoints: without
+  `SEEK_HOLE` every 2 MiB full checkpoint runs COMPVAL over all 4 GiB
+  (37 ms of device time, 8× the traffic of the data at density). The
+  resident daemon has its mapped-page bitmap and the dirty log; the
+  one-shot `snapshot` can take the gnr-sp1 `--vmm-pid --restored-from`
+  pagemap patch (`dsa-integration-pagemap`, uncommitted there).
+- Incremental full checkpoints: carry over the compressed bytes of the
+  chunks the dirty log did not touch since the last full (reflink or a
+  copy of ~190 MiB) and re-classify/compress only the dirty chunks.
+- Disk-block dedup (section 7c.2h) for the kept chunks of a full
+  checkpoint, not only for diffs: the growth is the task image's page
+  cache.
+- Compress diffs after resume: with `dirty_log=keep` only the DUALCAST into
+  the reference needs the paused image; the IAA compress (0.7-1.4 ms) and
+  the write can follow the resume, taking the pause to ~2 ms.
+- Harness: `ch-remote` spawn + HTTP is 0.9 ms of a 4 ms diff pause
+  (section 7c.2v); a persistent API client would show the VMM's own ~1 ms.
+
+**DSA review items, in the kernel:**
+
+- Route shmem huge-folio clears through `mm_offload_clear_folio`:
+  `shmem_get_folio_gfp` clears a new folio with a `clear_highpage()` loop
+  and `shmem_write_end` zeros partial folios with `folio_zero_segments`;
+  neither is hooked, so a 4 KiB guest with `shmem_enabled=always` (restore
+  144 → 101 ms from the knob alone, section 7c.2v) still zeros on the CPU.
+- `UFFDIO_COPY` offload for shmem: `mfill_atomic` refuses `VM_SHARED` for
+  the batched provider path and `shmem_mfill_atomic_pte` copies one 4 KiB
+  page at a time; with shmem large folios the hugetlb `copy_folio_from_user`
+  batch path would apply, giving 4 KiB memfd guests the DSA restore path
+  (the 4 KiB restore is shmem-write bound: `shmem_write_end` 20 %,
+  `copy_folio_from_iter` 13 % of the daemon's profile).
+- `SEEK_HOLE`/`SEEK_DATA` on hugetlbfs (and `cachestat`, `EOPNOTSUPP`
+  there) would make the pagemap residency unnecessary.
+- The daemon's own copies into the page cache (190 MiB of output per full
+  checkpoint into tmpfs, `pread` of the input at 13-14 % of restore CPU)
+  are what the io_uring DMA series (`multichan-stripe`) moves to DSA; it is
+  on a different kernel branch from `mm_offload_v1`.
+- The VMM side of a diff checkpoint (~1 ms: TLB-flush IPIs and re-protecting
+  the dirty SPTEs in the TDP MMU, `do_host_cpuid`, state serialisation) is
+  the floor under a 4 ms pause once the daemon's 2 ms are overlapped; KVM's
+  dirty bitmap is per 4 KiB page even on hugetlb slots.
 
 ## 7. Phases and validation
 
