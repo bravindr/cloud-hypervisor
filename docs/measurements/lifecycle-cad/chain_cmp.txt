@@ -1,0 +1,51 @@
+=== 2m, after every turn: 7 sessions, 170 checkpointed turns ===
+=== 4k, after every turn: 7 sessions, 170 checkpointed turns ===
+=== per session, diff-dsa-res: checkpoints / sum pause ms / sum MiB / final chain restore ms ===
+=== 4k diff-dsa-res chain tip /mnt/chsnap/lifecycle-cad/regex-chess_30b-4k/diff-dsa-res/ckpt-000024 13:26:21
+ordered1: restore rc=0 297 ms; Applied 24 diffs to slot 0: 812 pages in 1.7 ms;Applied 24 diffs to slot 1: 66443 pages in 152.7 ms;
+onepass1: restore rc=0 259 ms; Applied 24 diffs to slot 0: 812 pages (48 written once) in 5.4 ms;Applied 24 diffs to slot 1: 66443 pages (23252 written once) in 108.8 ms;
+ordered2: restore rc=0 278 ms; Applied 24 diffs to slot 0: 812 pages in 1.8 ms;Applied 24 diffs to slot 1: 66443 pages in 135.7 ms;
+onepass2: restore rc=0 235 ms; Applied 24 diffs to slot 0: 812 pages (48 written once) in 5.7 ms;Applied 24 diffs to slot 1: 66443 pages (23252 written once) in 91.4 ms;
+dumps: ['onepass1', 'onepass2', 'ordered1', 'ordered2'] files: ['memory-2', 'memory-3']
+memory-2: ordered1 vs onepass1: 786432 pages, differ=1 ['0x47001000']
+memory-2: ordered1 vs onepass2: 786432 pages, differ=1 ['0x47001000']
+memory-2: ordered1 vs ordered2: 786432 pages, differ=1 ['0x47001000']
+memory-3: ordered1 vs onepass1: 262144 pages, differ=0 []
+memory-3: ordered1 vs onepass2: 262144 pages, differ=0 []
+memory-3: ordered1 vs ordered2: 262144 pages, differ=0 []
+=== 4k diff-cpu-res-lz4 chain tip /mnt/chsnap/lifecycle-cad/regex-chess_30b-4k/diff-cpu-res-lz4/ckpt-000024 13:26:36
+ordered1: restore rc=0 503 ms; Applied 24 diffs to slot 0: 812 pages in 3.6 ms;Applied 24 diffs to slot 1: 66443 pages in 293.5 ms;
+onepass1: restore rc=0 394 ms; Applied 24 diffs to slot 0: 812 pages (48 written once) in 8.2 ms;Applied 24 diffs to slot 1: 66443 pages (23252 written once) in 187.0 ms;
+ordered2: restore rc=0 474 ms; Applied 24 diffs to slot 0: 812 pages in 3.6 ms;Applied 24 diffs to slot 1: 66443 pages in 281.1 ms;
+onepass2: restore rc=0 378 ms; Applied 24 diffs to slot 0: 812 pages (48 written once) in 4.4 ms;Applied 24 diffs to slot 1: 66443 pages (23252 written once) in 179.4 ms;
+dumps: ['onepass1', 'onepass2', 'ordered1', 'ordered2'] files: ['memory-2', 'memory-3']
+memory-2: ordered1 vs onepass1: 786432 pages, differ=1 ['0x47001000']
+memory-2: ordered1 vs onepass2: 786432 pages, differ=1 ['0x47001000']
+memory-2: ordered1 vs ordered2: 786432 pages, differ=1 ['0x47001000']
+memory-3: ordered1 vs onepass1: 262144 pages, differ=0 []
+memory-3: ordered1 vs onepass2: 262144 pages, differ=0 []
+memory-3: ordered1 vs ordered2: 262144 pages, differ=0 []
+=== 2m diff-dsa-res chain tip /mnt/chsnap/lifecycle-cad/regex-chess_30b-2m/diff-dsa-res/ckpt-000024 13:28:49
+ordered1: restore rc=0 225 ms; Applied 24 diffs to slot 0: 794 pages in 2.4 ms;Applied 24 diffs to slot 1: 66019 pages in 132.4 ms;
+onepass1: restore rc=0 181 ms; Applied 24 diffs to slot 0: 794 pages (40 written once) in 6.5 ms;Applied 24 diffs to slot 1: 66019 pages (23400 written once) in 84.6 ms;
+ordered2: restore rc=0 224 ms; Applied 24 diffs to slot 0: 794 pages in 2.5 ms;Applied 24 diffs to slot 1: 66019 pages in 125.4 ms;
+onepass2: restore rc=0 191 ms; Applied 24 diffs to slot 0: 794 pages (40 written once) in 3.1 ms;Applied 24 diffs to slot 1: 66019 pages (23400 written once) in 90.3 ms;
+dumps: ['onepass1', 'onepass2', 'ordered1', 'ordered2'] files: ['memory-2', 'memory-3']
+memory-2: ordered1 vs onepass1: 786432 pages, differ=1 ['0x1fe01000']
+memory-2: ordered1 vs onepass2: 786432 pages, differ=1 ['0x1fe01000']
+memory-2: ordered1 vs ordered2: 786432 pages, differ=1 ['0x1fe01000']
+memory-3: ordered1 vs onepass1: 262144 pages, differ=0 []
+memory-3: ordered1 vs onepass2: 262144 pages, differ=0 []
+memory-3: ordered1 vs ordered2: 262144 pages, differ=0 []
+=== 2m diff-cpu-res-lz4 chain tip /mnt/chsnap/lifecycle-cad/regex-chess_30b-2m/diff-cpu-res-lz4/ckpt-000024 13:29:02
+ordered1: restore rc=0 416 ms; Applied 24 diffs to slot 0: 794 pages in 5.2 ms;Applied 24 diffs to slot 1: 66019 pages in 268.0 ms;
+onepass1: restore rc=0 307 ms; Applied 24 diffs to slot 0: 794 pages (40 written once) in 16.2 ms;Applied 24 diffs to slot 1: 66019 pages (23400 written once) in 157.3 ms;
+ordered2: restore rc=0 410 ms; Applied 24 diffs to slot 0: 794 pages in 4.1 ms;Applied 24 diffs to slot 1: 66019 pages in 266.1 ms;
+onepass2: restore rc=0 302 ms; Applied 24 diffs to slot 0: 794 pages (40 written once) in 15.5 ms;Applied 24 diffs to slot 1: 66019 pages (23400 written once) in 150.2 ms;
+dumps: ['onepass1', 'onepass2', 'ordered1', 'ordered2'] files: ['memory-2', 'memory-3']
+memory-2: ordered1 vs onepass1: 786432 pages, differ=1 ['0x1fe01000']
+memory-2: ordered1 vs onepass2: 786432 pages, differ=1 ['0x1fe01000']
+memory-2: ordered1 vs ordered2: 786432 pages, differ=1 ['0x1fe01000']
+memory-3: ordered1 vs onepass1: 262144 pages, differ=0 []
+memory-3: ordered1 vs onepass2: 262144 pages, differ=0 []
+memory-3: ordered1 vs ordered2: 262144 pages, differ=0 []

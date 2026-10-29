@@ -1,0 +1,29 @@
+checkpoints 708 (0 failed), restores 28 (0 guest not ok)
+
+=== 2m, after every turn: 7 sessions, 170 checkpointed turns ===
+variant               n pause ms    p95  cpu ms    p95 MiB/ckpt dirty pg  chg pg cmp ms gath ms comp ms | per session: pause s  cpu s     MiB | restore ms chain  ok
+diff-dsa-res        170      4.0     17     2.2     14     0.62     1450     964    0.2     0.5     0.7 |                 1.04   0.66     364 |        176    23  7/7
+diff-cpu-res-lz4    170      9.0     69     7.0     66     0.62     1450     964    0.3     1.1     4.8 |                 3.46   3.05     385 |        291    23  7/7
+
+=== 4k, after every turn: 7 sessions, 170 checkpointed turns ===
+variant               n pause ms    p95  cpu ms    p95 MiB/ckpt dirty pg  chg pg cmp ms gath ms comp ms | per session: pause s  cpu s     MiB | restore ms chain  ok
+diff-dsa-res        170      4.0     17     1.8     14     0.61     1452     959    0.2     0.5     0.7 |                 0.99   0.59     362 |        227    23  7/7
+diff-cpu-res-lz4    170      9.0     70     6.5     68     0.60     1452     959    0.3     1.1     4.7 |                 3.40   3.00     383 |        328    23  7/7
+
+=== per session, diff-dsa-res: checkpoints / sum pause ms / sum MiB / final chain restore ms ===
+-- 2m: every=1
+circuit-fibsqrt_30b           24 /    142 /  43.6 /  155
+circuit-fibsqrt_7b            10 /     70 /  32.3 /  139
+path-tracing_30b              23 /    188 /  84.3 /  206
+polyglot-rust-c_30b           16 /    165 /  86.9 /  195
+regex-chess_30b               24 /    171 /  70.9 /  176
+winning-avg-corewars_30b      60 /    246 /  37.9 /  180
+write-compressor_30b          13 /     54 /   8.4 /  119
+-- 4k: every=1
+circuit-fibsqrt_30b           24 /    128 /  43.9 /  209
+circuit-fibsqrt_7b            10 /     66 /  32.1 /  187
+path-tracing_30b              23 /    187 /  84.3 /  293
+polyglot-rust-c_30b           16 /    163 /  86.7 /  252
+regex-chess_30b               24 /    154 /  70.1 /  233
+winning-avg-corewars_30b      60 /    240 /  36.6 /  227
+write-compressor_30b          13 /     54 /   8.4 /  173

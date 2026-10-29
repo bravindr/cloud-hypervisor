@@ -1,0 +1,16 @@
+checkpoints 354 (0 failed), restores 14 (0 guest not ok)
+
+=== 4k, after every turn: 7 sessions, 170 checkpointed turns ===
+variant               n pause ms    p95  cpu ms    p95 MiB/ckpt dirty pg  chg pg cmp ms gath ms comp ms | per session: pause s  cpu s     MiB | restore ms chain  ok
+full-res            170     50.0     62    69.7     86   189.45                                    36.7 |                 8.79  12.20    1448 |        101     0  7/7
+diff-dsa-res        170      4.0     17     1.9     15     0.61     1448     958    0.2     0.5     0.7 |                 1.02   0.60     363 |        195    23  7/7
+
+=== per session, diff-dsa-res: checkpoints / sum pause ms / sum MiB / final chain restore ms ===
+-- 4k: every=1
+circuit-fibsqrt_30b           24 /    128 /  43.6 /  167
+circuit-fibsqrt_7b            10 /     75 /  32.1 /  146
+path-tracing_30b              23 /    187 /  84.3 /  280
+polyglot-rust-c_30b           16 /    170 /  86.6 /  245
+regex-chess_30b               24 /    160 /  71.2 /  214
+winning-avg-corewars_30b      60 /    246 /  36.7 /  195
+write-compressor_30b          13 /     52 /   8.6 /  118

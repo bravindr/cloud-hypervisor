@@ -2104,6 +2104,302 @@ back without two things the daemon depends on: the IAA user queues'
 status 319) and world-readable device nodes. `~/chlogs/iax_user_wqs.sh`
 repairs both; the full configuration is `~/accel-qual1-20261013b.conf`.
 
+### 7c.2v Checkpoint cadence: is a checkpoint per tool step realistic, and what is left for DSA
+
+The lifecycle runs so far checkpoint after every agent turn: 177
+checkpoints for the seven recorded sessions. This section asks what that
+cadence corresponds to in a deployed agent sandbox, measures the cost of
+checkpointing every k-th turn against the agent's own timeline, and
+reviews what the accelerators still have to offer on that cadence.
+Harness: `benchmark/agent/lifecycle_cadence.sh` (+ `run_all_cadence.sh`,
+`analyze_cadence.py`, `analyze_realism.py`), derived from
+`lifecycle_resident.sh`: four resident daemons take every checkpoint from
+the same paused image in rotating order, a variant's codec comes from its
+name, `EVERY=k` checkpoints after every k-th turn (always after the last),
+`EVERY=0` only after the last turn, and the guest pauses `AGENT_THINK=2` s
+after each turn (the checkpoint is taken inside that pause). Variants:
+`full-res` (DSA classify + IAA, keeps only the last), `diff-dsa-res`
+(dirty-log diff, batched DSA compare/gather + IAA), `full-res-lz4` and
+`diff-cpu-res-lz4` (CPU only). Performance governor, daemon on cores 4-5,
+`uffd_dma` and `dcbm` providers on, restore `--workers 32` on the plain
+path (no `--uffd-copy`, which refuses the 4 KiB runs of a diff). Runs
+2026-10-29 in `~/chlogs/lifecycle-cad` (summary `summary-20261029_1151.txt`,
+`realism-20261029_1153.txt`): 2832 checkpoints, 0 failed; 280 chain
+restores, every guest resumed.
+
+**The agent's own timeline.** The fixtures carry each turn's LLM latency
+(local vLLM, Qwen3-Coder-30B-A3B at ~30 tok/s) and AgentSysPerf's spans the
+tool-call time in the agent's Harbor container:
+
+| session | turns | LLM s / turn (median) | tool call s (Harbor mean) | session s |
+|---|---|---|---|---|
+| circuit-fibsqrt 7B | 10 | 4.2 | 0.27 | 71 |
+| circuit-fibsqrt 30B | 24 | 6.3 | – | 1139 (six 3-min turns at the token cap) |
+| write-compressor | 13 | 6.1 | 0.21 | 88 |
+| regex-chess | 24 | 10.4 | 0.27 | 254 |
+| path-tracing | 23 | 2.1 | 0.35 | 112 |
+| polyglot-rust-c | 16 | 5.7 | 0.26 | 133 |
+| winning-avg-corewars | 60 | 1.5 | 0.22 | 117 |
+
+170 turns = 1914 s of agent time (11.3 s per turn); the replayed guest
+step is 47 ms on average. A frontier agent spends 8-11 min per
+Terminal-Bench 2 task (vals.ai Terminal-Bench 2.0 leaderboard, Terminus 2
+harness: GPT 5.5 7m43s, Claude Opus 4.8 7m52s, Claude Opus 4.7 11m01s per
+task, 240-450k tokens), and the Terminal-Bench paper reports most trials
+under 20 minutes with fewer than 25 model calls, extremes of 2 hours and
+hundreds of calls. The "frontier timeline" below is 7 tasks × 11m01s.
+
+**Who checkpoints per step.** The 2026 sandbox literature treats a
+checkpoint per step as the target: DeltaBox (arXiv 2605.22781, Firecracker
+microVM sandbox) checkpoints at every step for test-time tree search and RL
+rollouts, hides ≈10.8 ms of checkpoint work under inference and rolls back
+in ≈1.9 ms (process + file state inside the VM, CRIU + overlayfs); it quotes
+CubeCoW's VM-level snapshot per step at 49.8 ms (p95 54.1) and 63.9 ms to
+create from it. Crab (arXiv 2604.28138) checkpoints at turn boundaries with
+ZFS + CRIU, skips the turns that change no persistent state (on
+Terminal-Bench 5-25 % of turns need a filesystem checkpoint, 5-8 % a
+process checkpoint), p50/p95/p99 0.1/0.7/1.0 s, 1.9 % end-to-end
+overhead, and uses the checkpoints for RL rollout branching (40-64 % fewer
+rollout tokens), rollback and speculative execution. E2B and Daytona expose
+pause/resume and fork of Firecracker memory snapshots to agents. So the
+cadence of this harness is the one these systems are built for; the
+difference is that ours covers the whole 4 GiB guest memory, not a
+process tree.
+
+**Cadence ladder** (7 sessions; per checkpoint = median over the
+checkpointed turns, pause = send-migration wall with the VM paused, CPU =
+daemon thread time; per 7 sessions = sums; chain restore = median of the
+final restore, chain = diffs applied):
+
+| 4 KiB | ckpts | dirty pages / ckpt | DSA+IAA diff pause / CPU ms | per 7 sessions pause s / core-s / MiB | chain restore DSA+IAA / lz4 ms (chain) | CPU-only diff pause / CPU ms | full DSA+IAA pause / CPU | full lz4 pause / CPU |
+|---|---|---|---|---|---|---|---|---|
+| every turn | 170 | 1426 | 4 / 1.9 (p95 17 / 14) | 1.01 / 0.61 / 361 | 260 / 434 (23) | 9 / 6.7 | 52 / 72 | 262 / 502 |
+| every 2 | 86 | 1627 | 4 / 2.0 | 0.67 / 0.47 / 309 | 218 / 334 (12) | 10 / 7.5 | 55 / 74 | 262 / 501 |
+| every 5 | 36 | 2411 | 5 / 3.1 | 0.48 / 0.36 / 269 | 205 / 303 (5) | 16.5 / 14.3 | 57.5 / 78.6 | 284.5 / 543.8 |
+| every 10 | 20 | 6132 | 13 / 6.9 | 0.36 / 0.30 / 207 | 195 / 289 (3) | 48 / 46 | 61 / 82.7 | 322 / 620.5 |
+| last only | 7 | 16084 | 36 / 28.7 | 0.29 / 0.25 / 176 | 183 / 262 (1) | 170 / 159.8 | 62 / 84.8 | 322 / 618.5 |
+| full restore (no chain) | | | | | 163-174 / 214-222 | | | |
+
+| 2 MiB | ckpts | dirty pages / ckpt | DSA+IAA diff pause / CPU ms | per 7 sessions pause s / core-s / MiB | chain restore DSA+IAA / lz4 ms (chain) | CPU-only diff pause / CPU ms | full DSA+IAA pause / CPU | full lz4 pause / CPU |
+|---|---|---|---|---|---|---|---|---|
+| every turn | 170 | 1442 | 4 / 2.3 (p95 18 / 16) | 1.05 / 0.68 / 362 | 198 / 385 (23) | 10 / 7.3 | 56 / 86.6 | 372 / 721.8 |
+| every 2 | 86 | 1632 | 5 / 2.5 | 0.68 / 0.49 / 305 | 155 / 291 (12) | 10 / 8.0 | 57 / 87.8 | 370 / 718.4 |
+| every 5 | 36 | 2416 | 6 / 3.5 | 0.46 / 0.38 / 268 | 153 / 230 (5) | 17 / 14.7 | 58.5 / 91.6 | 392 / 762.8 |
+| every 10 | 20 | 2814 | 6 / 3.8 | 0.37 / 0.31 / 226 | 141 / 227 (3) | 19 / 16.8 | 59 / 92.1 | 425.5 / 827.8 |
+| last only | 7 | 15794 | 37 / 28.4 | 0.28 / 0.24 / 173 | 143 / 213 (1) | 168 / 158.0 | 61 / 95.9 | 424 / 826.8 |
+| full restore (no chain) | | | | | 102-114 / 167-179 | | | |
+
+What the ladder says:
+
+- **The dirty set grows sublinearly with the cadence.** One turn dirties
+  1.4k pages (5.6 MiB, 0.6 MiB stored), two turns 1.6k, five 2.4k, ten
+  2.8-6.1k, a whole session 16k. About 1.3k pages are the guest kernel's
+  always-dirty working set (timers, journal, slab), so a diff per turn is a
+  fixed cost and the per-session checkpoint cost falls almost in proportion
+  to k: 1.0 s of pause and 0.6 core-s for 170 diffs, 0.3 s and 0.25 core-s
+  for 7.
+- **A diff per turn is 4 ms of pause and 2 ms of CPU with DSA + IAA**, of
+  which the daemon's own work is 1.9-2.7 ms (compare 0.2, gather 0.5,
+  IAA 0.7-1.4 ms); ~0.9 ms is `ch-remote` spawn + HTTP in the harness and
+  the rest is the VMM's send-migration. CPU only: 9-10 ms and 6.7-7.3 ms
+  (lz4 4.7-5 ms of it). Full checkpoints hold at 52-62 ms / 72-96 ms CPU
+  (DSA + IAA) against 262-425 ms / 502-828 ms (lz4) at every cadence; the
+  2 MiB lz4 full is the worst because the CPU scans all 4 GiB.
+- **The chain is the restore cost.** 23 diffs restore in 260 ms (4 KiB) /
+  198 ms (2 MiB) against 163 / 113 ms for a full checkpoint, 434 / 385 ms
+  with lz4: `apply_diff` decompresses each diff with one job and writes it
+  in order, so a page dirtied every turn is written 23 times and the IAA
+  runs at depth 1. Chains of 12 / 5 / 3 / 1 cost 218 / 205 / 195 / 183 ms
+  (4 KiB). This is the one cost that grows with the cadence; the one-pass
+  apply below removes it.
+- **Against the agent's own time** the pause is invisible: per 7 sessions a
+  DSA + IAA diff per turn is 1.0 s = 0.05 % of the recorded 1914 s (0.02 %
+  of the frontier 4627 s), a DSA + IAA full per turn 9.4-9.7 s = 0.5 %
+  (0.2 %), lz4 fulls 49-69 s = 2.6-3.6 % (1.1-1.5 %), lz4 diffs 3.4-3.5 s =
+  0.18 % (0.08 %). The max single pause was 55-61 ms (DSA + IAA diff),
+  317-325 ms (lz4 diff), 437-546 ms (lz4 full). Daemon CPU per 7 sessions:
+  12.9-15.2 core-s (full, DSA + IAA) vs 94-134 (lz4); 0.6-0.7 (diff) vs
+  3.0-3.1.
+
+**Answer.** A checkpoint per tool step is what agent sandboxes are
+converging on (branching, rollback, speculation, RL rollouts), and at diff
+granularity it is cheap on this stack: 4 ms per turn, hidden under
+seconds of inference, 0.6 core-s per 170 turns. The 177 *full* checkpoints
+of the earlier ladders are the stress case (190 MiB written per turn,
+52-61 ms); a deployed policy is a diff per turn with a full checkpoint
+every N turns to bound the chain (N = 10 gives a 195 ms chain restore vs
+163 ms full at 4 KiB; with the one-pass apply the chain no longer matters),
+or a full every turn only where every turn must be an independent fork
+point. What the accelerators change on that policy is not the pause the
+agent sees but the daemon's CPU (3.5× on diffs, 7-9× on fulls) and the
+restore / fork latency.
+
+**Where a per-turn checkpoint's time goes** (`run_perf_cell.sh`: regex-chess,
+24 turns, `full-res` + `diff-dsa-res` every turn, `perf record -e cpu-clock
+-F 4999 -C 0-5`, i.e. the VMM's and the daemon's cores; runs
+`lifecycle-cad-perf-{4k,2m}`). Of a 4 ms DSA + IAA diff: the daemon's own
+phases are 1.9-2.7 ms (compare 0.2, gather 0.5-0.8, IAA 0.7-1.4 ms, from
+its `total_ms`); `ch-remote` spawn + HTTP is 0.9 ms (15 `info` round trips:
+0.86-1.73 ms); the VMM's `migration-worke` thread is ~1 ms per checkpoint
+(277 samples over 50 checkpoints at 4 KiB) and its profile is the KVM dirty
+log: `smp_call_function_many_cond` (TLB-flush IPIs), `tdp_mmu_set_spte_atomic`
+/ `tdp_iter_next` (re-write-protecting the dirty SPTEs), `do_host_cpuid`
+and the VM-state serialisation; the `vmm` thread's samples are almost all
+the memfd teardown of the restored VMMs (`find_lock_entries`,
+`filemap_remove_folio`, `zap_present_ptes`), not checkpoints. The
+daemon's own profile over the whole session is a shmem write path:
+`shmem_write_end` 20 %, `copy_folio_from_iter_atomic` 13 %,
+`shmem_get_folio_gfp` 3 % (+ spinlock release 16 %) — that is the full
+checkpoints' 190 MiB of output into the tmpfs snapshot root and the
+restore's `pwrite` into the guest memfd, both CPU copies into shmem
+(items 7, 8 and 10 of the review). The 2 MiB cell is the same picture:
+`migration-worke` 286 samples over 50 checkpoints (~1.1 ms each, same
+symbols), the daemon's `shmem_write_end` 18 % + `copy_folio_from_iter`
+9 % (its output into tmpfs; the restore itself goes through mapping writes
+into hugetlb, where dcbm's `folio_clear_dma` shows at 1.6 %).
+
+**Shmem transparent huge pages for 4 KiB guests** (`run_thp_cell.sh`: the
+same every-turn DSA + IAA variants on 4 KiB memfd guests with the host's
+`transparent_hugepage/shmem_enabled` at `never` then `always`, restore
+`--workers 8`; runs `lifecycle-cad-thp-{never,always}`; the knob is put
+back afterwards). The guest's memfd then gets 2 MiB folios (the host showed
+620 MiB of `ShmemHugePages` with a guest up); 7 sessions, 170 turns, 354
+checkpoints and 14 restores per half, none failed:
+
+| 4 KiB guest, shmem huge pages | full ckpt pause / CPU ms | diff pause / CPU ms | full restore ms | 23-diff chain restore ms |
+|---|---|---|---|---|
+| never | 52 / 72.0 | 4 / 1.8 | 144 | 240 |
+| always | 50 / 69.7 | 4 / 1.9 | 101 | 195 |
+
+Checkpoints are unchanged (the classifier reads through its own mapping
+either way); the restore drops 30 % and the chain restore 19 % because
+the daemon's `pwrite` now fills 2 MiB folios instead of faulting and
+allocating 512 pages per chunk. The clears of those folios are still on
+the CPU (`clear_highpage` loop in `shmem_get_folio_gfp`, item 7), so this
+is the floor of what the knob gives, not of what the kernel provider could.
+(The first pass lost winning-avg-corewars to a daemon socket path over
+`SUN_LEN` under the long run directory; the harness now keeps its sockets
+in a short temporary directory and the session was rerun on both halves.)
+
+**Chain restore in one pass** (`diff::apply_chain`, daemon built into
+`target-iaa2`; `run_chain_cell.sh` = the two diff variants every turn, 7
+sessions, both page sizes, with that daemon; the ladder's every-turn cells
+are the control). The restore used to decompress each diff with one job
+and write it in order; now every diff of the chain is decoded on its own
+thread (up to `workers_per_slot`), then the pages are written newest first
+and each page once (a bitmap over the slot), so the pages every turn
+dirties are written once instead of once per diff; a chain with dedup
+records falls back to the ordered apply. Final chain restores (median over
+the 7 sessions, chain of 23 diffs):
+
+| chain restore | ordered apply (ladder) | one-pass apply |
+|---|---|---|
+| 4 KiB, DSA + IAA diffs | 260 ms | 230 ms (−12 %) |
+| 4 KiB, lz4 diffs | 434 ms | 353 ms (−19 %) |
+| 2 MiB, DSA + IAA diffs | 198 ms | 176 ms (−11 %) |
+| 2 MiB, lz4 diffs | 385 ms | 291 ms (−24 %) |
+| full checkpoint restore, same cells | 163 / 113 ms | |
+
+The apply itself (daemon log): regex-chess, 24 diffs, 2 MiB: 66.6k pages
+in the chain, 22.9k written once, 77 ms with IAA / 168 ms with lz4;
+winning-avg-corewars, 60 diffs: 55.3k pages, 2.9k written once, 77 /
+138 ms — so with the writes down 3-19× the remaining ~60-80 ms over a
+full restore is per-diff decode setup (a `CodecWorker` per diff; IAA pool
+setup ~1 ms each) and page-granular scatter. The next step is one shared
+IAA pool for all diffs' chunks and run-coalesced writes; the checkpoints
+themselves were unchanged by the new binary (4 / 9 ms diffs, 708
+checkpoints, 0 failed).
+
+Correctness (`~/chlogs/cmp_chain.sh`, runs `cmp_chain_{4k,2m}_*`): the
+regex-chess chain tips (24 diffs, both page sizes, both codecs) were
+restored twice with the ordered apply and twice with the one-pass apply
+into paused VMMs, each restored memory raw-dumped and compared page by
+page. Slot 1 (1 GiB): identical in every pair. Slot 0 (3 GiB): one page
+differs (`0x47001000` at 4 KiB, `0x1fe01000` at 2 MiB) between one-pass and
+ordered, and the same page differs between the two ordered restores, so it
+is the page a restore rewrites itself (the known one of §7c.2f), not the
+apply. Same tips, apply phase only (slot 0, 66k chain pages, 23k written
+once): 4 KiB IAA 136-153 ms ordered → 91-109 one-pass, lz4 281-294 → 179-187;
+2 MiB IAA 125-132 → 85-90, lz4 266-268 → 150-157; whole restore 278-297 →
+235-259 ms (4 KiB IAA), 474-503 → 378-394 (4 KiB lz4), 224-225 → 181-191
+(2 MiB IAA), 410-416 → 302-307 (2 MiB lz4).
+
+**What is left for DSA (review).**
+
+*User space, offload daemon.*
+
+1. **Chain restore in one pass** (done above, `diff::apply_chain`):
+   parallel decompress of all diffs on the shared IAA pool, newest-first
+   scatter, each page written once: −11..−24 % on a 23-diff chain restore;
+   the rest of the chain's cost is per-diff decode setup and page-granular
+   writes (one shared IAA pool for all diffs and run-coalesced writes
+   next).
+2. **Restore from the resident reference.** The diff daemon already keeps
+   the current guest image as a sparse per-slot reference (updated by DSA
+   DUALCAST at every diff); a restore of the *latest* state could copy its
+   data extents with DSA (or `UFFDIO_COPY` on hugetlb) and skip
+   decompression and the chain entirely. Fork-at-latest would cost the raw
+   copy only (~450 MiB; 4 KiB shmem write-bound ~100 ms, 2 MiB via uffd_dma
+   ~50-80 ms).
+3. **Skip never-touched hugetlb chunks in full checkpoints.** A 2 MiB guest
+   has no `SEEK_HOLE`, so every full checkpoint runs DSA COMPVAL over all
+   4 GiB (37 ms of device time, hidden behind IAA on one VM but 8× the
+   device traffic at density). The gnr-sp1 `dsa-integration-pagemap`
+   patch (`snapshot --vmm-pid --restored-from`: `/proc/<pid>/pagemap`
+   residency cross-checked with `st_blocks`) cut the save read from 4 GiB
+   to ~480 MiB there; the resident daemon can do the same from its own
+   mapped-page bitmap plus the dirty log, and needs no pagemap at all.
+4. **Incremental full checkpoints.** The resident daemon knows which chunks
+   the dirty log touched since the last full; unchanged chunks' compressed
+   bytes can be carried over (reflink or copy of ~190 MiB) instead of
+   re-classified and re-compressed, making a "full" cost a diff plus a
+   file copy. Needs chunk-addressable output (one record per chunk already
+   exists in the manifest).
+5. **Dedup for fulls, not only diffs.** Growth is page cache of the task
+   image's toolchain (60 % of fibsqrt's diff pages matched a disk block);
+   the DSA CRC index + COMPARE path of §7c.2h applies unchanged to the
+   kept chunks of a full checkpoint.
+6. **Diff compress on the daemon's own time.** With `dirty_log=keep` the
+   VMM could resume as soon as the dirty set is captured (DUALCAST into the
+   reference is the only step that must see the paused image); the IAA
+   compress (0.7-1.4 ms) and the write would then run after resume, taking
+   the pause to ~2 ms.
+
+*Kernel.*
+
+7. **shmem huge folio clears through `mm_offload_clear_folio`.** A 4 KiB
+   guest's memfd gets 2 MiB folios with
+   `transparent_hugepage/shmem_enabled=always`, but `mm/shmem.c` clears a
+   new folio with a `clear_highpage()` loop per page (line 2562) and
+   `shmem_write_end` zeros the unwritten ends with `folio_zero_segments`
+   (line 3276); neither is hooked, so the guest's first touch and the
+   restore's partial chunks still zero on the CPU. One hook (same as
+   `folio_zero_user`) routes them to dcbm. The knob alone already takes
+   the 4 KiB restore 144 → 101 ms and a 23-diff chain 240 → 195 ms; the
+   provider would take the clears off the CPU as it does for hugetlb
+   (264 → 95 ms populate in §7c.2b).
+8. **UFFDIO_COPY offload for shmem.** `mfill_atomic` refuses `VM_SHARED`
+   for the batched provider path and `shmem_mfill_atomic_pte` copies one
+   4 KiB page at a time, so 4 KiB memfd guests have no DSA restore path
+   (the 4 KiB restore is shmem-write bound: `shmem_write_end` 23 %,
+   `copy_folio_from_iter` 17 %). With shmem large folios the same
+   `copy_folio_from_user` batch path as hugetlb would apply.
+9. **`SEEK_HOLE`/`SEEK_DATA` on hugetlbfs** would make item 3 unnecessary
+   (and `cachestat` is `EOPNOTSUPP` there too).
+10. **Output and input copies through the io_uring DMA path.** The daemon
+    writes ~190 MiB per full checkpoint and reads it back on restore
+    through the page cache (`pread` of the input is 13-14 % of restore
+    CPU); the `multichan-stripe` io_uring series moves those copies to
+    DSA (reads 10 → 130 GB/s, writes 4.4 → 30 GB/s per core in its own
+    measurements) but is on a different kernel branch from `mm_offload_v1`.
+11. **Dirty-log cost at 2 MiB.** KVM's dirty bitmap is per 4 KiB page even
+    on hugetlb slots; the VMM-side share of a diff checkpoint is the part
+    the perf split attributes to `cloud-hypervisor` below.
+
+Where DSA does not pay, confirmed again: 4 KiB classification (SEEK_DATA
+already drops 90 %), per-page `UFFDIO_COPY` (round-trip bound), and
+anything that reads cold flat-node memory.
+
 ### 7c.3 IOMMU first touch: measured, and the fix
 
 `dto-async-test` (fresh process, 2 GiB memfd filled by another mapping, then
