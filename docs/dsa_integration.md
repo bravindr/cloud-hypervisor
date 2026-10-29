@@ -2471,7 +2471,14 @@ slower first cell in each sweep (`cpu` 492 vs 331 ms, `dsa` w8 473 vs 214 ms).
   in-VMM 64 KiB batching stays out.
 - ~~Push `ch-async-ops` to a DTO fork~~: pushed to https://github.com/byrnedj/DTO branch
   `ch-async-ops` (53d3732); `build.rs` builds `libdto_explicit` from a checkout
-  named by `DTO_SRC_DIR` and pins that revision.
+  named by `DTO_SRC_DIR` and pins that revision. **Superseded: intel/DTO v1.2 (tag v1.2, 7eb15200) carries the whole
+  API (explicit async submits, batches, libdto_explicit, raw CRC32C, the
+  semicolon DTO_WQ_LIST); the daemon is built against it since the DTO v1.2
+  commit, with the new flags word (DTO_SUBMIT_CC, DTO_SUBMIT_BOF) passed on
+  every submit because block-on-fault is no longer implied. DTO_SRC_DIR must
+  name a v1.2 checkout (qual1: ~/dto-v1.2, a worktree of ~/dto-ch-async-ops);
+  the ~/chlogs build scripts still point at the fork. Verified on the same
+  sessions: 0 fallbacks, CRC verify and batched diffs unchanged.**
 - On-demand restore of compressed snapshots: decompress the faulting chunk
   into the memfd mapping with IAA and let CH `UFFDIO_CONTINUE` (§7c.2b).
 
