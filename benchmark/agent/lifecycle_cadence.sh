@@ -76,7 +76,7 @@ for v in "${VARIANTS[@]}"; do
 	mkdir -p "$SNAP/$v"
 	extra=""; is_diff "$v" || extra="--keep-only-last"
 	taskset -c "$DAEMON_CPUS" "$OD" serve --socket "$SOCKDIR/$v.sock" --output-root "$SNAP/$v" --compression "$(codec_of "$v")" \
-		--workers "$WORKERS" $(common_args "$v") $extra > "$OUT/daemon_$v.log" 2>&1 &
+		--workers "$WORKERS" $(common_args "$v") $extra ${CKPT_EXTRA_ARGS:-} > "$OUT/daemon_$v.log" 2>&1 &
 	RPID[$v]=$!
 done
 for v in "${VARIANTS[@]}"; do until [ -S "$SOCKDIR/$v.sock" ]; do sleep 0.05; kill -0 "${RPID[$v]}" 2>/dev/null || { log "daemon $v died at start"; exit 1; }; done; done

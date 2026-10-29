@@ -31,12 +31,13 @@ fn main() {
     println!("cargo:rustc-link-lib=dl");
 }
 
-/// The DTO revision this daemon is written against: the explicit async API
-/// (`dto_submit_compare`, `dto_submit_memfill`, `dto_submit_transl_fetch`) and
-/// the `libdto_explicit` target (no libc interposers) live on this branch.
-const DTO_REPO: &str = "https://github.com/byrnedj/DTO";
-const DTO_BRANCH: &str = "ch-async-ops";
-const DTO_REV: &str = "64b7dc0c5f5e5cbad8e018da6e469c7db0b74623";
+/// The DTO revision this daemon is written against: upstream v1.2, which has
+/// the explicit async API (`dto_submit_*`, `dto_batch_*` with the
+/// `DTO_SUBMIT_CC` / `DTO_SUBMIT_BOF` flags) and the `libdto_explicit` target
+/// (no libc interposers).
+const DTO_REPO: &str = "https://github.com/intel/DTO";
+const DTO_BRANCH: &str = "main (tag v1.2)";
+const DTO_REV: &str = "7eb15200bcd95cf8a49d018856eb647b6f4e0ae9";
 
 /// Link `libdto_explicit`. Either build it from a DTO checkout named by
 /// `DTO_SRC_DIR` (cmake, into OUT_DIR), or take a prebuilt library from
@@ -77,7 +78,7 @@ fn link_dto() {
         );
         let header = fs::read_to_string(src.join("dto.h")).unwrap_or_default();
         assert!(
-            header.contains("dto_submit_compare"),
+            header.contains("dto_submit_compare") && header.contains("DTO_SUBMIT_BOF"),
             "{} is not the DTO revision this daemon needs ({DTO_REPO} branch {DTO_BRANCH}, {DTO_REV})",
             src.display()
         );

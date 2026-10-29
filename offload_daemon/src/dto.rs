@@ -14,7 +14,7 @@
 
 use std::error::Error as StdError;
 use std::hint;
-use std::os::raw::{c_int, c_void};
+use std::os::raw::{c_int, c_uint, c_void};
 use std::ptr::{self, NonNull};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::{fmt, io};
@@ -34,16 +34,28 @@ const DTO_ASYNC_SUBMITTED: c_int = 0;
 const DTO_ASYNC_PENDING: c_int = 0;
 const DTO_ASYNC_DONE: c_int = 1;
 
+/// Submit flags (DTO v1.2): direct the output to the CPU cache; block on page
+/// faults (honoured on work queues configured with block-on-fault, which ours
+/// are, so a restore MEMFILL into holes completes instead of failing).
+const DTO_SUBMIT_CC: c_uint = 1 << 0;
+const DTO_SUBMIT_BOF: c_uint = 1 << 1;
+
 unsafe extern "C" {
     fn dto_submit_memfill(
         op: *mut Op,
         dest: *mut c_void,
         pattern: u64,
         n: usize,
-        cache_control: c_int,
+        flags: c_uint,
     ) -> c_int;
-    fn dto_submit_compval(op: *mut Op, src: *const c_void, pattern: u64, n: usize) -> c_int;
-    fn dto_submit_crc(op: *mut Op, src: *const c_void, n: usize) -> c_int;
+    fn dto_submit_compval(
+        op: *mut Op,
+        src: *const c_void,
+        pattern: u64,
+        n: usize,
+        flags: c_uint,
+    ) -> c_int;
+    fn dto_submit_crc(op: *mut Op, src: *const c_void, n: usize, flags: c_uint) -> c_int;
     fn dto_async_poll(op: *mut Op) -> c_int;
     fn dto_async_result(op: *const Op) -> c_int;
     fn dto_async_status(op: *const Op) -> c_int;
@@ -191,7 +203,7 @@ impl Op {
         stats: &Stats,
     ) -> Submit {
         // SAFETY: forwarded to DTO under the caller's guarantees.
-        let submit = submit_result(unsafe { dto_submit_compval(self, src.cast(), pattern, n) });
+        let submit = submit_result(unsafe { dto_submit_compval(self, src.cast(), pattern, n, DTO_SUBMIT_BOF) });
         stats.count(submit);
         submit
     }
@@ -202,7 +214,7 @@ impl Op {
     /// As for [`Op::submit_compare`].
     pub(crate) unsafe fn submit_crc(&mut self, src: *const u8, n: usize, stats: &Stats) -> Submit {
         // SAFETY: forwarded to DTO under the caller's guarantees.
-        let submit = submit_result(unsafe { dto_submit_crc(self, src.cast(), n) });
+        let submit = submit_result(unsafe { dto_submit_crc(self, src.cast(), n, DTO_SUBMIT_BOF) });
         stats.count(submit);
         submit
     }
@@ -218,7 +230,7 @@ impl Op {
         stats: &Stats,
     ) -> Submit {
         // SAFETY: forwarded to DTO under the caller's guarantees.
-        let submit = submit_result(unsafe { dto_submit_memfill(self, dest.cast(), 0, n, 1) });
+        let submit = submit_result(unsafe { dto_submit_memfill(self, dest.cast(), 0, n, DTO_SUBMIT_CC | DTO_SUBMIT_BOF) });
         stats.count(submit);
         submit
     }
@@ -264,13 +276,14 @@ unsafe extern "C" {
         src1: *const c_void,
         src2: *const c_void,
         n: usize,
+        flags: c_uint,
     ) -> c_int;
     fn dto_batch_add_memmove(
         batch: *mut RawBatch,
         dst: *mut c_void,
         src: *const c_void,
         n: usize,
-        cache_control: c_int,
+        flags: c_uint,
     ) -> c_int;
     fn dto_batch_add_dualcast(
         batch: *mut RawBatch,
@@ -278,9 +291,14 @@ unsafe extern "C" {
         dst2: *mut c_void,
         src: *const c_void,
         n: usize,
-        cache_control: c_int,
+        flags: c_uint,
     ) -> c_int;
-    fn dto_batch_add_crc(batch: *mut RawBatch, src: *const c_void, n: usize) -> c_int;
+    fn dto_batch_add_crc(
+        batch: *mut RawBatch,
+        src: *const c_void,
+        n: usize,
+        flags: c_uint,
+    ) -> c_int;
     fn dto_batch_crc(batch: *const RawBatch, i: c_int) -> u32;
     fn dto_batch_submit(batch: *mut RawBatch) -> c_int;
     fn dto_batch_poll(batch: *mut RawBatch) -> c_int;
@@ -327,14 +345,14 @@ impl Batch {
         n: usize,
     ) -> bool {
         // SAFETY: forwarded under the caller's guarantees.
-        unsafe { dto_batch_add_compare(self.raw.as_ptr(), src1.cast(), src2.cast(), n) >= 0 }
+        unsafe { dto_batch_add_compare(self.raw.as_ptr(), src1.cast(), src2.cast(), n, DTO_SUBMIT_BOF) >= 0 }
     }
 
     /// # Safety
     /// `src` must stay mapped and `dst` exclusively owned until completion.
     pub(crate) unsafe fn add_memmove(&mut self, dst: *mut u8, src: *const u8, n: usize) -> bool {
         // SAFETY: forwarded under the caller's guarantees.
-        unsafe { dto_batch_add_memmove(self.raw.as_ptr(), dst.cast(), src.cast(), n, 0) >= 0 }
+        unsafe { dto_batch_add_memmove(self.raw.as_ptr(), dst.cast(), src.cast(), n, DTO_SUBMIT_BOF) >= 0 }
     }
 
     /// Copy `src` to both destinations; bits 11:0 of `dst1` and `dst2` must
@@ -357,7 +375,7 @@ impl Batch {
                 dst2.cast(),
                 src.cast(),
                 n,
-                0,
+                DTO_SUBMIT_BOF,
             ) >= 0
         }
     }
@@ -368,7 +386,7 @@ impl Batch {
     /// `src` must stay mapped and unchanged until the batch completes.
     pub(crate) unsafe fn add_crc(&mut self, src: *const u8, n: usize) -> bool {
         // SAFETY: forwarded under the caller's guarantees.
-        unsafe { dto_batch_add_crc(self.raw.as_ptr(), src.cast(), n) >= 0 }
+        unsafe { dto_batch_add_crc(self.raw.as_ptr(), src.cast(), n, DTO_SUBMIT_BOF) >= 0 }
     }
 
     /// CRC of operation `i` after completion.
