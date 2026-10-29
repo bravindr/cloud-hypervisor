@@ -956,12 +956,16 @@ fn run_restore(
                     )?;
                     if !diffs.is_empty() {
                         let started = Instant::now();
-                        let mut pages = 0_u64;
-                        for dir in diffs {
-                            pages += diff::apply_diff(dir, slot, &memfd, file_offset, size)?;
-                        }
+                        let (pages, stored) = diff::apply_chain(
+                            diffs,
+                            slot,
+                            &memfd,
+                            file_offset,
+                            size,
+                            workers_per_slot,
+                        )?;
                         info!(
-                            "Applied {} diffs to slot {slot}: {pages} pages in {:.1} ms",
+                            "Applied {} diffs to slot {slot}: {pages} pages ({stored} written once) in {:.1} ms",
                             diffs.len(),
                             started.elapsed().as_secs_f64() * 1e3
                         );

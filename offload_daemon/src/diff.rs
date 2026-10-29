@@ -37,6 +37,8 @@ use std::path::{Path, PathBuf};
 #[cfg(feature = "qpl")]
 use std::ptr;
 use std::str::FromStr;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Mutex;
 #[cfg(feature = "qpl")]
 use std::thread;
 use std::time::Duration;
@@ -53,7 +55,7 @@ use crate::dedup::{self, DedupImage, DedupRun};
 #[cfg(feature = "dto")]
 use crate::dto::{Batch, BatchPoll, Submit, ZeroBuffer};
 #[cfg(feature = "qpl")]
-use crate::mapping::{Mapping, data_extents};
+use crate::mapping::{data_extents, Mapping};
 #[cfg(feature = "qpl")]
 use crate::qpl::{Error as QplError, ExecutionPath, HuffmanMode, JobPool};
 
@@ -796,6 +798,131 @@ pub(crate) fn apply_diff(
         at += length;
     }
     Ok(manifest.changed_pages)
+}
+
+/// One diff of a chain, decompressed: its page runs and the gathered pages.
+struct DecodedDiff {
+    runs: Vec<(u64, u32)>,
+    gather: Vec<u8>,
+    changed_pages: u64,
+}
+
+/// A diff's manifest and its pages (`None` when it stores no pages).
+type Decoded = (DiffManifest, Option<DecodedDiff>);
+
+fn decode_diff(dir: &Path, slot: u32, size: u64) -> Result<Decoded, Error> {
+    let manifest: DiffManifest = serde_json::from_slice(&fs::read(manifest_path(dir, slot))?)?;
+    if manifest.version != DIFF_VERSION || manifest.slot_size != size {
+        return Err(Error::Invalid(format!(
+            "{}: version/size mismatch",
+            dir.display()
+        )));
+    }
+    let total: usize = manifest.runs.iter().map(|&(_, n)| n as usize * PAGE).sum();
+    if total == 0 {
+        return Ok((manifest, None));
+    }
+    let data = fs::read(data_path(dir, slot))?;
+    let mut gather = vec![0_u8; total];
+    let mut worker = CodecWorker::new(manifest.codec, 1)?;
+    for record in &manifest.chunks {
+        let start = record.compressed_offset as usize;
+        let end = start + record.compressed_length as usize;
+        let input = data
+            .get(start..end)
+            .ok_or_else(|| Error::Invalid("chunk beyond data".to_owned()))?;
+        let out = worker.decompress(input, record.uncompressed_length as usize)?;
+        let at = record.uncompressed_offset as usize;
+        gather
+            .get_mut(at..at + out.len())
+            .ok_or_else(|| Error::Invalid("chunk beyond gather".to_owned()))?
+            .copy_from_slice(out);
+    }
+    let decoded = DecodedDiff {
+        runs: manifest.runs.clone(),
+        gather,
+        changed_pages: manifest.changed_pages,
+    };
+    Ok((manifest, Some(decoded)))
+}
+
+/// Apply a chain of diff checkpoints (`dirs`, oldest first) for `slot` onto
+/// the restored memfd in one pass: every diff is decompressed on its own
+/// thread (up to `threads` at a time), then the pages are written newest
+/// first and each page once, from the newest diff that holds it. Same result
+/// as applying the diffs in order, without one decompress job at a time and
+/// without rewriting the pages that every turn dirties. A chain with
+/// disk-image dedup records falls back to the ordered apply.
+pub(crate) fn apply_chain(
+    dirs: &[PathBuf],
+    slot: u32,
+    destination: &File,
+    destination_offset: u64,
+    size: u64,
+    threads: usize,
+) -> Result<(u64, u64), Error> {
+    let threads = threads.clamp(1, dirs.len().max(1));
+    let next = AtomicUsize::new(0);
+    let results: Vec<Mutex<Option<Result<Decoded, Error>>>> =
+        (0..dirs.len()).map(|_| Mutex::new(None)).collect();
+    thread::scope(|scope| {
+        for _ in 0..threads {
+            scope.spawn(|| loop {
+                let i = next.fetch_add(1, Ordering::Relaxed);
+                if i >= dirs.len() {
+                    break;
+                }
+                let r = decode_diff(&dirs[i], slot, size);
+                *results[i].lock().unwrap() = Some(r);
+            });
+        }
+    });
+    let mut decoded: Vec<Decoded> = Vec::with_capacity(dirs.len());
+    for r in results {
+        decoded.push(r.into_inner().unwrap().expect("every diff was decoded")?);
+    }
+    if decoded.iter().any(|(m, _)| m.dedup_image.is_some()) {
+        let mut pages = 0_u64;
+        for dir in dirs {
+            pages += apply_diff(dir, slot, destination, destination_offset, size)?;
+        }
+        return Ok((pages, pages));
+    }
+    let destination = Destination::open(destination, destination_offset, size)?;
+    let npages = (size as usize).div_ceil(PAGE);
+    let mut written = vec![0_u64; npages.div_ceil(64)];
+    let is_set = |w: &[u64], p: usize| w[p / 64] & (1 << (p % 64)) != 0;
+    let mut changed = 0_u64;
+    let mut stored = 0_u64;
+    for (_, d) in decoded.iter().rev() {
+        let Some(d) = d else { continue };
+        changed += d.changed_pages;
+        let mut at = 0_usize;
+        for &(offset, pages) in &d.runs {
+            let first = offset as usize / PAGE;
+            let mut p = 0_usize;
+            while p < pages as usize {
+                while p < pages as usize && is_set(&written, first + p) {
+                    p += 1;
+                }
+                let start = p;
+                while p < pages as usize && !is_set(&written, first + p) {
+                    written[(first + p) / 64] |= 1 << ((first + p) % 64);
+                    p += 1;
+                }
+                if p > start {
+                    let bytes = (p - start) * PAGE;
+                    destination.write(
+                        offset as usize + start * PAGE,
+                        &d.gather[at + start * PAGE..at + start * PAGE + bytes],
+                    )?;
+                    stored += (p - start) as u64;
+                }
+            }
+            at += pages as usize * PAGE;
+        }
+    }
+    Ok((changed, stored))
 }
 
 /// Which of `pages` differ from the reference (or from zero where
